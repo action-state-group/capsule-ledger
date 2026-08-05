@@ -62,7 +62,7 @@ def test_caps_would_have_held_from_real_amaury_replay(caps_fold):
     assert row.amount_minor == 15_000_000
     assert row.currency == "EUR"
     assert "150,000.00" in row.why
-    assert row.capsule["disposition"]["verdict_class"] == "blocked"
+    assert row.capsule["disposition"]["verdict_class"] == "hitl_dispatched"
 
     guard_id, consequential_row = report.consequential()
     assert guard_id == "caps"

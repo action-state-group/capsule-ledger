@@ -6,7 +6,9 @@ target) -- replaying them one at a time is exactly the dedupe check's
 target case: the first occurrence passes, every repeat would-have-held.
 amaury_sample_ledger.jsonl's transfer_funds action demonstrates the same
 for the caps check, in dry_run form (see test_guard_eur150k_bridge.py for
-the non-dry-run, actually-recorded-blocked version of the same action).
+the non-dry-run, actually-recorded version of the same action -- it escalates
+rather than blocks, since `money.transfer` has an `approver_role` configured;
+see D2, 2026-08-05).
 """
 import json
 from pathlib import Path
@@ -70,4 +72,4 @@ def test_dry_run_amaury_caps_would_have_held(store, caps_fold, signer):
         assert decision.dry_run is True
         outcomes[verb] = decision.outcome
 
-    assert outcomes["transfer_funds"] == "deny"
+    assert outcomes["transfer_funds"] == "escalate"

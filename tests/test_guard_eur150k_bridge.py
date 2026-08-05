@@ -1,17 +1,26 @@
 """The EUR150k bridge scenario: the real amaury sample ledger, capsule
 cd0692b3 (a transfer_funds/€150,000 attempt already recorded as `blocked`
 by a prior, independent policy engine). This guard, given the same action
-fresh, independently blocks it on its own caps evidence and closes the
-already-open `blocked` item with a `supersedes`-chained decision capsule.
+fresh, independently re-evaluates it on its own caps evidence and -- per D2
+(2026-08-05) -- escalates rather than blocks: `money.transfer` has an
+`approver_role` configured (matching the HITL Bridge design's dev/GC
+screens, real capsule cd0692b3, checkpoint #217), so a pure cap-exceeded
+hold routes to a human (`hitl_dispatched`) instead of an automatic deny. The
+new `hitl_dispatched` capsule still closes the stale `blocked` item with a
+`supersedes`-chained decision capsule: the registry's own definition of
+`supersedes` -- "Terminal transition over the parent -- resolution, expiry,
+escalation close/replace the parent's open state" -- covers an escalation
+closing/replacing a parent's open state, not only a terminal resolution.
+`blocked` is a formal open-item verdict_class per the -02 spec's open-items
+predicate; `hitl_dispatched` is itself an open item too, closed only by a
+later, human-signed decision capsule (also `supersedes`-chained) that this
+v0 does not yet build -- that's the HITL Bridge design's actual close, not
+this test's scope.
 
-`relation: resolves`, named in the T3 kickoff's acceptance text, does not
-exist in the chain.relation registry (only `confirms`, `supersedes`,
-`epoch_opens`). The registry's own definition of `supersedes` --
-"Terminal transition over the parent -- resolution, expiry, escalation
-close/replace the parent's open state" -- is literally what "resolves" was
-pointing at, and `blocked` is a formal open-item verdict_class per the -02
-spec's open-items predicate, closed only by a supersedes-chained capsule.
-That's the existing token used here; see STATUS.md's Needs decision.
+`relation: resolves`, named in the T3 kickoff's acceptance text, still does
+not exist in the chain.relation registry (only `confirms`, `supersedes`,
+`epoch_opens`); `supersedes` remains the token used here -- see STATUS.md's
+Needs decision (unrelated to D1/D2, not resolved by this task).
 """
 from pathlib import Path
 
@@ -27,7 +36,7 @@ EUR150K_MINOR = 15_000_000  # EUR 150,000.00 in minor units (cents)
 WEEKLY_CAP_MINOR = 10_000_000  # EUR 100,000.00
 
 
-def test_eur150k_bridge_scenario_blocked_with_fold_evidence_and_supersedes_chain(store, caps_fold):
+def test_eur150k_bridge_scenario_escalates_with_fold_evidence_and_supersedes_chain(store, caps_fold):
     n = store.import_jsonl(AMAURY)
     assert n == 4
     parent = store.fetch(CD0692B3)
@@ -54,8 +63,8 @@ def test_eur150k_bridge_scenario_blocked_with_fold_evidence_and_supersedes_chain
 
     decision = engine.check(action, chain_parent=CD0692B3, chain_relation="supersedes")
 
-    # -- blocked --------------------------------------------------------
-    assert decision.outcome == "deny"
+    # -- escalated, not blocked (D2, 2026-08-05) -------------------------
+    assert decision.outcome == "escalate"
     assert not decision.dry_run
     assert not decision.degraded
 
@@ -73,9 +82,13 @@ def test_eur150k_bridge_scenario_blocked_with_fold_evidence_and_supersedes_chain
     capsule = decision.capsule
     assert capsule is not None
     assert capsule["chain"] == {"parent_capsule_id": CD0692B3, "relation": "supersedes"}
-    assert capsule["disposition"]["verdict_class"] == "blocked"
+    assert capsule["disposition"]["decision"] == "hitl_dispatched"
+    assert capsule["disposition"]["verdict_class"] == "hitl_dispatched"
 
-    # -- the capsule is real: it verifies, and it closes the open item ----
+    # -- the capsule is real: it verifies, and it closes the parent's open item --
+    # (the parent's `blocked` open state is closed/replaced; the new
+    # `hitl_dispatched` capsule is itself now the open item, closed only by
+    # a later, human-signed decision -- out of this test's scope)
     result = store.verify(capsule["capsule_id"])
     assert result.ok, result.findings
 
