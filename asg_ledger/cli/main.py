@@ -1,7 +1,8 @@
 """`asg` CLI entry point: git-style verbs over the ledger query API
 (log/show/verify/bundle), the fold catalog (fold list/new/test/lint), the
-guard-check/action-class catalog (constraints list), and a per-agent summary
-(agents --status). `diff`/`blame`/`bisect` are stubbed only -- batch 2.
+guard-check/action-class catalog (constraints list), a per-agent summary
+(agents --status), and the guard API's dry-run report (guard dry-run).
+`diff`/`blame`/`bisect` are stubbed only -- batch 2.
 
 This module is a thin dispatcher; each verb's logic lives in its own
 `cli/*_cmd.py` (or `*_cmds.py` for a verb group) module.
@@ -11,7 +12,17 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import agents_cmd, bundle_cmd, constraints_cmd, fold_cmds, log_cmd, show_cmd, stub_cmds, verify_cmd
+from . import (
+    agents_cmd,
+    bundle_cmd,
+    constraints_cmd,
+    fold_cmds,
+    guard_cmds,
+    log_cmd,
+    show_cmd,
+    stub_cmds,
+    verify_cmd,
+)
 
 __all__ = ["main"]
 
@@ -28,6 +39,7 @@ def _build_parser() -> argparse.ArgumentParser:
     bundle_cmd.add_parser(sub)
     constraints_cmd.add_parser(sub)
     agents_cmd.add_parser(sub)
+    guard_cmds.add_parser(sub)
     stub_cmds.add_parsers(sub)
 
     return parser
@@ -46,6 +58,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "fold":
         if getattr(args, "fold_command", None) is None:
             args.fold_parser.print_help()
+            return 0
+        return args.func(args)
+
+    if args.command == "guard":
+        if getattr(args, "guard_command", None) is None:
+            args.guard_parser.print_help()
             return 0
         return args.func(args)
 
