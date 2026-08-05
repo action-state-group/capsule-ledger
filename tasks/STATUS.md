@@ -123,6 +123,18 @@ before this report, not left implicit.
 No open questions requiring a decision — flagging the v0-scope note above for the next
 coder's awareness, not as a blocker.
 
+**Manager review, 2026-08-04 — ACCEPTED, worktree released for teardown:** independently
+verified in a clean venv (not the coder's): `pip install -e ".[dev]"` clean; `pytest -q` → 44
+passed; `ruff check .` clean. Confirmed all three MUST-FAIL fixture dirs exist for real
+(`float_input`, `undeclared_field_read`, `wall_clock_reserved_field`, plus
+`wall_clock_missing_as_of`) with a `reason.txt` per case, and the test asserts both that the
+exception is raised AND that its `.reason` matches the pinned string — not just "something
+raised." Ran the `float_input` fixture through `evaluate_one` directly outside pytest: raised
+`FoldDeterminismError` with `reason == "float_in_reduce_field"`, confirming the guard is real,
+not a vacuous pass. `gh pr checks 2` confirms `test` job green; `neutrality` red is the
+pre-existing T0 operator item, not a T1 regression. DCO sign-off present. PR #2 confirmed
+OPEN, not merged. Worktree `_worktrees/asg-ledger/T1-fold-engine` may be torn down.
+
 ### [T2] Ledger core — done, 2026-08-04
 
 PR: https://github.com/action-state-group/asg-ledger/pull/1 (branch `T2-ledger-core`,
@@ -228,6 +240,19 @@ CLAUDE.md ships). No code changes blocked on this — `ScanQuery`'s field names
 (`developer`/`operator`), so remapping later is a one-line change in `store.py`'s
 `scan()`, not an API break.
 
+**Manager review, 2026-08-04 — ACCEPTED, worktree released for teardown:** independently
+verified in a clean venv (not the coder's): `pip install -e ".[dev]"` clean; `pytest -q` → 19
+passed; `ruff check .` clean. Read `ledger/api.py` directly: `LedgerAPI` is a `typing.Protocol`
+whose every method signature uses only `ScanQuery`/`LedgerRecord`/`ChainGap`/primitives —
+grepped for `sqlite3.Cursor`/`Connection`/file-object types in any public signature, found
+none. Grepped the whole package for `import sqlite3` outside `ledger/` — none found, matching
+the boundary claim. Reran the chain-gap and 10k-perf tests individually — both pass (10k scan
+in ~2s wall including fixture setup, well under the 100ms-per-scan target). `gh pr checks 1`
+confirms `test` job green; `neutrality` red is the pre-existing T0 operator item, not a T2
+regression. DCO sign-off present. PR #1 confirmed OPEN, not merged. The
+`counterparty`→`operator`/`agent`→`developer` field-mapping question above is a legitimate
+open call for the operator, not a blocker — flagging it forward rather than resolving it here.
+Worktree `_worktrees/asg-ledger/T2-ledger-core` may be torn down.
 
 ### [T7] Tamper States — repo mismatch
 
