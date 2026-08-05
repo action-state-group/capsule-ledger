@@ -328,6 +328,24 @@ silently; flagging the tension in case the intended token was actually
 `hitl_dispatched`. No code changes blocked — `capsule.py`'s `_DISPOSITION_BY_OUTCOME`
 table is a two-line change if this should flip.
 
+**Manager review, 2026-08-04 — ACCEPTED, worktree released for teardown:** independently
+verified in a clean venv: `pip install -e ".[dev]"` clean; `pytest -q` → 74 passed; `ruff
+check .` clean. Confirmed the addendum's own test exists and is real:
+`test_signing_key_unavailable_fails_closed_key_id_on_recovery_and_operator_alert` asserts
+both halves (capsule carries `key_id` on recovery, a distinct `operator_alert` record is
+scanned from the ledger) — read the assertions directly, not just the test name.
+Independently mutant-checked this exact test myself (not re-trusting the coder's own
+mutant claim): commented out the `"operator_alert" if kind == "signing_key" else
+"degradation_recovered"` branch in `engine.py`, confirmed the test flips to
+`assert 0 == 1` (no operator_alert record found), restored, confirmed 74/74 green again.
+Confirmed the EUR150k test uses the real capsule `cd0692b3` and asserts a `supersedes`
+chain closing its `blocked` state. `gh pr checks 3` shows `test` job green, `neutrality`
+red for the same pre-existing T0 operator item (not a regression). DCO sign-off present.
+PR #3 confirmed OPEN, not merged. The three Needs-decision items above are genuine,
+well-reasoned open questions (real tension between the task text and other source docs,
+each resolved sensibly and flagged rather than guessed) — none are coder gaps, all are
+operator calls. Worktree `_worktrees/asg-ledger/T3-guard-api` may be torn down.
+
 ### [T3] `caps`-check failure maps to `deny`, not `escalate`
 
 The dev-persona doc's own CLI mockup (`messaging-developer-persona-2026-08-02.md`,
