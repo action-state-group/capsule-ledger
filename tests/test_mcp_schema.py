@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from pathlib import Path
 
 from asg_ledger.mcp.server import mcp
@@ -31,10 +32,25 @@ EXPECTED_TOOL_NAMES = {
 }
 
 
+def _normalize_whitespace(text: str) -> str:
+    """Collapse all whitespace runs (including the docstring's own newlines
+    and indentation) to single spaces. Different `mcp` SDK versions have
+    disagreed on whether a tool's docstring gets `inspect.cleandoc`-ed before
+    becoming its `description` -- purely cosmetic (this is compared before
+    the description even reaches an agent's context), so it must never fail
+    this snapshot on its own. A real wording change still shows up: the
+    words themselves, not their line-wrapping, are what's pinned."""
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _normalize_tool(tool: dict) -> dict:
+    return {**tool, "description": _normalize_whitespace(tool["description"])}
+
+
 def _current_schema() -> list[dict]:
     tools = asyncio.run(mcp.list_tools())
     return [
-        {"name": t.name, "description": t.description, "inputSchema": t.inputSchema}
+        _normalize_tool({"name": t.name, "description": t.description, "inputSchema": t.inputSchema})
         for t in sorted(tools, key=lambda x: x.name)
     ]
 
@@ -47,7 +63,7 @@ def test_exactly_ten_tools_nine_read_one_write():
 
 
 def test_tool_schema_matches_pinned_snapshot():
-    expected = json.loads(SNAPSHOT_PATH.read_text())
+    expected = [_normalize_tool(t) for t in json.loads(SNAPSHOT_PATH.read_text())]
     actual = _current_schema()
     assert actual == expected, (
         "MCP tool schema drifted from the pinned snapshot -- if this is an "
