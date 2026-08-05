@@ -17,6 +17,11 @@ Every guard decision, every fold result, and every refusal is a record — check
 
 This is a scaffold. The subpackages above are stubs; behavior lands incrementally.
 
+## Failure semantics
+
+The guard fails closed by default and records every degradation — see
+[`docs/failure-semantics.md`](docs/failure-semantics.md) for the full table.
+
 ## Capsule parsing
 
 Records are parsed and verified through the public [`agent-action-capsule`](https://github.com/action-state-group/agent-action-capsule) reference library (published as `agent-action-capsule` on PyPI), declared as a normal dependency. It is never vendored or copied into this repo.
