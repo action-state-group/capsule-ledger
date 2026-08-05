@@ -6,11 +6,18 @@ that is the downstream dispatcher's own capsule to emit, not this one's.
 Per the -02 disposition spec (§ Disposition and the verdict reason-class):
 ``verdict_class`` is "legitimately absent for a clean executed verdict", so
 ``allow`` leaves it absent rather than claiming ``executed`` for something
-this capsule did not itself do. ``deny``/``escalate`` use existing
-registry-seeded tokens only (``blocked``, ``deferred``) -- never an invented
-token (see STATUS.md's Needs decision section for the ``deferred`` vs.
-``hitl_dispatched`` fit question, and the ``supersedes`` vs. requested-but-
-unregistered ``resolves`` relation question).
+this capsule did not itself do. ``deny`` uses the registry-seeded ``blocked``
+token. ``escalate`` uses ``hitl_dispatched`` (D1, 2026-08-05, ledger-lane
+outbox): the guard is the one routing the action to a human who has not yet
+acted, which is what -02 §verdictclass defines ``hitl_dispatched`` as
+("routed to a human operator; awaiting resolution") -- ``deferred`` is a
+*human*-elected postponement, a different, later state. ``disposition.decision``
+also takes ``hitl_dispatched`` under the same decision; it sits outside the
+seeded ``accept``/``reject``/``needs_input``/``deferred`` set, but an
+unregistered ``decision`` value is informational to a verifier, never a
+rejection, per -02's conformance rules (see STATUS.md's Needs decision
+section for the still-open ``supersedes`` vs. requested-but-unregistered
+``resolves`` relation question -- unrelated to D1, not resolved here).
 
 Money amounts have no field in the core -02 schema. ``asg_payload`` is a
 single namespaced, non-spec payload extension (never a repurposed spec-
@@ -50,16 +57,12 @@ ALLOW = "allow"
 DENY = "deny"
 ESCALATE = "escalate"
 
-# Disposition mapping (existing -02 registry tokens only -- see module
-# docstring). `escalate` -> `deferred` per the T3 kickoff's explicit
-# instruction; `hitl_dispatched` ("routed to an operator, awaiting
-# resolution") is arguably the closer semantic fit for an *automated*
-# escalation, since the registry defines `deferred` as "a human elected to
-# postpone" -- flagged in STATUS.md, not silently substituted.
+# Disposition mapping (see module docstring). `escalate` -> `hitl_dispatched`
+# for both `decision` and `verdict_class`, per D1 (2026-08-05).
 _DISPOSITION_BY_OUTCOME = {
     ALLOW: {"decision": "accept", "verdict_class": None},
     DENY: {"decision": "reject", "verdict_class": "blocked"},
-    ESCALATE: {"decision": "deferred", "verdict_class": "deferred"},
+    ESCALATE: {"decision": "hitl_dispatched", "verdict_class": "hitl_dispatched"},
 }
 
 

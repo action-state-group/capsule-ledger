@@ -24,9 +24,14 @@ class ActionClass:
     # classes when explicitly configured"). This never makes fail-open a
     # default by itself -- a caller must still opt in per-class on the engine.
     fail_open_allowed: bool = False
+    # The role that can resolve a cap-exceeded hold on this class via the
+    # HITL bridge (D2, 2026-08-05). None means no approver is configured for
+    # this class -- a cap-exceeded action in it hard-denies rather than
+    # escalating; this is the "classes explicitly marked deny" half of D2.
+    approver_role: str | None = None
 
 
-MONEY_TRANSFER = ActionClass("money.transfer", consequential=True)
+MONEY_TRANSFER = ActionClass("money.transfer", consequential=True, approver_role="treasury-approver")
 DATA_DELETE = ActionClass("data.delete", consequential=True)
 COMMS_EXTERNAL = ActionClass("comms.external", consequential=True)
 # The one low-risk class in the starter set, so "fail-open only where

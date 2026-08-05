@@ -17,7 +17,7 @@ from ..ledger.api import LedgerAPI
 from .action import Action
 from .capsule import ALLOW, DENY, ESCALATE, ConstraintOutcome, build_decision_capsule, build_event_capsule
 from .checks import CheckOutcome, check_caps, check_dedupe, check_verify_before_dispatch
-from .classes import classify
+from .classes import ActionClass, classify
 from .signing import Signer, SigningKeyUnavailable
 
 __all__ = ["GuardDecision", "GuardEngine"]
@@ -214,7 +214,7 @@ class GuardEngine:
 
         constraints = (dedupe_out.constraint, caps_out.constraint, vbd_out.constraint)
         fold_envelopes = tuple(caps_out.fold_envelopes)
-        outcome = _decide(constraints)
+        outcome = _decide(constraints, ac)
 
         resolved_parent, resolved_relation = chain_parent, chain_relation
         if resolved_parent is None:
@@ -357,13 +357,18 @@ class GuardEngine:
         )
 
 
-def _decide(constraints: tuple[ConstraintOutcome, ...]) -> str:
-    fails = [c for c in constraints if c.result == "fail"]
+def _decide(constraints: tuple[ConstraintOutcome, ...], action_class: ActionClass) -> str:
+    """allow/deny/escalate per D2 (2026-08-05): a clean run allows. A hold
+    escalates only when the *sole* failing constraint is `caps` and the
+    triggering class has an `approver_role` configured -- an integrity
+    failure (`verify_before_dispatch`, whether the cited mandate is missing
+    or fails re-verification), a dedupe hit, or a cap breach on a class with
+    no approver configured all hard-deny, unconditionally."""
+    fails = {c.id for c in constraints if c.result == "fail"}
     if not fails:
         return ALLOW
-    for c in fails:
-        if c.id == "verify_before_dispatch" and (c.evidence or {}).get("reason_kind") == "not_found":
-            return ESCALATE
+    if fails == {"caps"} and action_class.approver_role is not None:
+        return ESCALATE
     return DENY
 
 
