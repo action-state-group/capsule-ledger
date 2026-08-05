@@ -3,9 +3,9 @@
 | Task | Status | Branch/PR | Notes |
 |---|---|---|---|
 | T0 | done | main @ 88d26ab | scaffold, blocks T1-T6 |
-| T1 | blocked | — | needs T0 — unblocked now |
-| T2 | blocked | — | needs T0 — unblocked now |
-| T3 | blocked | — | needs T1 + T2 |
+| T1 | claimed | branch T1-fold-engine | worktree _worktrees/asg-ledger/T1-fold-engine |
+| T2 | claimed | branch T2-ledger-core | worktree _worktrees/asg-ledger/T2-ledger-core; see pinned addendum below re: transport-agnostic API |
+| T3 | blocked | — | needs T1 + T2; see pinned addendum below before spawning |
 | T4 | blocked | — | needs T2 (folds via T1) |
 | T5 | blocked | — | needs T4 (API via T1/T2) |
 | T6 | blocked | — | needs T3 |
@@ -45,6 +45,32 @@ unset") — this is by design, not a bug; see below.
    repository public to enable this feature." I have admin on the repo otherwise. Once
    Pro/Team is available (or the repo goes public), set `main` to require the `ci` and
    `neutrality` status checks.
+
+## Pinned addenda (operator-supplied 2026-08-04, not yet incorporated into a coder kickoff)
+
+**T2 (delivered live to the T2 coder in-session, recorded here too):** the ledger
+read/append API must sit behind a transport-agnostic interface — in-process binding
+for v0, but shaped so the ephemeral-mode sidecar (gating decisions doc §3 —
+Lambda/Cloud Run/short-lived containers calling a nearby ledger service over a local
+network hop) can wrap it as a network service later without an API change. No caller
+outside `ledger/` touches the store directly; no in-process-only types (file handles,
+cursors, raw SQLite connections/rows) in the public API signatures — plain
+serializable request/response shapes only.
+
+**T3 (must go in its kickoff — T3 not yet spawned, blocked on T1+T2):**
+1. Deliverables include the public short version of the failure-semantics table
+   (gating-engineering-decisions-2026-08-02.md §1) in the repo docs, shipping before
+   or with the guard API — this is the table platform reviewers ask for first per the
+   gating doc's own Status section.
+2. The failure-semantics test matrix must also assert: the decision capsule carries
+   the signing key id, and a key-unavailable condition fails closed AND produces an
+   operator-alert record on recovery (per gating doc §1's "Signing key unavailable →
+   Fail closed → Operator alert" row — don't just test the fail-closed half).
+
+## Batch-2 parking lot (deliberately out of scope for batch 1 — do not spawn against these yet)
+- Key rotation events + time-fenced revocation (gating decisions doc §2).
+- The sidecar transport wrapper itself (gating decisions doc §3) — T2's addendum above
+  only requires the API to be *shaped* for this, not that it's built in batch 1.
 
 ## Needs decision
 
