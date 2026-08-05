@@ -1,13 +1,25 @@
 # SPDX-License-Identifier: Apache-2.0
 """``asg guard`` verbs: dry-run replay + self-contained HTML report (moved
 here, matching ``fold_cmds.py``'s per-verb-module convention, so ``main.py``
-stays a thin dispatcher)."""
+stays a thin dispatcher), plus ``guard enforce`` -- a minimal, honest local
+marker command (see ``_cmd_guard_enforce``'s own docstring for exactly what
+it does and doesn't do).
+
+Every guard-dry-run invocation here checks the current packaging arm
+(``asg_ledger.packaging``) and, in "guards-only", both suppresses the
+evidence chrome in the rendered HTML report (``render_report_html``'s own
+``arm`` param) and rewords/suppresses this command's own stdout so it never
+prints a capsule id or a share/verify link -- see this module's inline
+comments at each print site.
+"""
 from __future__ import annotations
 
 import argparse
 import os
 import sys
 from pathlib import Path
+
+from .. import packaging
 
 __all__ = ["add_parser"]
 
@@ -41,9 +53,10 @@ def _parse_cap_args(items: list[str]) -> dict[str, int] | None:
 def _cmd_guard_dry_run(args: argparse.Namespace) -> int:
     from agent_action_capsule import compute_capsule_id
 
-    from asg_ledger.folds.loader import load_definition_file
-    from asg_ledger.report import build_dry_run_report, render_report_html
-    from asg_ledger.report.render import decode_fragment, to_fragment_payload
+    from ..folds.loader import load_definition_file
+    from ..report import build_dry_run_report, render_report_html
+    from ..report.render import TelemetryConfig, decode_fragment, to_fragment_payload
+    from ..telemetry.record import record_evidence_touch, record_guard_configured, record_guard_evaluated
 
     if bool(args.model_note) != bool(args.model_id):
         print("--model-note and --model-id must be given together (or neither)", file=sys.stderr)
@@ -52,6 +65,9 @@ def _cmd_guard_dry_run(args: argparse.Namespace) -> int:
     caps_minor = _parse_cap_args(args.cap)
     if caps_minor is None:
         return 1
+
+    arm = packaging.current_arm()
+    evidence_visible = packaging.evidence_visible(arm)
 
     since = None if args.since in (None, "all") else args.since
     caps_fold = load_definition_file(_catalog_dir(args) / "spend.weekly.yaml")
@@ -68,14 +84,30 @@ def _cmd_guard_dry_run(args: argparse.Namespace) -> int:
         )
 
     report = _build()
-    html, fragment = render_report_html(report)
+
+    telemetry = None
+    if args.telemetry_opt_in and args.telemetry_endpoint:
+        telemetry = TelemetryConfig(opted_in=True, endpoint=args.telemetry_endpoint)
+
+    html, fragment = render_report_html(report, arm=arm, telemetry=telemetry)
     out_path = Path(args.out)
     out_path.write_text(html, encoding="utf-8")
     url = f"file://{out_path.resolve()}#{fragment}"
 
     print(f"wrote {out_path}")
-    if args.share:
+    # Arm A ("guards-only"): the share link is a verify-link suggestion --
+    # not printed, matching the report itself never surfacing its evidence
+    # chrome. The file above still exists and is still openable; this CLI
+    # just doesn't advertise the fragment-carried permalink.
+    if args.share and evidence_visible:
         print(url)
+
+    if caps_minor:
+        record_guard_configured(arm)
+    if report.actions_replayed:
+        record_guard_evaluated(arm)
+    if evidence_visible and (args.share or args.verify):
+        record_evidence_touch(arm)
 
     if args.verify:
         written_payload = decode_fragment(fragment)
@@ -98,10 +130,34 @@ def _cmd_guard_dry_run(args: argparse.Namespace) -> int:
                     if compute_capsule_id(capsule) != capsule.get("capsule_id"):
                         mismatches.append(capsule.get("capsule_id"))
         if mismatches:
-            print(f"FAIL: {len(mismatches)} cited capsule(s) do not re-verify", file=sys.stderr)
+            # Arm A: "cited record(s)", never the word "capsule" in output.
+            noun = "cited capsule(s)" if evidence_visible else "cited record(s)"
+            print(f"FAIL: {len(mismatches)} {noun} do not re-verify", file=sys.stderr)
             return 1
-        print("OK: report is reproducible and every cited capsule verifies")
+        tail = " and every cited capsule verifies" if evidence_visible else ""
+        print(f"OK: report is reproducible{tail}")
 
+    return 0
+
+
+def _cmd_guard_enforce(args: argparse.Namespace) -> int:
+    """Records, locally, that this install has moved from dry-run to
+    enforce -- nothing more. ``GuardEngine.check(..., dry_run=...)`` is
+    already a real parameter your own integration code controls (this CLI
+    only ever drives it in dry-run mode via ``guard dry-run``); this
+    command does not gate anything itself. It exists so there is a real,
+    minimal, honest action to record the M2 ("enforcement-on") telemetry
+    fact against, matching the report's own "$ asg guard enforce" callout.
+    """
+    from ..telemetry.record import record_enforcement_flip
+
+    arm = packaging.current_arm()
+    record_enforcement_flip(arm)
+    print(
+        "recorded: this install has moved from dry-run to enforce (locally, opt-in telemetry only).\n"
+        "This command does not itself gate actions -- wire GuardEngine.check(..., dry_run=False) into "
+        "your own integration to actually enforce."
+    )
     return 0
 
 
@@ -120,7 +176,10 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
         "--since", default="7d",
         help="rolling window, e.g. '7d' (anchored to the ledger's own latest record); 'all' for no filter",
     )
-    p_dry_run.add_argument("--share", action="store_true", help="print the full shareable file://...#<fragment> URL")
+    p_dry_run.add_argument(
+        "--share", action="store_true",
+        help="print the full shareable file://...#<fragment> URL (no-op in the guards-only packaging arm)",
+    )
     p_dry_run.add_argument(
         "--verify", action="store_true", help="re-replay and re-verify every cited capsule before exiting"
     )
@@ -142,6 +201,21 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     p_dry_run.add_argument(
         "--dir", help="fold catalog directory the caps check's fold definition lives in (default: built-in catalog, or $ASG_FOLD_DIR)"
     )
+    p_dry_run.add_argument(
+        "--telemetry-opt-in", action="store_true",
+        help="embed a disclosed, anonymous open-beacon in the report for the M6 (viral unit) metric -- "
+        "requires --telemetry-endpoint too, and is off by default; see `asg telemetry status`",
+    )
+    p_dry_run.add_argument(
+        "--telemetry-endpoint", default=os.environ.get("ASG_LEDGER_TELEMETRY_ENDPOINT"),
+        help="where the open-beacon above (if enabled) sends its single anonymous event (default: "
+        "$ASG_LEDGER_TELEMETRY_ENDPOINT, or none -- with no endpoint the beacon is never embedded)",
+    )
     p_dry_run.set_defaults(func=_cmd_guard_dry_run)
+
+    p_enforce = guard_sub.add_parser(
+        "enforce", help="record locally that this install has moved from dry-run to enforce (telemetry marker only)"
+    )
+    p_enforce.set_defaults(func=_cmd_guard_enforce)
 
     return guard
