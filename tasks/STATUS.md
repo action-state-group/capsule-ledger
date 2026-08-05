@@ -3,7 +3,7 @@
 | Task | Status | Branch/PR | Notes |
 |---|---|---|---|
 | T0 | done | main @ 88d26ab | scaffold, blocks T1-T6 |
-| T1 | claimed | branch T1-fold-engine | worktree _worktrees/asg-ledger/T1-fold-engine |
+| T1 | done · 2026-08-04 | asg-ledger PR [#2](https://github.com/action-state-group/asg-ledger/pull/2) (branch `T1-fold-engine`, worktree held for review) | fold engine v0 shipped: definitions, reducers, replay engine, catalog, vectors; see note below |
 | T2 | done · 2026-08-04 | asg-ledger PR [#1](https://github.com/action-state-group/asg-ledger/pull/1) (branch `T2-ledger-core`, worktree held for review) | append-only store + query API shipped behind a transport-agnostic `LedgerAPI`; see note below |
 | T3 | blocked | — | needs T1 + T2; see pinned addendum below before spawning |
 | T4 | blocked | — | needs T2 (folds via T1) |
@@ -45,6 +45,83 @@ unset") — this is by design, not a bug; see below.
    repository public to enable this feature." I have admin on the repo otherwise. Once
    Pro/Team is available (or the repo goes public), set `main` to require the `ci` and
    `neutrality` status checks.
+
+### [T1] Fold engine v0 + catalog — done, 2026-08-04
+
+PR: https://github.com/action-state-group/asg-ledger/pull/2 (branch `T1-fold-engine`,
+worktree held at `_worktrees/asg-ledger/T1-fold-engine` pending manager review — do not
+remove). Branch was fast-forwarded onto `main`'s T1/T2-claim + addenda commit before
+starting (no conflicts, only `tasks/STATUS.md` had moved).
+
+**What's implemented (`asg_ledger/folds/`):**
+- `definition.py` — YAML-sourced fold definitions parsed and validated into an immutable
+  `FoldDefinition`: `fold_id` namespacing enforced by regex (e.g. `spend.weekly/1.0.0`);
+  `reads` with required `erasure_class` (`commitment-ok`/`preimage`) and optional declared
+  `default`; `filter` restricted to a bounded op set (`eq/ne/in/not_in/prefix/gt/gte/lt/lte`
+  — no regex, no code); `key`/`reduce.field`/filter fields all statically checked against
+  `reads` (undeclared references rejected at parse time); `reduce.reducer` checked against
+  the closed registry (`distinct_count` explicitly rejected, per spec §7 open question 1).
+  `definition_digest()` reuses `agent_action_capsule.canonical.json_digest` (JCS + SHA-256)
+  rather than reimplementing canonicalization — same digest regardless of YAML key order.
+- `reducers.py` — the closed set: `count/sum/min/max/last`. `sum/min/max` reject floats and
+  non-integers before they reach arithmetic (named reasons, not silent coercion).
+- `engine.py` — ledger-order replay: `evaluate_one`/`evaluate_all` resolve every declared
+  `reads` field per record (absent + no default → skip-with-count, never an error; fields
+  present but undeclared are simply never looked at), apply filter + window, group by `key`
+  (or a single global accumulator when `key` is absent), reduce, and emit the exact spec §4
+  envelope (`fold/range/tree_size/checkpoint/result/evaluated_at/staleness`). Two window
+  modes, both evaluated against `timestamp` in the record (never wall clock): `explicit`
+  (static start/end from the definition) and `rolling` (duration relative to a caller-
+  supplied `as_of`, which MUST be supplied — the engine refuses to fabricate one from the
+  system clock rather than silently defaulting). The one wall-clock read in the module
+  (`evaluated_at`'s fallback) flows only into that informational envelope field, never into
+  filter/window/reduce logic.
+- `catalog.py` — hot-loading directory scan (re-reads on every call, no cache staleness);
+  surfaces per-file parse errors with their reason rather than failing the whole catalog;
+  rejects duplicate `fold_id`s across files. Three example definitions ship in
+  `folds/catalog_defs/` and are runnable as-is against a real capsule stream.
+- `asg fold list|new|test|lint` — CLI stub per the task (T4 owns full wiring/output
+  discipline). `fold test <fold_id> --ledger <path> --key <value>` replays and prints the
+  envelope; manually verified against `actions.executed_count/1.0.0` over the sample ledger.
+
+**v0 scope note for T3/T4/T5:** `checkpoint`/`tree_size`/`staleness` in the envelope are
+self-contained placeholders computed from the input record list's own length (no anchor/MMR
+concept exists yet — that's batch-2). T2's `LedgerAPI` (already shipped) has no
+checkpoint/tree_size concept either, so there's nothing to wire T1 to yet; whoever builds T3
+should treat the envelope's checkpoint fields as "shaped correctly, not yet anchored."
+
+**Determinism rules (spec §3) as guards, not comments:** float rejection
+(`float_in_reduce_field`), undeclared-field-read (`undeclared_field_read`, static, at parse
+time), a reserved wall-clock pseudo-field check (`wall_clock_reference_forbidden` — rejects
+`reads` paths like `now`/`evaluated_at`), and the rolling-window `as_of` requirement
+(`as_of_required_not_wall_clock`). Per the standing mutant-verification guardrail: each of
+these four was temporarily disabled, confirmed its vector's test flips to failure (i.e. the
+MUST-FAIL vector stops failing when the guard is gone), then reverted — done in-session
+before this report, not left implicit.
+
+**Vectors (spec §6, shipping gate) — `asg_ledger/vectors/fixtures/`, pytest-discovered:**
+- `kat/{count,sum,min,max,last}/` — one pinned byte-exact known-answer test per reducer.
+- `determinism/permuted_and_unknown_fields/` — same logical records with reordered JSON keys
+  and injected unknown fields (`trace_id`, nested `meta`, extra arrays) MUST produce an
+  identical result to the base stream.
+- `must_fail/{float_input,undeclared_field_read,wall_clock_missing_as_of,
+  wall_clock_reserved_field}/` — each pins its expected failure `reason` string.
+
+**Verified:**
+- `pip install -e ".[dev]"` clean; `ruff check .` clean; `pytest -q` — 44 passed.
+- `tests/fixtures/sample_ledger.jsonl` is a checked-in copy of capsule-emit's
+  `amaury-receipt-pack/sample_ledger.jsonl` (the fixture named in the task) — copied in
+  because CI only checks out this repo, not the sibling `capsule-emit` repo; content is
+  generic synthetic example data (`procurement-agent@v1`, `acme-research`, etc.), grepped
+  for brand/private vocabulary before committing, none found.
+- PR CI: `test` job (ruff+pytest) is green
+  (https://github.com/action-state-group/asg-ledger/actions/runs/30965086892). `neutrality`
+  job is red with the same pre-existing cause T0/T2 already flagged (`NEUTRALITY_TERMS`
+  secret unset → fail-closed exit 2) — confirmed by reading the job log directly; this is
+  the operator action item from T0's status note, not a regression from this PR.
+
+No open questions requiring a decision — flagging the v0-scope note above for the next
+coder's awareness, not as a blocker.
 
 ### [T2] Ledger core — done, 2026-08-04
 
