@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asg-ledger"
+version = "0.0.1"
+description = "Local control-plane ledger, verifiable folds, and enforcement guards for AI agent actions."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Action State Group" }]
+keywords = ["agent", "ledger", "guard", "fold", "capsule"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Development Status :: 2 - Pre-Alpha",
+]
+# Capsule parsing goes through the public agent-action-capsule reference
+# library — never vendored into this repo.
+dependencies = [
+    "agent-action-capsule>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/action-state-group/asg-ledger"
+Source = "https://github.com/action-state-group/asg-ledger"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.4"]
+
+[project.scripts]
+asg = "asg_ledger.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["asg_ledger*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
