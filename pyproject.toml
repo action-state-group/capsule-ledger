@@ -18,6 +18,7 @@ classifiers = [
 # library — never vendored into this repo.
 dependencies = [
     "agent-action-capsule>=0.1.0",
+    "pyyaml>=6.0",
 ]
 
 [project.urls]
@@ -33,6 +34,20 @@ asg = "asg_ledger.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["asg_ledger*"]
+
+[tool.setuptools.package-data]
+asg_ledger = [
+    "folds/catalog_defs/*.yaml",
+    "vectors/fixtures/kat/*/*.yaml",
+    "vectors/fixtures/kat/*/*.jsonl",
+    "vectors/fixtures/kat/*/*.json",
+    "vectors/fixtures/determinism/*/*.yaml",
+    "vectors/fixtures/determinism/*/*.jsonl",
+    "vectors/fixtures/determinism/*/*.json",
+    "vectors/fixtures/must_fail/*/*.yaml",
+    "vectors/fixtures/must_fail/*/*.jsonl",
+    "vectors/fixtures/must_fail/*/*.txt",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
