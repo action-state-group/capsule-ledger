@@ -86,7 +86,9 @@ def test_scripted_session_answers_carry_verification_data():
             "target": "vendor-999",
         },
     )
-    assert over_cap["outcome"] == "deny"
+    # money.transfer carries an approver_role by default (D2), so a lone
+    # caps-constraint failure escalates to a human rather than hard-denying.
+    assert over_cap["outcome"] == "escalate"
 
     # -- "what did my agents do last night?"
     activity = _call("ledger_query", {"agent": "night-shift-agent@v1", "since": eight_hours_ago})
@@ -106,18 +108,30 @@ def test_scripted_session_answers_carry_verification_data():
     assert budget["remaining_minor"] == 8_000_000
     assert budget["envelope"]["fold"]  # a real fold digest backs the number, not a bare int
 
-    # -- "why was this refused?"
+    # -- "why did that one need a human?"
     explanation = _call("decision_explain", {"capsule_id": over_cap["capsule_id"]})
     assert explanation["decision"] is not None  # present; literal token is a separate, in-flux vocabulary
     assert explanation["verdict_class"] is not None
     failing = [c for c in explanation["constraints"] if c["result"] == "fail"]
-    assert failing, "a denied decision must show at least one failing constraint, not an unexplained refusal"
+    assert failing, "an escalated decision must show at least one failing constraint, not an unexplained routing"
     assert failing[0]["id"] == "caps"
 
     # -- "is that refusal record actually intact?"
     verified = _call("record_verify", {"capsule_id": over_cap["capsule_id"]})
     assert verified["ok"] is True
-    assert verified["findings"] == []
+    # `hitl_dispatched` (D1) is asg-ledger's own policy vocabulary and isn't
+    # yet a seeded value in AAC's REGISTRY.md -- the reference verifier
+    # correctly flags that as informational (§12), not a rejection.
+    assert verified["findings"] == [
+        {
+            "code": "unknown_registry_value",
+            "detail": (
+                "disposition.decision='hitl_dispatched' is not a seeded "
+                "disposition.decision value; informational, not rejected (§12)"
+            ),
+            "severity": "info",
+        }
+    ]
 
     # -- "has this exact transfer already happened?" (would-be repeat check)
     been_done = _call(
