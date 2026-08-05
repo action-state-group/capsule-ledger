@@ -3,9 +3,9 @@
 | Task | Status | Branch/PR | Notes |
 |---|---|---|---|
 | T0 | done | main @ 88d26ab | scaffold, blocks T1-T6 |
-| T1 | done · 2026-08-04 | asg-ledger PR [#2](https://github.com/action-state-group/asg-ledger/pull/2) (branch `T1-fold-engine`, worktree held for review) | fold engine v0 shipped: definitions, reducers, replay engine, catalog, vectors; see note below |
-| T2 | done · 2026-08-04 | asg-ledger PR [#1](https://github.com/action-state-group/asg-ledger/pull/1) (branch `T2-ledger-core`, worktree held for review) | append-only store + query API shipped behind a transport-agnostic `LedgerAPI`; see note below |
-| T3 | blocked | — | needs T1 + T2; see pinned addendum below before spawning |
+| T1 | done · 2026-08-04 | asg-ledger PR [#2](https://github.com/action-state-group/asg-ledger/pull/2) (branch `T1-fold-engine`, manager-verified, worktree torn down) | fold engine v0 shipped: definitions, reducers, replay engine, catalog, vectors; see note below |
+| T2 | done · 2026-08-04 | asg-ledger PR [#1](https://github.com/action-state-group/asg-ledger/pull/1) (branch `T2-ledger-core`, manager-verified, worktree torn down) | append-only store + query API shipped behind a transport-agnostic `LedgerAPI`; see note below |
+| T3 | ready — not yet spawned | — | unblocked (T1+T2 both done); pinned addendum below must go in its kickoff before starting |
 | T4 | blocked | — | needs T2 (folds via T1) |
 | T5 | blocked | — | needs T4 (API via T1/T2) |
 | T6 | blocked | — | needs T3 |
