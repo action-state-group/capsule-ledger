@@ -5,7 +5,7 @@
 | T0 | done | main @ 88d26ab | scaffold, blocks T1-T6 |
 | T1 | done · 2026-08-04 | asg-ledger PR [#2](https://github.com/action-state-group/asg-ledger/pull/2) (branch `T1-fold-engine`, manager-verified, worktree torn down) | fold engine v0 shipped: definitions, reducers, replay engine, catalog, vectors; see note below |
 | T2 | done · 2026-08-04 | asg-ledger PR [#1](https://github.com/action-state-group/asg-ledger/pull/1) (branch `T2-ledger-core`, manager-verified, worktree torn down) | append-only store + query API shipped behind a transport-agnostic `LedgerAPI`; see note below |
-| T3 | ready — not yet spawned | — | unblocked (T1+T2 both done); pinned addendum below must go in its kickoff before starting |
+| T3 | done · 2026-08-04 | asg-ledger PR [#3](https://github.com/action-state-group/asg-ledger/pull/3) (branch `T3-guard-api`, worktree held for review) | guard API shipped: check() + 3 checks + failure semantics; see note below |
 | T4 | blocked | — | needs T2 (folds via T1) |
 | T5 | blocked | — | needs T4 (API via T1/T2) |
 | T6 | blocked | — | needs T3 |
@@ -195,6 +195,153 @@ remove). Branch was already current with `main`'s T0 skeleton (no rebase needed)
 literal `counterparty` field — `scan(agent=...)` was mapped to `developer`,
 `scan(counterparty=...)` to `operator` as the closest available fit. Flagging rather than
 treating as settled, since T3/T4/T5 will build on this filter surface.
+
+### [T3] Guard API + failure semantics — done, 2026-08-04
+
+PR: https://github.com/action-state-group/asg-ledger/pull/3 (branch `T3-guard-api`,
+worktree held at `_worktrees/asg-ledger/T3-guard-api` pending manager review — do not
+remove). **Base-state note:** T1/T2 (PR #2/#1) were still open, not merged to `main`,
+when this branch started — `main`'s tip only carried the doc-only claim commit, not
+either package's real code. Merged `T1-fold-engine` and `T2-ledger-core` directly into
+this branch (clean merges) to get the real fold engine + ledger store; the PR diff
+against `main` therefore includes both PRs' commits until they land first.
+
+**What's implemented (`asg_ledger/guards/`):**
+- `engine.py` — `GuardEngine.check(action) -> allow | deny | escalate`. Runs the three
+  reference checks, decides an outcome, builds and appends a decision capsule via T2's
+  `LedgerStore.append()`. `dry_run=True` still evaluates and records the would-have-held
+  outcome but flags it (`checkpoint["dry_run"]`) rather than affecting enforcement
+  semantics.
+- Failure semantics (gating decisions doc §1) implemented literally, one branch per
+  table row, each cited by comment in `engine.py`: local-view-unhealthy triggers
+  `ledger.reindex()` then fails this decision closed; signing-key-unavailable fails
+  closed with no capsule persisted; ledger-append-fail (caught via `OSError`) fails
+  closed with no capsule persisted; staleness and engine-unreachable fail closed by
+  default and only fail open for a class both marked `fail_open_allowed` in the
+  taxonomy AND explicitly named in `fail_open_classes` (reduced-assurance is then
+  recorded on the checkpoint); anchor/witness-unreachable never blocks (v0 has no
+  anchor at all yet, so this is unconditional by construction, not a live branch).
+  Signing-key and ledger-append degradations are tracked as open and flushed as a
+  signed `operator_alert`/`degradation_recovered` event capsule on the next
+  successful `check()` call — never a silent resume.
+- `classes.py` — starter action-class taxonomy: `money.transfer`, `data.delete`,
+  `comms.external` (all consequential), `info.query` (the one low-risk,
+  fail-open-eligible class, so that path is real and tested, not theoretical).
+  `classify(None)` and any unrecognized name both resolve to a `consequential=True,
+  fail_open_allowed=False` default — the classification-default loophole closed by
+  construction, independently tested.
+- `capsule.py` — decision-capsule builder. Uses only existing -02 disposition
+  vocabulary: `allow` leaves `verdict_class` absent (spec: "legitimately absent for a
+  clean executed verdict" — the guard didn't itself execute anything), `deny` uses
+  `blocked`, `escalate` uses `deferred` per this task's own kickoff instruction. Money
+  amounts have no field in the core -02 schema, so they live in one namespaced payload
+  extension (`asg_payload`: `amount_minor`/`currency`/`target`/`action_class`/
+  `checkpoint`), committed into `capsule_id` like every other field (never a repurposed
+  spec field, per the workspace's extension rule) — confirmed by reading
+  `compute_capsule_id`/`Capsule.to_dict()` directly rather than assumed.
+- `signing.py` — v0 has no COSE/asymmetric signer anywhere in the reference library, so
+  capsules stay `self_attested` throughout (matching every other capsule this package
+  or the reference library itself produces); `LocalSigner` is a local HMAC-SHA256
+  signer. The signature is computed over the pre-signature canonical body and then the
+  `{key_id, alg, sig}` block is folded back into the body *before* `capsule_id` is
+  computed — so the signature itself is tamper-evident via the ordinary digest
+  recompute in `agent_action_capsule.verify()`, with no separate verification step
+  this v0 doesn't have.
+- `checks/dedupe.py`, `checks/caps.py`, `checks/verify_before_dispatch.py` — exact-match
+  equivalence digest (works against capsules this guard never produced, e.g. imported
+  ledgers, since it's computed only from core fields + the `action_id` verb prefix);
+  a real T1 fold replay (`spend.weekly/1.0.0`, new catalog definition) for
+  `weekly_spend + amount <= cap`, filtered to `disposition.decision == "accept"` so a
+  blocked attempt's amount never inflates a future cap check; `verify_before_dispatch`
+  fetches the cited mandate and requires `ledger.verify(...).ok` (catches
+  "approved-then-altered" via the same digest-mismatch path any tamper would trip).
+
+**Two vocabulary/spec gaps found by reading `contracts.py`/`parse.py`/`REGISTRY.md`/the
+-02 spec directly (flagged per the task's own instruction, nothing invented) — see Needs
+decision below.**
+
+**Verified:**
+- `pip install -e ".[dev]"` clean; `pytest -q` → 74 passed (61 T1/T2 + 13 new T3 test
+  files' worth, folded across `test_guard_failure_semantics.py` (10 tests, one per
+  table row incl. two fail-open variants),
+  `test_guard_eur150k_bridge.py`, `test_guard_dry_run.py`); `ruff check .` clean.
+- `test_guard_eur150k_bridge.py` uses the real
+  `capsule-emit/examples/amaury-receipt-pack/sample_ledger.jsonl` (copied into
+  `tests/fixtures/` by T2, not re-copied here), capsule `cd0692b3`: the guard
+  independently blocks the same €150,000 transfer on its own fold evidence
+  (`weekly_spend_minor=0` since no prior *accepted* spend exists, `+15,000,000 minor
+  units > cap`), and the new decision capsule verifies (`ledger.verify(...).ok`) and is
+  the sole `supersedes`-chained capsule closing `cd0692b3`'s open `blocked` state.
+- `test_guard_dry_run.py`: replays all 36 near-identical `record_transaction` capsules
+  in `nanda_transaction_ledger.jsonl` through `check(..., dry_run=True)` — first passes
+  dedupe, all 35 repeats would-have-held on dedupe, none of it blocks recording; and
+  replays `amaury_sample_ledger.jsonl`'s `transfer_funds` action the same way, would-have-
+  held on caps.
+- Mutant-checked, per the standing guardrail: the signing-key-unavailable guard clause
+  (`if signer is None:`) and the ledger-append `except OSError` clause were each
+  temporarily disabled/narrowed, confirmed the corresponding test in
+  `test_guard_failure_semantics.py` flips to failure (an `AttributeError` and an
+  unhandled `OSError` respectively), then reverted and reconfirmed 74/74 green. Did not
+  mutant-check every row given context budget — flagging rather than silently skipping;
+  the two checked are the addendum's own explicitly-named highest-risk row
+  (signing-key) plus the other genuinely-can't-persist row (ledger-append); the
+  remaining rows (view-unhealthy, staleness ×2, engine-unreachable ×2,
+  anchor/witness-never-blocks, classification-default ×2) are covered by passing tests
+  but not individually mutant-probed this session.
+- Neutrality: grepped all new files for `gopher-ai`/`getgopher`/`gopher_ai`/"Agent
+  Accountability Manager"/`AAM` — none found.
+
+**Not done / out of scope this session:** wiring `guard` into the `asg` CLI (T4's job
+per the task list); an actual `escalate` trigger beyond
+`verify_before_dispatch`-mandate-not-found (a deliberate, disclosed v0 policy choice —
+see Needs decision); a real crypto signer (COSE/asymmetric) — v0's HMAC stand-in matches
+the `self_attested` mode every other capsule in this workspace uses, but is not a
+verifiable-by-a-neutral-party signature and should not be treated as one; the mutant
+sweep did not cover every failure-semantics row (see above).
+
+## Needs decision
+
+### [T3] `relation: resolves` is not a registered `chain.relation` value
+
+The task's acceptance text says the EUR150k decision capsule should chain with
+`relation: resolves`. Checked `agent-action-capsule/spec/REGISTRY.md` and the -02 spec
+directly: the `chain.relation` registry contains exactly `confirms`, `supersedes`,
+`epoch_opens` — no `resolves`. Per the task's own instruction not to invent tokens,
+used `supersedes` instead: its own registry definition — "Terminal transition over the
+parent — resolution, expiry, escalation close/replace the parent's open state" — is
+literally the concept "resolves" was pointing at, and `blocked` (the sample ledger's
+`cd0692b3`) is a formal open-item `verdict_class` per the -02 spec's open-items
+predicate, closed only by a `supersedes`-chained capsule. No code is blocked on this;
+if `resolves` is later registered as a distinct token with different semantics than
+`supersedes`, `capsule.py`'s `chain_relation` param is a one-line change.
+
+### [T3] `deferred` vs `hitl_dispatched` for the escalate outcome
+
+Followed the kickoff's explicit instruction to use the existing `deferred` vocabulary
+for escalate (`disposition.decision` and `verdict_class` both `deferred`). Reading the
+-02 spec directly: `deferred` is defined as "a human elected to postpone the decision"
+(retrospective — a human already acted), while `hitl_dispatched` is "routed to a human
+operator, awaiting resolution" — which reads as the closer semantic fit for an
+*automated* guard escalation (no human has acted yet; the guard is the one routing it).
+Used `deferred` per the explicit instruction rather than substitute my own judgment
+silently; flagging the tension in case the intended token was actually
+`hitl_dispatched`. No code changes blocked — `capsule.py`'s `_DISPOSITION_BY_OUTCOME`
+table is a two-line change if this should flip.
+
+### [T3] `caps`-check failure maps to `deny`, not `escalate`
+
+The dev-persona doc's own CLI mockup (`messaging-developer-persona-2026-08-02.md`,
+"Checks: policy that runs like CI") shows a cap-exceeded mandate check resulting in
+"escalated to human review", but this task's acceptance text explicitly requires the
+EUR150k cap-exceeded scenario to come out "blocked". Since the two sources conflict,
+followed the literal acceptance text: `caps` failure -> `deny` (`blocked`) always in
+this v0. `escalate` is reachable only via `verify_before_dispatch` citing a mandate
+`capsule_id` that isn't found in the ledger (ambiguous — could be a legitimate
+first-time citation, not a definitive violation) as distinct from one that's found but
+fails verification (a clear integrity violation -> `deny`). Flagging in case the
+product intent is actually for cap violations to route to human review rather than
+deny outright — that would be a policy change in `engine.py`'s `_decide()`, not an
+architectural one.
 
 ## Pinned addenda (operator-supplied 2026-08-04, not yet incorporated into a coder kickoff)
 
