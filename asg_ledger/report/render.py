@@ -16,16 +16,77 @@ tags are dropped (an external network fetch would violate "no network
 calls in the page"); the same font-family declarations are kept so a
 browser with those fonts installed locally still renders them, with a
 close system-font fallback otherwise.
+
+``arm`` (see ``asg_ledger/packaging.py``) controls whether the evidence
+chrome -- the share/permalink row, the redaction disclosure, per-row
+capsule fingerprints, the consequential callout's cited-capsule links, the
+verify-suggestion in the meta line, and the re-derivation footer -- is
+rendered at all in "guards-only". ``verify.js`` itself is never edited for
+this: the same script ships unmodified in both arms (so the JS/Python
+digest-parity tests keep meaning what they say), and the guards-only CSS
+below simply never shows the elements it would have filled in. The
+underlying fragment payload is unchanged either way -- "silent in output",
+never absent from the machinery.
+
+``telemetry`` (opt-in, see ``asg_ledger/telemetry/``) is ``None`` by
+default, in which case nothing telemetry-related is ever added to the page
+and the "no network calls in the page" property holds unconditionally, the
+same as before this module knew about telemetry at all. Only when a caller
+explicitly passes a ``TelemetryConfig`` (meaning: the operator explicitly
+opted in *and* configured a real endpoint when generating this report) does
+the page gain one small, disclosed, best-effort beacon -- see
+``TelemetryConfig``'s own docstring for exactly what it sends and why.
 """
 from __future__ import annotations
 
 import base64
 import json
+import uuid
+from dataclasses import dataclass
 from importlib import resources
 
+from ..packaging import FULL, GUARDS_ONLY
 from .model import DryRunReport, GuardSection
 
-__all__ = ["to_fragment_payload", "encode_fragment", "decode_fragment", "render_report_html"]
+__all__ = [
+    "to_fragment_payload",
+    "encode_fragment",
+    "decode_fragment",
+    "render_report_html",
+    "TelemetryConfig",
+]
+
+
+@dataclass(frozen=True)
+class TelemetryConfig:
+    """Explicit, per-report opt-in for the M6 ("viral unit") open-beacon.
+
+    ``endpoint`` has no default anywhere in this codebase -- there is no
+    telemetry backend shipped or implied by this package, so a config with
+    no endpoint configured is inert by construction, not by a runtime
+    check. When both fields are meaningfully set, the rendered page embeds
+    a single anonymous ``navigator.sendBeacon`` call on load, deduped per
+    browser via localStorage so a refresh never sends twice, carrying only
+    ``{"metric": "m6_report_opened", "report_token": <random, generated at
+    render time, not derived from any ledger content>}`` -- no agent name,
+    amount, or capsule id. Distinguishing "the creator's own first look" from
+    "a second party opened it" is deliberately NOT done client-side (this
+    page cannot know who it's being opened by): every open of a shared link
+    sends one beacon, and a *central* aggregator counts a report_token with
+    two or more distinct opens as the second-party event -- consistent with
+    this package's own rule that cross-install/cross-party facts are
+    computed centrally, never guessed at by a single instance. The
+    in-page disclosure banner gains one extra line describing this
+    whenever it's active, so a second-party viewer sees the same
+    disclosure the creator did.
+    """
+
+    opted_in: bool
+    endpoint: str | None = None
+
+    @property
+    def active(self) -> bool:
+        return bool(self.opted_in and self.endpoint)
 
 
 def _guard_index(report: DryRunReport, guard_id: str) -> int:
@@ -199,20 +260,71 @@ _CSS = """
   [hidden] { display: none !important; }
 """
 
+# Guards-only ("Arm A"): the evidence chrome above is only ever hidden here,
+# never removed from the DOM or from verify.js's own logic -- see this
+# module's docstring for why (verify.js stays byte-identical across arms).
+_GUARDS_ONLY_CSS = """
+  [data-arm="guards-only"] .share-row,
+  [data-arm="guards-only"] .disclosure,
+  [data-arm="guards-only"] .row-fp,
+  [data-arm="guards-only"] .meta-verify-suggestion,
+  [data-arm="guards-only"] .below-card,
+  [data-arm="guards-only"] [data-consequential-links],
+  [data-arm="guards-only"] [data-verified-badge] { display: none !important; }
+  [data-arm="guards-only"] .guard-row { grid-template-columns: 96px 168px 1fr; }
+"""
 
-def _static_html_shell() -> str:
-    """The generic viewer chrome -- identical for every report, carries no
-    ledger data. ``verify.js`` fills every dynamic value in from the URL
-    fragment at load time."""
+
+def _telemetry_disclosure_line(telemetry: TelemetryConfig | None) -> str:
+    if telemetry is None or not telemetry.active:
+        return ""
+    return (
+        ' <span data-telemetry-disclosure>This report was generated with anonymous open-tracking turned on: '
+        "opening this link sends one beacon (no row data, just an anonymous per-report token) to "
+        f"{telemetry.endpoint!r} to measure sharing.</span>"
+    )
+
+
+def _telemetry_beacon_script(report_token: str, telemetry: TelemetryConfig | None) -> str:
+    if telemetry is None or not telemetry.active:
+        return ""
+    return f"""
+<script>
+(function () {{
+  "use strict";
+  var TOKEN = {json.dumps(report_token)};
+  var ENDPOINT = {json.dumps(telemetry.endpoint)};
+  if (!TOKEN || !ENDPOINT || !navigator.sendBeacon) return;
+  var dedupeKey = "asg_ledger_viral_beacon_" + TOKEN;
+  try {{
+    if (window.localStorage && localStorage.getItem(dedupeKey)) return;
+    if (window.localStorage) localStorage.setItem(dedupeKey, "1");
+  }} catch (e) {{ /* localStorage unavailable (private mode, etc.) -- still fine to send once */ }}
+  // No row data: an anonymous per-report token only. A single install
+  // cannot tell creator from second party -- see TelemetryConfig's
+  // docstring on why that's decided centrally, by counting distinct opens.
+  navigator.sendBeacon(ENDPOINT, JSON.stringify({{ metric: "m6_report_opened", report_token: TOKEN }}));
+}})();
+</script>
+"""
+
+
+def _static_html_shell(arm: str = FULL, *, telemetry: TelemetryConfig | None = None) -> str:
+    """The generic viewer chrome -- identical for every report of a given
+    arm, carries no ledger data. ``verify.js`` fills every dynamic value in
+    from the URL fragment at load time; it is never edited per-arm (see
+    this module's docstring)."""
+    report_token = str(uuid.uuid4())
+    extra_css = _GUARDS_ONLY_CSS if arm == GUARDS_ONLY else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dry run report</title>
-<style>{_CSS}</style>
+<style>{_CSS}{extra_css}</style>
 </head>
-<body>
+<body data-arm="{arm}">
 <div class="wrap">
 
   <div class="share-row">
@@ -227,7 +339,7 @@ def _static_html_shell() -> str:
     <span class="bang">!</span>
     <p>Sharing this link shares these rows — agent names, counterparties, invoice numbers, amounts. The
       report travels in the link fragment, never on our server. Use <strong>redact for sharing</strong>
-      to seal names and amounts first (the seals stay checkable).</p>
+      to seal names and amounts first (the seals stay checkable).{_telemetry_disclosure_line(telemetry)}</p>
   </div>
 
   <div class="empty-state" data-empty-state>
@@ -245,8 +357,8 @@ def _static_html_shell() -> str:
       <p class="subtitle">Launch guards replayed over every action your agents took. All of these actions
         executed for real — this is what enforcement would have held for review.</p>
       <div class="meta mono">operator <span data-operator></span> · <span data-agent-count></span> agents ·
-        derived from records <span data-record-range></span> under checkpoint #<span data-checkpoint></span> ·
-        replayable by anyone: <span data-verify-command></span></div>
+        derived from records <span data-record-range></span> under checkpoint #<span data-checkpoint></span>
+        <span class="meta-verify-suggestion"> · replayable by anyone: <span data-verify-command></span></span></div>
     </div>
 
     <div class="headline-grid">
@@ -336,15 +448,20 @@ def _static_html_shell() -> str:
 <script>
 {_load_verify_js()}
 </script>
-</body>
+{_telemetry_beacon_script(report_token, telemetry)}</body>
 </html>
 """
 
 
-def render_report_html(report: DryRunReport) -> tuple[str, str]:
+def render_report_html(
+    report: DryRunReport, *, arm: str = FULL, telemetry: TelemetryConfig | None = None
+) -> tuple[str, str]:
     """Returns ``(html, fragment)``. ``html`` carries no ledger data at all;
     open it as ``<file-or-url>#<fragment>`` to see the report -- see this
-    module's docstring for why that split is the point, not an inconvenience."""
-    html = _static_html_shell()
+    module's docstring for why that split is the point, not an inconvenience.
+    ``arm`` and ``telemetry`` only affect the static shell (evidence chrome
+    visibility, the optional open-beacon); the fragment payload is always
+    the full, real report data either way."""
+    html = _static_html_shell(arm, telemetry=telemetry)
     fragment = encode_fragment(to_fragment_payload(report))
     return html, fragment
