@@ -75,6 +75,12 @@ def _collect_with_parents(store, matched):
 
 
 def run(args: argparse.Namespace) -> int:
+    # ``bundle`` only exists at all in the "full" packaging arm -- see
+    # ``cli/main.py`` -- so any use of it is M5's "bundle/share created" fact.
+    from ..telemetry.record import record_evidence_touch
+
+    record_evidence_touch("full")
+
     ledger_path = require_ledger_path("bundle", args)
     if ledger_path is None:
         return 2
