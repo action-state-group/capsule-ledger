@@ -1,8 +1,8 @@
 """`asg` CLI entry point: git-style verbs over the ledger query API
-(log/show/verify/bundle), the fold catalog (fold list/new/test/lint), the
-guard-check/action-class catalog (constraints list), a per-agent summary
-(agents --status), and the guard API's dry-run report (guard dry-run).
-`diff`/`blame`/`bisect` are stubbed only -- batch 2.
+(log/show/verify/bundle/diff/blame/bisect), the fold catalog (fold
+list/new/test/lint), the guard-check/action-class catalog (constraints
+list), a per-agent summary (agents --status), and the guard API's dry-run
+report (guard dry-run).
 
 This module is a thin dispatcher; each verb's logic lives in its own
 `cli/*_cmd.py` (or `*_cmds.py` for a verb group) module.
@@ -14,13 +14,15 @@ import sys
 
 from . import (
     agents_cmd,
+    bisect_cmd,
+    blame_cmd,
     bundle_cmd,
     constraints_cmd,
+    diff_cmd,
     fold_cmds,
     guard_cmds,
     log_cmd,
     show_cmd,
-    stub_cmds,
     verify_cmd,
 )
 
@@ -40,7 +42,9 @@ def _build_parser() -> argparse.ArgumentParser:
     constraints_cmd.add_parser(sub)
     agents_cmd.add_parser(sub)
     guard_cmds.add_parser(sub)
-    stub_cmds.add_parsers(sub)
+    diff_cmd.add_parser(sub)
+    blame_cmd.add_parser(sub)
+    bisect_cmd.add_parser(sub)
 
     return parser
 
