@@ -16,7 +16,7 @@ Every guard decision, every fold result, and every refusal is a record — check
   fragment (after `#`), never server-side or fetched — the page re-derives its own numbers and
   re-verifies every cited capsule's digest from that fragment when opened.
 - `asg_ledger/cli/` — the `asg` command line (git-verb shaped: `log`, `show`, `verify`, `bundle`, `fold`, ...).
-- `asg_ledger/mcp/` — a read-only MCP advisory server exposing the same ledger, folds, and guards to agent harnesses.
+- `asg_ledger/mcp/` — an MCP advisory server exposing the same ledger, folds, and guards to agent harnesses (nine read-only tools, plus `intent_declare` — the only tool that writes).
 - `asg_ledger/vectors/` — pinned test vectors: known-answer results, determinism probes, and MUST-FAIL cases.
 
 This is a scaffold. The subpackages above are stubs; behavior lands incrementally.

@@ -10,7 +10,7 @@ from pathlib import Path
 from ..folds.catalog import Catalog
 from ..guards.classes import TAXONOMY, UNCLASSIFIED_DEFAULT
 
-__all__ = ["add_parser", "run_list"]
+__all__ = ["add_parser", "run_list", "CHECKS", "DEFAULT_CAPS_FOLD_ID", "DEFAULT_CATALOG_DIR"]
 
 DEFAULT_CATALOG_DIR = Path(__file__).resolve().parent.parent / "folds" / "catalog_defs"
 # The caps check's fold is a per-deployment GuardEngine configuration
@@ -21,7 +21,9 @@ DEFAULT_CAPS_FOLD_ID = "spend.weekly/1.0.0"
 
 # (check_id, check_type, method, description) -- method is None for `caps`,
 # whose method is the configured fold_id, resolved at print time below.
-_CHECKS = [
+# Public (not `_`-prefixed): the MCP server's `constraints.list` tool reuses
+# this exact catalog rather than keeping its own copy in sync by hand.
+CHECKS = [
     (
         "dedupe",
         "policy",
@@ -61,7 +63,7 @@ def run_list(args: argparse.Namespace) -> int:
     caps_method = caps_entry.definition.fold_id if caps_entry is not None else "(no caps fold configured)"
 
     print("checks:")
-    for check_id, check_type, method, description in _CHECKS:
+    for check_id, check_type, method, description in CHECKS:
         resolved_method = caps_method if check_id == "caps" else method
         print(f"  {check_id:<24} {check_type:<8} {resolved_method:<28} {description}")
 
