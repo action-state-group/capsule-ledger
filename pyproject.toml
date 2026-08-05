@@ -37,6 +37,7 @@ include = ["asg_ledger*"]
 
 [tool.setuptools.package-data]
 asg_ledger = [
+    "report/static/*.js",
     "folds/catalog_defs/*.yaml",
     "vectors/fixtures/kat/*/*.yaml",
     "vectors/fixtures/kat/*/*.jsonl",
