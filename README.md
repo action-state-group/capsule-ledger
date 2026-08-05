@@ -11,6 +11,10 @@ Every guard decision, every fold result, and every refusal is a record — check
 - `asg_ledger/ledger/` — append-only store and the query API (agent, time range, counterparty, verdict, action type).
 - `asg_ledger/folds/` — declarative fold definitions (count/sum/min/max/last, keyed and windowed) and their replay evaluation.
 - `asg_ledger/guards/` — the guard API: `check(action) -> allow | deny | escalate`, plus `dry_run`.
+- `asg_ledger/report/` — `asg guard dry-run`: replays a ledger through the guard checks and emits a
+  self-contained HTML report. The report's cited records travel only in the shared link's URL
+  fragment (after `#`), never server-side or fetched — the page re-derives its own numbers and
+  re-verifies every cited capsule's digest from that fragment when opened.
 - `asg_ledger/cli/` — the `asg` command line (git-verb shaped: `log`, `show`, `verify`, `bundle`, `fold`, ...).
 - `asg_ledger/mcp/` — a read-only MCP advisory server exposing the same ledger, folds, and guards to agent harnesses.
 - `asg_ledger/vectors/` — pinned test vectors: known-answer results, determinism probes, and MUST-FAIL cases.
