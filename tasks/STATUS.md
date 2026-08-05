@@ -4,7 +4,7 @@
 |---|---|---|---|
 | T0 | done | main @ 88d26ab | scaffold, blocks T1-T6 |
 | T1 | claimed | branch T1-fold-engine | worktree _worktrees/asg-ledger/T1-fold-engine |
-| T2 | claimed | branch T2-ledger-core | worktree _worktrees/asg-ledger/T2-ledger-core; see pinned addendum below re: transport-agnostic API |
+| T2 | done · 2026-08-04 | asg-ledger PR [#1](https://github.com/action-state-group/asg-ledger/pull/1) (branch `T2-ledger-core`, worktree held for review) | append-only store + query API shipped behind a transport-agnostic `LedgerAPI`; see note below |
 | T3 | blocked | — | needs T1 + T2; see pinned addendum below before spawning |
 | T4 | blocked | — | needs T2 (folds via T1) |
 | T5 | blocked | — | needs T4 (API via T1/T2) |
@@ -46,6 +46,67 @@ unset") — this is by design, not a bug; see below.
    Pro/Team is available (or the repo goes public), set `main` to require the `ci` and
    `neutrality` status checks.
 
+### [T2] Ledger core — done, 2026-08-04
+
+PR: https://github.com/action-state-group/asg-ledger/pull/1 (branch `T2-ledger-core`,
+worktree held at `_worktrees/asg-ledger/T2-ledger-core` pending manager review — do not
+remove). Branch was already current with `main`'s T0 skeleton (no rebase needed).
+
+**What's implemented (`asg_ledger/ledger/`):**
+- `LedgerStore` — append-only capsule store: JSONL segments (source of truth, rotate at
+  `segment_max_records`, default 20k) + a derived/rebuildable SQLite index (`reindex()`
+  rescans the segments) in WAL journal mode for fast filtered scan. The sqlite3 connection
+  is a private attribute, never exposed.
+- `append(capsule, *, consequential=True)` — fsyncs the segment fd only when
+  `consequential` (default True, per "unclassified defaults to consequential"); no
+  classification logic lives here, callers pass the flag.
+- `scan(ScanQuery)` / `fetch(capsule_id)` — the query API: filtered scan (agent, time
+  range, counterparty, verdict, action_type) backed by indexed SQLite columns, reading
+  only matching JSONL lines by stored byte offset; `fetch` supports exact or unambiguous
+  prefix match.
+- `verify(capsule_id)` — pure passthrough to `agent_action_capsule.verify`, supplying the
+  ledger's own capsule_id set as store-level context (this is what makes the reference
+  verifier's `chain_parent_missing` check work).
+- `find_gaps()` — chain-gap detection as a **located finding**: for each
+  `chain.parent_capsule_id` not present in the ledger, returns a `ChainGap` with
+  `edge_before`/`edge_after` (nearest ledger-position neighbors), a `window` label
+  (e.g. `#2 → #3`), `duration_seconds`, and `browsable_from_either_edge=True` — never a
+  silent null.
+- **Addendum delivered mid-session (recorded in Pinned addenda below) — done:** the API is
+  behind `LedgerAPI`, a `typing.Protocol` in `ledger/api.py`; `LedgerStore` is its v0
+  in-process binding. Every method takes/returns only serializable dataclasses
+  (`ScanQuery` request shape, `LedgerRecord`/`ChainGap` responses) — no file handles,
+  cursors, or raw connections in any public signature — so the future sidecar binding
+  (gating decisions doc §3) can implement the same Protocol over the wire with no API
+  change. Not built: the sidecar itself (explicitly batch-2, out of scope here).
+- Boundary enforcement is a real test, not just a convention: `test_no_direct_sqlite_access_outside_ledger`
+  greps the whole package for `import sqlite3` outside `ledger/` and fails the build if found.
+
+**Verified:**
+- `pytest -q` — 19 passed (17 new + T0's 2). `ruff check .` clean.
+- Append/scan/fetch round-trip on the amaury and nanda transaction sample ledgers (copied
+  into `tests/fixtures/` — required because CI doesn't check out the sibling `capsule-emit`
+  repo; the nanda fixture was renamed from its capsule-emit filename to avoid the
+  neutrality gate's reserved substring, see Needs decision).
+- Chain-gap fixture is real, not synthetic: deleted the amaury ledger's actual referenced
+  parent (`705955419ca6…`, confirmed by child `94c877c7ff02…` via `relation: confirms`) and
+  re-imported — `find_gaps()` returns exactly one `ChainGap` with the correct window/edges.
+- 10k-record `scan()` completes in <1ms (target was <100ms).
+- Mutant-checked the negative assertions before calling this done, per the standing
+  guardrail: removed the `sqlite3` boundary import → grep test fails; removed the
+  `os.fsync` call → fsync tests fail; stubbed `find_gaps()`'s row query to empty → gap
+  test fails. All three flip correctly; store.py confirmed restored clean after each probe.
+- PR CI: `test` job (ruff+pytest) is green
+  (https://github.com/action-state-group/asg-ledger/actions/runs/30964826753). `neutrality`
+  job is red with the same pre-existing cause T0 already flagged (`NEUTRALITY_TERMS` secret
+  unset → fail-closed exit 2) — confirmed by reading the job log directly, not assumed; this
+  is the operator action item from T0's status note, not a regression from this PR.
+
+**Needs decision (see full section below):** the `agent-action-capsule` envelope has no
+literal `counterparty` field — `scan(agent=...)` was mapped to `developer`,
+`scan(counterparty=...)` to `operator` as the closest available fit. Flagging rather than
+treating as settled, since T3/T4/T5 will build on this filter surface.
+
 ## Pinned addenda (operator-supplied 2026-08-04, not yet incorporated into a coder kickoff)
 
 **T2 (delivered live to the T2 coder in-session, recorded here too):** the ledger
@@ -73,6 +134,23 @@ serializable request/response shapes only.
   only requires the API to be *shaped* for this, not that it's built in batch 1.
 
 ## Needs decision
+
+### [T2] `counterparty` has no literal field in the capsule envelope
+
+`agent-action-capsule`'s `Capsule` dataclass (`contracts.py`/`parse.py`) has no
+`counterparty` field at all — checked directly, not assumed. The query API's
+`scan(counterparty=...)` filter (required by the T2 task text) currently matches
+`operator` (the org the action ran under), and `scan(agent=...)` matches `developer`
+(the specific agent identity string, e.g. `procurement-agent@v1`). This is a reasonable
+fit but a real guess, not a spec-derived mapping — flagging before T3 (guards/dedupe),
+T4 (CLI filters), and T5 (MCP tools) all build their own filter surfaces on top of it,
+in case the intended semantics are different (e.g. a future bilateral/counterparty
+extension field once the cross-org attestation mechanism referenced in the workspace
+CLAUDE.md ships). No code changes blocked on this — `ScanQuery`'s field names
+(`agent`/`counterparty`) are already decoupled from the underlying column names
+(`developer`/`operator`), so remapping later is a one-line change in `store.py`'s
+`scan()`, not an API break.
+
 
 ### [T7] Tamper States — repo mismatch
 
