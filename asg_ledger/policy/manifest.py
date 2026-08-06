@@ -47,18 +47,21 @@ entry later instead of a manifest-format break now: "any vendor's gate" is
 the intended story, since the moat is the recording/envelope layer, not the
 constraint language.
 
-Design notes -- prior art considered, not adopted (harvest-audit pointers,
-2026-08-05, concept-only citations -- no code from either source was read
-or copied as part of building this module):
+Design notes -- prior art considered, not adopted (2026-08-05, concept-only;
+no external code was read or copied as part of building this module, and no
+external project names belong in this public repo, so pointers to the
+private inventory of that comparison live in this project's own non-public
+tracking, not here):
 
-- ``gopher-ai``'s ``manifest_registry.py`` content-hash + lifecycle-state
-  pattern is a closer analog to this manifest than what was originally
-  scoped for this task. Left as a pointer for whoever does that comparison
-  next; per the standing gopher-ai boundary this module was written
-  clean-room against public interfaces only.
-- ``clawwicket``'s three-way clearance taxonomy (deterministic /
-  operator-approval / evidence-first) is prior art worth evaluating against
-  this manifest's wicket-clearance model -- not inherited wholesale here.
+- A content-hash + lifecycle-state registry pattern from prior internal
+  tooling was flagged as a closer analog to this manifest than what was
+  originally scoped for this task. This module was written clean-room
+  against public interfaces only; the pointer for whoever does that
+  comparison next is tracked privately.
+- A three-way clearance taxonomy (deterministic / operator-approval /
+  evidence-first) from separate prior internal tooling is worth evaluating
+  against this manifest's wicket-clearance model -- not inherited wholesale
+  here.
 """
 from __future__ import annotations
 
