@@ -48,6 +48,9 @@ include = ["asg_ledger*"]
 [tool.setuptools.package-data]
 asg_ledger = [
     "report/static/*.js",
+    "console/*.css",
+    "console/*.html",
+    "console/*.js",
     "telemetry/fixtures/*.jsonl",
     "folds/catalog_defs/*.yaml",
     "vectors/fixtures/kat/*/*.yaml",
