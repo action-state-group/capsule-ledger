@@ -1,0 +1,85 @@
+# Dogfoods .github/actions/guard-check against this repo's own fixtures so
+# the Action is proven to work, not just declared. Two jobs:
+#   - guard-check-dogfood: the happy path, on real fixtures, with an
+#     assertion that both outputs were actually produced.
+#   - guard-check-catches-regressions: the negative path -- runs the same
+#     action against deliberately malformed input and asserts the relevant
+#     step actually FAILED. A check that can't fail is the recurring defect
+#     class this guards against (see AGENTS.md / project verification norms).
+name: guard-check-selftest
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  guard-check-dogfood:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run capsule guard-check against this repo's own fixtures
+        id: guard-check
+        uses: ./.github/actions/guard-check
+        with:
+          fold-dir: asg_ledger/folds/catalog_defs
+          guard-ledger: tests/fixtures/amaury_sample_ledger.jsonl
+          cap: money.transfer=10000000
+          diff-ledger: tests/fixtures/amaury_sample_ledger.jsonl
+          diff-from: '1'
+          diff-to: '3'
+
+      - name: Assert the action actually produced its outputs
+        shell: bash
+        env:
+          REPORT_PATH: ${{ steps.guard-check.outputs.dry-run-report }}
+          DIFF_JSON_PATH: ${{ steps.guard-check.outputs.diff-json }}
+        run: |
+          set -euo pipefail
+          [ -n "$REPORT_PATH" ] || { echo "expected a non-empty dry-run-report output"; exit 1; }
+          [ -f "$REPORT_PATH" ] || { echo "dry-run-report output path does not exist: $REPORT_PATH"; exit 1; }
+          [ -n "$DIFF_JSON_PATH" ] || { echo "expected a non-empty diff-json output"; exit 1; }
+          [ -f "$DIFF_JSON_PATH" ] || { echo "diff-json output path does not exist: $DIFF_JSON_PATH"; exit 1; }
+          grep -q '"blocked"' "$DIFF_JSON_PATH" || { echo "expected the epoch-diff to show a verdict delta"; exit 1; }
+          echo "guard-check dogfood: both outputs present and non-trivial"
+
+  guard-check-catches-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 'Negative case: malformed fold catalog must fail policy lint'
+        id: bad-lint
+        continue-on-error: true
+        uses: ./.github/actions/guard-check
+        with:
+          fold-dir: asg_ledger/vectors/fixtures/must_fail/undeclared_field_read
+
+      - name: 'Negative case: unresolvable epoch-diff ref must fail'
+        id: bad-diff
+        continue-on-error: true
+        uses: ./.github/actions/guard-check
+        with:
+          diff-ledger: tests/fixtures/amaury_sample_ledger.jsonl
+          diff-from: not-a-real-ref
+          diff-to: HEAD
+
+      - name: Assert both negative cases actually failed (mutant check)
+        shell: bash
+        env:
+          LINT_OUTCOME: ${{ steps.bad-lint.outcome }}
+          DIFF_OUTCOME: ${{ steps.bad-diff.outcome }}
+        run: |
+          set -euo pipefail
+          ok=1
+          if [ "$LINT_OUTCOME" != "failure" ]; then
+            echo "REGRESSION: malformed fold catalog did not fail guard-check (outcome: $LINT_OUTCOME)"
+            ok=0
+          fi
+          if [ "$DIFF_OUTCOME" != "failure" ]; then
+            echo "REGRESSION: unresolvable diff ref did not fail guard-check (outcome: $DIFF_OUTCOME)"
+            ok=0
+          fi
+          [ "$ok" = "1" ] || exit 1
+          echo "guard-check negative-path self-test: both bad inputs correctly failed the check"
