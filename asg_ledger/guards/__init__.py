@@ -10,7 +10,14 @@ from .action import Action
 from .capsule import ALLOW, DENY, ESCALATE, ConstraintOutcome, build_decision_capsule, build_event_capsule
 from .classes import ActionClass, classify
 from .engine import GuardDecision, GuardEngine
-from .signing import LocalSigner, Signer, SigningKeyUnavailable
+from .revocation import (
+    ROTATION_EVENT,
+    KeyWindow,
+    RevocationFinding,
+    build_key_timeline,
+    check_time_fenced_revocation,
+)
+from .signing import LocalSigner, Signer, SigningKeyUnavailable, key_fingerprint
 
 __all__ = [
     "Action",
@@ -27,4 +34,10 @@ __all__ = [
     "LocalSigner",
     "Signer",
     "SigningKeyUnavailable",
+    "key_fingerprint",
+    "ROTATION_EVENT",
+    "KeyWindow",
+    "RevocationFinding",
+    "build_key_timeline",
+    "check_time_fenced_revocation",
 ]
