@@ -40,6 +40,14 @@ Off by default. If explicitly turned on (`ASG_LEDGER_TELEMETRY=1`), this install
 The guard fails closed by default and records every degradation — see
 [`docs/failure-semantics.md`](docs/failure-semantics.md) for the full table.
 
+## CI Action for downstream repos
+
+`.github/actions/guard-check` is a composite GitHub Action other repos can
+`uses:` in their own CI to lint a guard config, replay it against a
+snapshot ledger, and epoch-diff guard behavior on PRs — see
+[`docs/ci-action.md`](docs/ci-action.md), including the honesty line on
+what pre-merge CI does and does not guarantee versus the live guard.
+
 ## Capsule parsing
 
 Records are parsed and verified through the public [`agent-action-capsule`](https://github.com/action-state-group/agent-action-capsule) reference library (published as `agent-action-capsule` on PyPI), declared as a normal dependency. It is never vendored or copied into this repo.
