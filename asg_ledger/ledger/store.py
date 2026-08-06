@@ -22,9 +22,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from agent_action_capsule import VerificationResult, compute_capsule_id
+from agent_action_capsule import Finding, VerificationResult, compute_capsule_id
 from agent_action_capsule import verify as _verify_capsule
 
+from ..guards.revocation import build_key_timeline, check_time_fenced_revocation
 from .api import LedgerAPI, ScanQuery
 from .records import ChainGap, LedgerRecord
 
@@ -315,17 +316,30 @@ class LedgerStore(LedgerAPI):
         return self._row_to_record(row)
 
     def verify(self, capsule_id: str) -> VerificationResult | None:
-        """Passthrough to ``agent_action_capsule.verify`` for a stored capsule.
+        """``agent_action_capsule.verify`` for a stored capsule, plus this
+        store's own time-fenced key-revocation check (`guards/revocation.py`)
+        layered on top.
 
-        No verification logic lives here — this only supplies the store-level
-        context (every capsule_id currently in the ledger) so that the reference
-        verifier's parent-existence check runs correctly.
+        The reference verifier is spec-level and payload-only — it has no
+        notion of this package's local signing keys or their rotation
+        history (see that module's own docstring). Rebuilding the key
+        timeline from this ledger's own ``key_rotation`` events and checking
+        this capsule's claimed key_id/timestamp against it is store-level
+        context, the same category as the parent-existence check below.
         """
         record = self.fetch(capsule_id)
         if record is None:
             return None
         all_ids = [r[0] for r in self._conn.execute("SELECT capsule_id FROM records")]
-        return _verify_capsule(record.capsule, store=all_ids)
+        result = _verify_capsule(record.capsule, store=all_ids)
+
+        timeline = build_key_timeline(self)
+        revocation = check_time_fenced_revocation(record.capsule, timeline)
+        if not revocation.ok:
+            result.findings.append(Finding("key_revoked_at_timestamp", revocation.reason, severity="error"))
+            result.ok = False
+
+        return result
 
     # -- chain-gap detection ------------------------------------------------
 

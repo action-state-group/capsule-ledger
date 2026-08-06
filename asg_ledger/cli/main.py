@@ -28,6 +28,7 @@ from . import (
     diff_cmd,
     fold_cmds,
     guard_cmds,
+    key_cmds,
     log_cmd,
     show_cmd,
     telemetry_cmd,
@@ -47,6 +48,7 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     constraints_cmd.add_parser(sub)
     agents_cmd.add_parser(sub)
     guard_cmds.add_parser(sub)
+    key_cmds.add_parser(sub)
     diff_cmd.add_parser(sub)
     blame_cmd.add_parser(sub)
     bisect_cmd.add_parser(sub)
@@ -87,6 +89,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "guard":
         if getattr(args, "guard_command", None) is None:
             args.guard_parser.print_help()
+            return 0
+        return args.func(args)
+
+    if args.command == "key":
+        if getattr(args, "key_command", None) is None:
+            args.key_parser.print_help()
             return 0
         return args.func(args)
 
