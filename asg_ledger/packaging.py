@@ -24,7 +24,7 @@ persistent config file, or a per-invocation CLI flag.
   friction to the "clean install" acceptance test this task is measured
   against.
 * An env var can be set once (in the environment an operator already
-  controls for their agent runtime) and then every ``asg`` invocation in
+  controls for their agent runtime) and then every ``capsule`` invocation in
   that environment picks it up consistently, with zero extra state and zero
   per-command overhead.
 """

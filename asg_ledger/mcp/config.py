@@ -5,7 +5,7 @@
 binding. ``"local"`` -- the only value implemented in v0 -- opens a
 :class:`~asg_ledger.ledger.store.LedgerStore` rooted at ``ledger_path`` (or imports a
 JSONL fixture into one, reusing the CLI's own ``open_ledger`` convenience so a
-fixture under ``tests/fixtures/`` works here exactly as it does for `asg log`) and
+fixture under ``tests/fixtures/`` works here exactly as it does for `capsule log`) and
 keeps it open for the life of the process.
 
 Any other value is the seam for a future remote/paid backend: same tools, same

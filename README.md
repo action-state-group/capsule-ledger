@@ -11,11 +11,11 @@ Every guard decision, every fold result, and every refusal is a record — check
 - `asg_ledger/ledger/` — append-only store and the query API (agent, time range, counterparty, verdict, action type).
 - `asg_ledger/folds/` — declarative fold definitions (count/sum/min/max/last, keyed and windowed) and their replay evaluation.
 - `asg_ledger/guards/` — the guard API: `check(action) -> allow | deny | escalate`, plus `dry_run`.
-- `asg_ledger/report/` — `asg guard dry-run`: replays a ledger through the guard checks and emits a
+- `asg_ledger/report/` — `capsule guard dry-run`: replays a ledger through the guard checks and emits a
   self-contained HTML report. The report's cited records travel only in the shared link's URL
   fragment (after `#`), never server-side or fetched — the page re-derives its own numbers and
   re-verifies every cited capsule's digest from that fragment when opened.
-- `asg_ledger/cli/` — the `asg` command line (git-verb shaped: `log`, `show`, `verify`, `bundle`, `fold`, ...).
+- `asg_ledger/cli/` — the `capsule` command line (git-verb shaped: `log`, `show`, `verify`, `bundle`, `fold`, ...).
 - `asg_ledger/mcp/` — an MCP advisory server exposing the same ledger, folds, and guards to agent harnesses (nine read-only tools, plus `intent_declare` — the only tool that writes).
 - `asg_ledger/vectors/` — pinned test vectors: known-answer results, determinism probes, and MUST-FAIL cases.
 - `asg_ledger/telemetry/` — opt-in-disclosed, aggregate-only usage instrumentation and the 6-metric funnel report generator (see below).
@@ -33,7 +33,7 @@ See `asg_ledger/packaging.py` for the mechanism and the reasoning behind picking
 
 ## Telemetry
 
-Off by default. If explicitly turned on (`ASG_LEDGER_TELEMETRY=1`), this install reports a handful of yes/no or count-shaped facts about how the package gets used (e.g. "was a guard configured shortly after install") — never what was configured, blocked, or held, and never any ledger content. Run `asg telemetry status` to see the full disclosure text and current state, and `asg telemetry funnel --dry-run` to see the report shape rendered against synthetic data. See `asg_ledger/telemetry/` for the implementation.
+Off by default. If explicitly turned on (`ASG_LEDGER_TELEMETRY=1`), this install reports a handful of yes/no or count-shaped facts about how the package gets used (e.g. "was a guard configured shortly after install") — never what was configured, blocked, or held, and never any ledger content. Run `capsule telemetry status` to see the full disclosure text and current state, and `capsule telemetry funnel --dry-run` to see the report shape rendered against synthetic data. See `asg_ledger/telemetry/` for the implementation.
 
 ## Failure semantics
 

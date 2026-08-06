@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg telemetry`: disclosure/status, and the 6-metric funnel report
+"""`capsule telemetry`: disclosure/status, and the 6-metric funnel report
 generator -- a reporting tool over already-collected events, not the
 collection itself. See ``asg_ledger/telemetry/`` for the instrumentation."""
 from __future__ import annotations
@@ -40,7 +40,7 @@ def _cmd_funnel(args: argparse.Namespace) -> int:
     from ..telemetry.funnel import compute_funnel, render_funnel_report
 
     if not args.dry_run and not args.events:
-        print("asg telemetry funnel: --events PATH is required unless --dry-run is given", file=sys.stderr)
+        print("capsule telemetry funnel: --events PATH is required unless --dry-run is given", file=sys.stderr)
         return 2
 
     raw_events = _load_events(args.events, use_fixture=args.dry_run)

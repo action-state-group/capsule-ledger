@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``asg guard`` verbs: dry-run replay + self-contained HTML report (moved
+"""``capsule guard`` verbs: dry-run replay + self-contained HTML report (moved
 here, matching ``fold_cmds.py``'s per-verb-module convention, so ``main.py``
 stays a thin dispatcher), plus ``guard enforce`` -- a minimal, honest local
 marker command (see ``_cmd_guard_enforce``'s own docstring for exactly what
@@ -147,7 +147,7 @@ def _cmd_guard_enforce(args: argparse.Namespace) -> int:
     only ever drives it in dry-run mode via ``guard dry-run``); this
     command does not gate anything itself. It exists so there is a real,
     minimal, honest action to record the M2 ("enforcement-on") telemetry
-    fact against, matching the report's own "$ asg guard enforce" callout.
+    fact against, matching the report's own "$ capsule guard enforce" callout.
     """
     from ..telemetry.record import record_enforcement_flip
 
@@ -204,7 +204,7 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     p_dry_run.add_argument(
         "--telemetry-opt-in", action="store_true",
         help="embed a disclosed, anonymous open-beacon in the report for the M6 (viral unit) metric -- "
-        "requires --telemetry-endpoint too, and is off by default; see `asg telemetry status`",
+        "requires --telemetry-endpoint too, and is off by default; see `capsule telemetry status`",
     )
     p_dry_run.add_argument(
         "--telemetry-endpoint", default=os.environ.get("ASG_LEDGER_TELEMETRY_ENDPOINT"),

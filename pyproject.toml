@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "asg-ledger"
+name = "capsule-ledger"
 version = "0.0.1"
 description = "Local control-plane ledger, verifiable folds, and enforcement guards for AI agent actions."
 readme = "README.md"
@@ -24,8 +24,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/action-state-group/asg-ledger"
-Source = "https://github.com/action-state-group/asg-ledger"
+Homepage = "https://github.com/action-state-group/capsule-ledger"
+Source = "https://github.com/action-state-group/capsule-ledger"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0"]
@@ -35,6 +35,9 @@ dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0"]
 mcp = ["mcp>=1.0,<2.0"]
 
 [project.scripts]
+capsule = "asg_ledger.cli:main"
+capsule-mcp = "asg_ledger.mcp.server:main"
+# Hidden aliases, undocumented: kept working for one release post-rename to `capsule`.
 asg = "asg_ledger.cli:main"
 asg-mcp = "asg_ledger.mcp.server:main"
 

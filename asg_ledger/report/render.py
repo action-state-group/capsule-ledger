@@ -350,7 +350,7 @@ def _static_html_shell(arm: str = FULL, *, telemetry: TelemetryConfig | None = N
   <div class="card" data-card hidden>
     <div class="card-header">
       <div class="card-header-top">
-        <span class="wordmark serif">asg <span style="color:#C8611A">guard</span></span>
+        <span class="wordmark serif">capsule <span style="color:#C8611A">guard</span></span>
         <span class="badge mono">dry run — nothing was actually blocked</span>
       </div>
       <h1 class="serif">What the guards <em>would have stopped</em> last week</h1>
@@ -402,7 +402,7 @@ def _static_html_shell(arm: str = FULL, *, telemetry: TelemetryConfig | None = N
       <div class="tuning-box">
         <div class="tuning-label">Tune before you enforce</div>
         <div class="tuning-cmd mono">
-          asg guard set &lt;action-class&gt;-cap &lt;new-value&gt;  <span style="color:#C8611A"># value from the note above — your call</span><br>
+          capsule guard set &lt;action-class&gt;-cap &lt;new-value&gt;  <span style="color:#C8611A"># value from the note above — your call</span><br>
           <span data-tuning-recheck></span>   <span style="color:#7A8C6E"># re-check</span>
         </div>
       </div>
@@ -414,7 +414,7 @@ def _static_html_shell(arm: str = FULL, *, telemetry: TelemetryConfig | None = N
         <div class="enforce-body">Enforcement is one line. From then on, these <span data-enforce-count></span>
           would have been held for review — each refusal a signed record, proof the guard ran.</div>
       </div>
-      <span class="enforce-cmd mono">$ asg guard enforce</span>
+      <span class="enforce-cmd mono">$ capsule guard enforce</span>
     </div>
   </div>
 

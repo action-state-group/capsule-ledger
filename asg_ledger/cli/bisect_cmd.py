@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg bisect`: find the first record in ledger order where a condition
+"""`capsule bisect`: find the first record in ledger order where a condition
 becomes true -- a sequence search, git-bisect's search pattern applied to
 ledger records instead of commits.
 
@@ -90,7 +90,7 @@ def run(args: argparse.Namespace) -> int:
     if args.fold_ref is not None:
         threshold = _resolve_threshold(args)
         if threshold is None:
-            print("asg bisect: --fold requires one of --gt/--gte/--lt/--lte", file=sys.stderr)
+            print("capsule bisect: --fold requires one of --gt/--gte/--lt/--lte", file=sys.stderr)
             return 2
 
     with open_ledger(ledger_path) as store:
@@ -109,7 +109,7 @@ def run(args: argparse.Namespace) -> int:
             directory = catalog_dir(args)
             definition = resolve_fold(args.fold_ref, directory)
             if definition is None:
-                print(f"asg bisect: no such fold {args.fold_ref!r} in catalog {directory}", file=sys.stderr)
+                print(f"capsule bisect: no such fold {args.fold_ref!r} in catalog {directory}", file=sys.stderr)
                 return 2
 
             capsules: list[dict] = []
@@ -119,12 +119,12 @@ def run(args: argparse.Namespace) -> int:
                 try:
                     trace = evaluate_one(definition, capsules, key_value=args.key, as_of=as_of)
                 except FoldDeterminismError as exc:
-                    print(f"asg bisect: fold {args.fold_ref!r}: {exc}", file=sys.stderr)
+                    print(f"capsule bisect: fold {args.fold_ref!r}: {exc}", file=sys.stderr)
                     return 1
                 result = trace.result
                 if not isinstance(result, int) or isinstance(result, bool):
                     print(
-                        f"asg bisect: fold {args.fold_ref!r} result {result!r} is not comparable "
+                        f"capsule bisect: fold {args.fold_ref!r} result {result!r} is not comparable "
                         f"with --{op}",
                         file=sys.stderr,
                     )
@@ -157,7 +157,7 @@ def run(args: argparse.Namespace) -> int:
         return 0 if found is not None else 1
 
     if found is None:
-        print(f"asg bisect: no record in this ledger satisfies: {description}", file=sys.stderr)
+        print(f"capsule bisect: no record in this ledger satisfies: {description}", file=sys.stderr)
         return 1
 
     capsule = found.capsule

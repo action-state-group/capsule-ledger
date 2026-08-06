@@ -1,4 +1,4 @@
-"""`asg log` golden-output tests."""
+"""`capsule log` golden-output tests."""
 from __future__ import annotations
 
 import json
@@ -13,7 +13,7 @@ def test_log_no_filters_lists_all_records(capsys):
     rc = main(["log", "--ledger", str(FIXTURE_LEDGER)])
     assert rc == 0
     out = capsys.readouterr().out
-    assert out.startswith("≡ asg log\n")
+    assert out.startswith("≡ capsule log\n")
     assert "capsule 705955419ca6f944a75db77ae2a59844fdd99d355866c6c1dbc4ebe655c024c7" in out
     assert "approve_purchase" in out
     assert "transfer_funds" in out
@@ -29,7 +29,7 @@ def test_log_filter_by_verdict(capsys):
     rc = main(["log", "--ledger", str(FIXTURE_LEDGER), "--verdict", "blocked"])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "≡ asg log --verdict blocked" in out
+    assert "≡ capsule log --verdict blocked" in out
     assert "transfer_funds" in out
     assert "approve_purchase" not in out
     assert "1 of 4 records shown" in out
@@ -50,7 +50,7 @@ def test_log_filter_by_agent_and_action_type_builds_canonical_echo(capsys):
     assert rc == 0
     out = capsys.readouterr().out
     # Canonical (fixed) flag order regardless of the order given on argv.
-    assert "≡ asg log --agent procurement-agent@v1 --action-type decide" in out
+    assert "≡ capsule log --agent procurement-agent@v1 --action-type decide" in out
     assert "4 of 4 records shown" in out
 
 

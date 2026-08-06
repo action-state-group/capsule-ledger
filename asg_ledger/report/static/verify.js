@@ -327,7 +327,7 @@
       "[data-model-byline]",
       "drafted by " + payload.model_note.model_id + ", reading the " + payload.model_note.record_count + " records above · interpretation, not evidence"
     );
-    setText("[data-tuning-recheck]", "asg guard dry-run --since " + (payload.since || "7d") + " --share");
+    setText("[data-tuning-recheck]", "capsule guard dry-run --since " + (payload.since || "7d") + " --share");
   }
 
   function renderPermalink(payload) {
