@@ -26,6 +26,13 @@ numeric field the fold engine needs (``amount_minor``, integer minor units
 -- floats are a fold determinism MUST-FAIL). It is committed into
 ``capsule_id`` like every other payload field, so it can't be tampered with
 post-seal without invalidating the digest.
+
+``asg_payload.manifest_digest`` (added for the policy-manifest task) is the
+active policy manifest's own ``manifest_digest()`` (``asg_ledger.policy``) at
+decision time -- "which policy governed this decision" is checkable directly
+off the capsule, never a separate, possibly-stale lookup. Omitted (not just
+null) when no manifest is configured, same as every other optional
+``asg_payload`` field here.
 """
 from __future__ import annotations
 
@@ -100,7 +107,7 @@ def _to_constraint_record(outcome: ConstraintOutcome) -> ConstraintRecord:
     )
 
 
-def _payload_extension(action: Action, checkpoint: dict) -> dict:
+def _payload_extension(action: Action, checkpoint: dict, manifest_digest: str | None) -> dict:
     ext: dict = {"checkpoint": checkpoint}
     if action.amount_minor is not None:
         ext["amount_minor"] = action.amount_minor
@@ -110,6 +117,8 @@ def _payload_extension(action: Action, checkpoint: dict) -> dict:
         ext["target"] = action.target
     if action.action_class is not None:
         ext["action_class"] = action.action_class
+    if manifest_digest is not None:
+        ext["manifest_digest"] = manifest_digest
     return ext
 
 
@@ -123,6 +132,7 @@ def build_decision_capsule(
     reason: dict | None = None,
     chain_parent: str | None = None,
     chain_relation: str | None = None,
+    manifest_digest: str | None = None,
 ) -> dict:
     """Build, sign, and seal a decision capsule. Requires a live ``signer``
     -- callers MUST NOT call this when the signing key is unavailable
@@ -163,7 +173,7 @@ def build_decision_capsule(
     )
 
     body = capsule_obj.to_dict()
-    body["asg_payload"] = _payload_extension(action, checkpoint)
+    body["asg_payload"] = _payload_extension(action, checkpoint, manifest_digest)
 
     # Sign the pre-signature canonical body, then commit the signature into
     # the body too: capsule_id ends up covering the signature value as well
@@ -194,13 +204,22 @@ def build_event_capsule(
     detail: dict,
     timestamp: str | None = None,
     action_id: str | None = None,
+    chain_parent: str | None = None,
+    chain_relation: str | None = None,
 ) -> dict:
     """Build a passive administrative record: a degradation/recovery event
-    (gap window, rebuild range, operator alert), never a gate decision.
+    (gap window, rebuild range, operator alert), a policy-manifest
+    activation (``asg_ledger.policy``), or similar -- never a gate decision.
     ``action_type: "fyi"`` per the reference library's own convention
     ("passive observation; the emit tier records what happened but does not
     gate or decide"). Requires a live ``signer`` for the same reason a
     decision capsule does -- an unsigned record is not a record.
+
+    ``chain_parent``/``chain_relation`` are optional, same shape as
+    ``build_decision_capsule``'s -- e.g. a manifest activation cites its
+    predecessor activation (or a genesis sentinel) with
+    ``chain_relation="epoch_opens"`` (``cli/blame_cmd.py``'s / ``cli/
+    diff_cmd.py``'s existing epoch-boundary chain vocabulary).
     """
     from .action import Action  # local import: avoids a module cycle at import time
 
@@ -212,6 +231,7 @@ def build_event_capsule(
         action_id=action_id,
         timestamp=timestamp,
     )
+    chain = Chain(parent_capsule_id=chain_parent, relation=chain_relation) if chain_parent else None
     capsule_obj = Capsule(
         spec_version="draft-mih-scitt-agent-action-capsule-02",
         format_version="2",
@@ -223,8 +243,9 @@ def build_event_capsule(
         assurance=AssuranceBlock(
             attestation_mode="self_attested",
             effect_mode="not_applicable",
-            ledger_mode="standalone",
+            ledger_mode="chained" if chain is not None else "standalone",
         ),
+        chain=chain,
     )
     body = capsule_obj.to_dict()
     body["asg_payload"] = {"event": event, "detail": detail}

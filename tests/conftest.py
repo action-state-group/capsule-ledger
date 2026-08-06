@@ -7,6 +7,8 @@ from asg_ledger.guards import LocalSigner
 from asg_ledger.ledger import LedgerStore
 
 CATALOG_DIR = Path(__file__).parent.parent / "asg_ledger" / "folds" / "catalog_defs"
+WICKET_CATALOG_DIR = Path(__file__).parent.parent / "asg_ledger" / "guards" / "wickets" / "catalog_defs"
+DEFAULT_MANIFEST_PATH = Path(__file__).parent.parent / "asg_ledger" / "policy" / "catalog_defs" / "default.yaml"
 
 
 @pytest.fixture
@@ -24,3 +26,11 @@ def caps_fold():
 @pytest.fixture
 def signer():
     return LocalSigner(key_id="test-key-1", secret=b"test-secret")
+
+
+@pytest.fixture
+def resolved_manifest():
+    from asg_ledger.policy import load_manifest_file, resolve_manifest
+
+    manifest = load_manifest_file(DEFAULT_MANIFEST_PATH)
+    return resolve_manifest(manifest, fold_catalog_dir=CATALOG_DIR, wicket_catalog_dir=WICKET_CATALOG_DIR)

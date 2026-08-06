@@ -71,6 +71,10 @@ class DryRunReport:
     replay_command: str
     generated_at: str
     model_note: ModelNote | None = None
+    # The active policy manifest's own digest (``asg_ledger.policy``), when
+    # one was resolved for this replay -- "evaluated under manifest <digest>"
+    # (see ``cli/guard_cmds.py``). ``None`` when no manifest was configured.
+    manifest_digest: str | None = None
 
     @property
     def held_rows(self) -> list[tuple[str, ReportRow]]:

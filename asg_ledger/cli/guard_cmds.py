@@ -24,6 +24,8 @@ from .. import packaging
 __all__ = ["add_parser"]
 
 DEFAULT_CATALOG_DIR = Path(__file__).resolve().parent.parent / "folds" / "catalog_defs"
+DEFAULT_WICKET_DIR = Path(__file__).resolve().parent.parent / "guards" / "wickets" / "catalog_defs"
+DEFAULT_MANIFEST_PATH = Path(__file__).resolve().parent.parent / "policy" / "catalog_defs" / "default.yaml"
 
 
 def _catalog_dir(args: argparse.Namespace) -> Path:
@@ -33,6 +35,40 @@ def _catalog_dir(args: argparse.Namespace) -> Path:
     if env:
         return Path(env)
     return DEFAULT_CATALOG_DIR
+
+
+def _wicket_dir(args: argparse.Namespace) -> Path:
+    if getattr(args, "wicket_dir", None):
+        return Path(args.wicket_dir)
+    env = os.environ.get("ASG_WICKET_DIR")
+    return Path(env) if env else DEFAULT_WICKET_DIR
+
+
+def _resolve_manifest_digest(args: argparse.Namespace) -> str | None:
+    """Resolve the policy manifest that governs this replay (``--manifest``,
+    default the built-in one) against the same fold catalog this command is
+    already using (``_catalog_dir``) and the wicket catalog (``--wicket-dir``).
+
+    Best-effort: a caller pointing ``--dir``/``--wicket-dir`` at a catalog the
+    configured manifest doesn't (yet) pin correctly gets a warning, not a
+    hard failure -- the replay report itself is still real and useful without
+    a resolvable manifest citation. ``--no-manifest`` skips this entirely."""
+    if getattr(args, "no_manifest", False):
+        return None
+
+    from ..policy import PolicyManifestError, load_manifest_file, resolve_manifest
+
+    manifest_path = Path(args.manifest) if getattr(args, "manifest", None) else DEFAULT_MANIFEST_PATH
+    try:
+        manifest = load_manifest_file(manifest_path)
+        resolved = resolve_manifest(
+            manifest, fold_catalog_dir=_catalog_dir(args), wicket_catalog_dir=_wicket_dir(args)
+        )
+    except PolicyManifestError as exc:
+        print(f"warning: policy manifest {manifest_path} did not resolve ({exc.reason}: {exc}); "
+              "proceeding without a manifest citation", file=sys.stderr)
+        return None
+    return resolved.manifest_digest
 
 
 def _parse_cap_args(items: list[str]) -> dict[str, int] | None:
@@ -71,6 +107,7 @@ def _cmd_guard_dry_run(args: argparse.Namespace) -> int:
 
     since = None if args.since in (None, "all") else args.since
     caps_fold = load_definition_file(_catalog_dir(args) / "spend.weekly.yaml")
+    manifest_digest = _resolve_manifest_digest(args)
 
     def _build():
         return build_dry_run_report(
@@ -81,6 +118,7 @@ def _cmd_guard_dry_run(args: argparse.Namespace) -> int:
             operator=args.operator,
             model_note=args.model_note,
             model_id=args.model_id,
+            manifest_digest=manifest_digest,
         )
 
     report = _build()
@@ -95,6 +133,8 @@ def _cmd_guard_dry_run(args: argparse.Namespace) -> int:
     url = f"file://{out_path.resolve()}#{fragment}"
 
     print(f"wrote {out_path}")
+    if report.manifest_digest is not None:
+        print(f"evaluated under manifest {report.manifest_digest}")
     # Arm A ("guards-only"): the share link is a verify-link suggestion --
     # not printed, matching the report itself never surfacing its evidence
     # chrome. The file above still exists and is still openable; this CLI
@@ -200,6 +240,17 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     )
     p_dry_run.add_argument(
         "--dir", help="fold catalog directory the caps check's fold definition lives in (default: built-in catalog, or $ASG_FOLD_DIR)"
+    )
+    p_dry_run.add_argument(
+        "--manifest", help="policy manifest YAML resolved for this replay (default: built-in manifest)"
+    )
+    p_dry_run.add_argument(
+        "--wicket-dir", dest="wicket_dir",
+        help="wicket catalog directory the manifest's wicket refs resolve against (default: built-in catalog, or $ASG_WICKET_DIR)",
+    )
+    p_dry_run.add_argument(
+        "--no-manifest", dest="no_manifest", action="store_true",
+        help="skip policy-manifest resolution entirely (report carries no manifest_digest)",
     )
     p_dry_run.add_argument(
         "--telemetry-opt-in", action="store_true",

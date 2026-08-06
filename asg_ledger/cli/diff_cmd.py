@@ -91,6 +91,26 @@ def _verdict_counts(records: list) -> dict[str, int]:
     return counts
 
 
+def _is_epoch_boundary(record) -> bool:
+    """A record opening a new policy epoch -- ``chain.relation == "epoch_opens"``,
+    the same chain vocabulary ``cli/blame_cmd.py`` already treats as a legal
+    chain-start (``agent_action_capsule.history``'s registry), never a gap.
+    Today the only producer of this relation is a policy-manifest activation
+    (``asg_ledger.policy.build_manifest_activation_capsule``), but the check
+    itself is generic to the relation, not hardcoded to that one event."""
+    return ((record.capsule.get("chain") or {}).get("relation")) == "epoch_opens"
+
+
+def _boundary_line(record) -> str:
+    detail = (record.capsule.get("asg_payload") or {}).get("detail") or {}
+    manifest_digest = detail.get("manifest_digest", "?")
+    manifest_id = detail.get("manifest_id", "?")
+    return (
+        f"  ◆ capsule {record.capsule_id[:16]}  manifest {manifest_id}  "
+        f"{manifest_digest[:16]}…  {record.capsule.get('developer', '')}"
+    )
+
+
 def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     p = sub.add_parser(
         "diff", help="compare the ledger's state between two checkpoints/refs (structural set diff)"
@@ -160,6 +180,13 @@ def run(args: argparse.Namespace) -> int:
         added = [r for r in state_to if r.capsule_id not in ids_from]
         removed = [r for r in state_from if r.capsule_id not in ids_to]
 
+        # Manifest activations (and any future epoch_opens producer) are a
+        # policy boundary, not an ordinary decision -- pulled out of the
+        # plain added-record count so a manifest change is never silently
+        # absorbed into "N new record(s)".
+        boundaries = [r for r in added if _is_epoch_boundary(r)]
+        added = [r for r in added if not _is_epoch_boundary(r)]
+
         counts_from = _verdict_counts(state_from)
         counts_to = _verdict_counts(state_to)
         verdict_keys = sorted(set(counts_from) | set(counts_to))
@@ -184,6 +211,16 @@ def run(args: argparse.Namespace) -> int:
                     "to": {"ref": args.to_ref, "checkpoint": seq_to},
                     "added": [r.capsule_id for r in added],
                     "removed": [r.capsule_id for r in removed],
+                    "manifest_boundaries": [
+                        {
+                            "capsule_id": r.capsule_id,
+                            "manifest_id": ((r.capsule.get("asg_payload") or {}).get("detail") or {}).get("manifest_id"),
+                            "manifest_digest": ((r.capsule.get("asg_payload") or {}).get("detail") or {}).get(
+                                "manifest_digest"
+                            ),
+                        }
+                        for r in boundaries
+                    ],
                     "verdict_delta": {k: {"from": v[0], "to": v[1]} for k, v in verdict_delta.items()},
                     "fold_deltas": [
                         {"fold_id": fid, "from": r_from, "to": r_to} for fid, r_from, r_to in fold_deltas
@@ -200,7 +237,13 @@ def run(args: argparse.Namespace) -> int:
     )
     print()
 
-    if not added and not removed:
+    if boundaries:
+        print(f"{len(boundaries)} manifest boundary event(s):")
+        for r in boundaries:
+            print(_boundary_line(r))
+        print()
+
+    if not added and not removed and not boundaries:
         print("no new or removed records between these checkpoints")
     else:
         if added:

@@ -34,6 +34,7 @@ from . import (
     key_cmds,
     lens_cmds,
     log_cmd,
+    manifest_cmds,
     show_cmd,
     telemetry_cmd,
     verify_cmd,
@@ -53,6 +54,7 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     agents_cmd.add_parser(sub)
     guard_cmds.add_parser(sub)
     key_cmds.add_parser(sub)
+    manifest_cmds.add_parser(sub)
     diff_cmd.add_parser(sub)
     blame_cmd.add_parser(sub)
     bisect_cmd.add_parser(sub)
@@ -101,6 +103,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "key":
         if getattr(args, "key_command", None) is None:
             args.key_parser.print_help()
+            return 0
+        return args.func(args)
+
+    if args.command == "manifest":
+        if getattr(args, "manifest_command", None) is None:
+            args.manifest_parser.print_help()
             return 0
         return args.func(args)
 

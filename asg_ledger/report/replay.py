@@ -141,6 +141,7 @@ def replay(
     *,
     caps_fold: FoldDefinition,
     caps_minor: dict[str, int] | None = None,
+    manifest_digest: str | None = None,
 ) -> ReplayResult:
     """Feed every record through a fresh ``GuardEngine`` in dry-run mode, in
     order. Never blocks (``dry_run=True``) -- see ``engine.py``'s own
@@ -160,6 +161,7 @@ def replay(
             caps_fold=caps_fold,
             signer_provider=lambda: signer,
             caps_minor=caps_minor or {},
+            manifest_digest=manifest_digest,
         )
         for record in records:
             action = action_for_record(record)

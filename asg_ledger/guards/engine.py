@@ -72,6 +72,7 @@ class GuardEngine:
         view_healthy: Callable[[], bool] = lambda: True,
         witness_reachable: Callable[[], bool] = lambda: True,
         checkpoint_age_ms: Callable[[], int] = lambda: 0,
+        manifest_digest: str | None = None,
     ) -> None:
         self._ledger = ledger
         self._caps_fold = caps_fold
@@ -83,6 +84,13 @@ class GuardEngine:
         self._view_healthy = view_healthy
         self._witness_reachable = witness_reachable
         self._checkpoint_age_ms = checkpoint_age_ms
+        # The active policy manifest's own digest (``asg_ledger.policy.
+        # resolve_manifest(...).manifest_digest``), pinned onto every
+        # decision capsule this engine produces (``build_decision_capsule``'s
+        # ``manifest_digest`` param) so "which policy governed this
+        # decision" is checkable directly off the capsule. ``None`` when no
+        # manifest is configured for this engine instance.
+        self._manifest_digest = manifest_digest
         self._open: dict[str, _OpenDegradation] = {}
 
     # -- introspection (tests / recovery bookkeeping) -----------------------
@@ -253,6 +261,7 @@ class GuardEngine:
             reason=reason_obj,
             chain_parent=resolved_parent,
             chain_relation=resolved_relation,
+            manifest_digest=self._manifest_digest,
         )
 
         # Row: "Ledger append fails (disk full, WAL error)" -- fail closed
@@ -338,6 +347,7 @@ class GuardEngine:
             signer=signer,
             checkpoint=checkpoint,
             reason={"outcome": DENY, "constraints": [{"id": constraint_id, "result": "fail"}]},
+            manifest_digest=self._manifest_digest,
         )
         try:
             self._ledger.append(capsule, consequential=classify(action.action_class).consequential and not dry_run)
