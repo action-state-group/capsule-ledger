@@ -1,6 +1,6 @@
-# asg-ledger
+# capsule-ledger
 
-asg-ledger is a local control plane for AI agent actions: an append-only ledger, verifiable folds over it, and guards that check actions against them before they dispatch.
+capsule-ledger is a local control plane for AI agent actions: an append-only ledger, verifiable folds over it, and guards that check actions against them before they dispatch.
 
 It gives you limits your agents cannot exceed, memory they cannot lie about.
 
