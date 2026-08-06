@@ -17,7 +17,7 @@ import hmac
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-__all__ = ["Signer", "LocalSigner", "SigningKeyUnavailable"]
+__all__ = ["Signer", "LocalSigner", "SigningKeyUnavailable", "key_fingerprint"]
 
 
 class SigningKeyUnavailable(Exception):
@@ -48,3 +48,13 @@ class LocalSigner:
 
     def sign(self, digest: str) -> str:
         return hmac.new(self.secret, digest.encode("ascii"), hashlib.sha256).hexdigest()
+
+
+def key_fingerprint(key_id: str, secret: bytes) -> str:
+    """A stable, secret-revealing-nothing identifier for one key's material.
+
+    Binds ``key_id`` into the hash (not just ``secret``) so a fresh key that
+    happens to reuse another key's secret bytes still fingerprints
+    differently -- the rotation event records this, never the raw secret.
+    """
+    return hashlib.sha256(key_id.encode("utf-8") + b":" + secret).hexdigest()
