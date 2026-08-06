@@ -18,6 +18,47 @@ Whether a manifest's pinned digests actually match what's sitting in the
 fold/wicket catalogs *right now* is not this module's job -- see
 ``resolve.py`` for that cross-check. This module only parses and digests the
 manifest as declared.
+
+Design notes -- ``engine``:
+
+Every entry also carries an ``engine`` string (``"fold/1"`` for folds,
+``"wicket/1"`` for wickets today) identifying which evaluator resolves that
+entry's semantics, separately from the digest identifying *which
+definition*. Right now there is exactly one legal value per entry kind --
+this repo's own built-in fold/wicket evaluator, kept as the shipped default
+-- so the field looks decorative. It isn't: it participates in
+``canonical_dict()`` (an entry that changes evaluation engine is a manifest
+change, same as a changed digest) and ``resolve.py`` fails closed on any
+engine value it doesn't recognize. The reasoning mirrors
+``agent_action_capsule``'s own ``digest_alg`` field on capsule refs (see
+``verify_composition.py``): ``"SHA-256"`` is the only legal value today, but
+the field exists so a future algorithm can land as a new recognized value
+rather than a wire-format break. Same trade here -- our evidentiary claims
+("evaluated under manifest <digest>", byte-exact CI replay, mutant-tested
+determinism) are cheap to defend precisely because the wicket/fold set is
+closed and tiny; adopting a general declarative engine (OPA/Rego) would
+trade that for a large language surface and an engine-version-pinning
+burden, so it isn't the launch engine. If one is ever adopted, Cedar is the
+better fit (declarative, formally analyzed, deterministic, no I/O by
+design, Apache-2.0) -- but Cedar decides authorization over entities with
+no concept of aggregates, so this repo would still own the fold half
+regardless. This field is what keeps that door open as a new registry
+entry later instead of a manifest-format break now: "any vendor's gate" is
+the intended story, since the moat is the recording/envelope layer, not the
+constraint language.
+
+Design notes -- prior art considered, not adopted (harvest-audit pointers,
+2026-08-05, concept-only citations -- no code from either source was read
+or copied as part of building this module):
+
+- ``gopher-ai``'s ``manifest_registry.py`` content-hash + lifecycle-state
+  pattern is a closer analog to this manifest than what was originally
+  scoped for this task. Left as a pointer for whoever does that comparison
+  next; per the standing gopher-ai boundary this module was written
+  clean-room against public interfaces only.
+- ``clawwicket``'s three-way clearance taxonomy (deterministic /
+  operator-approval / evidence-first) is prior art worth evaluating against
+  this manifest's wicket-clearance model -- not inherited wholesale here.
 """
 from __future__ import annotations
 
@@ -46,12 +87,14 @@ MANIFEST_ID_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*/\d+\.\d+\.\d+
 @dataclass(frozen=True)
 class FoldRef:
     fold_id: str
+    engine: str
     digest: str
 
 
 @dataclass(frozen=True)
 class WicketRef:
     wicket_id: str
+    engine: str
     digest: str
 
 
@@ -69,8 +112,8 @@ class Manifest:
         manifest file (even just reordering entries) is a manifest change."""
         return {
             "manifest_id": self.manifest_id,
-            "folds": [{"fold_id": f.fold_id, "digest": f.digest} for f in self.folds],
-            "wickets": [{"wicket_id": w.wicket_id, "digest": w.digest} for w in self.wickets],
+            "folds": [{"fold_id": f.fold_id, "engine": f.engine, "digest": f.digest} for f in self.folds],
+            "wickets": [{"wicket_id": w.wicket_id, "engine": w.engine, "digest": w.digest} for w in self.wickets],
         }
 
     def manifest_digest(self) -> str:
@@ -108,16 +151,23 @@ def parse_manifest(data: Any) -> Manifest:
     folds: list[FoldRef] = []
     seen_fold_ids: set[str] = set()
     for entry in raw_folds:
-        if not isinstance(entry, dict) or "fold_id" not in entry or "digest" not in entry:
-            raise PolicyManifestError(MALFORMED_MANIFEST, f"each folds entry needs 'fold_id' and 'digest': {entry!r}")
+        if not isinstance(entry, dict) or "fold_id" not in entry or "digest" not in entry or "engine" not in entry:
+            raise PolicyManifestError(
+                MALFORMED_MANIFEST, f"each folds entry needs 'fold_id', 'engine', and 'digest': {entry!r}"
+            )
         fold_id = entry["fold_id"]
         if not isinstance(fold_id, str) or not fold_id:
             raise PolicyManifestError(MALFORMED_MANIFEST, f"folds[].fold_id must be a non-empty string: {entry!r}")
         if fold_id in seen_fold_ids:
             raise PolicyManifestError(DUPLICATE_FOLD_REF, f"fold_id {fold_id!r} declared more than once")
         seen_fold_ids.add(fold_id)
+        engine = entry["engine"]
+        if not isinstance(engine, str) or not engine:
+            raise PolicyManifestError(
+                MALFORMED_MANIFEST, f"folds[{fold_id!r}].engine must be a non-empty string: {entry!r}"
+            )
         digest = _check_digest(entry["digest"], f"folds[{fold_id!r}].digest")
-        folds.append(FoldRef(fold_id=fold_id, digest=digest))
+        folds.append(FoldRef(fold_id=fold_id, engine=engine, digest=digest))
 
     raw_wickets = data.get("wickets") or []
     if not isinstance(raw_wickets, list):
@@ -125,9 +175,9 @@ def parse_manifest(data: Any) -> Manifest:
     wickets: list[WicketRef] = []
     seen_wicket_ids: set[str] = set()
     for entry in raw_wickets:
-        if not isinstance(entry, dict) or "wicket_id" not in entry or "digest" not in entry:
+        if not isinstance(entry, dict) or "wicket_id" not in entry or "digest" not in entry or "engine" not in entry:
             raise PolicyManifestError(
-                MALFORMED_MANIFEST, f"each wickets entry needs 'wicket_id' and 'digest': {entry!r}"
+                MALFORMED_MANIFEST, f"each wickets entry needs 'wicket_id', 'engine', and 'digest': {entry!r}"
             )
         wicket_id = entry["wicket_id"]
         if not isinstance(wicket_id, str) or not wicket_id:
@@ -135,7 +185,12 @@ def parse_manifest(data: Any) -> Manifest:
         if wicket_id in seen_wicket_ids:
             raise PolicyManifestError(DUPLICATE_WICKET_REF, f"wicket_id {wicket_id!r} declared more than once")
         seen_wicket_ids.add(wicket_id)
+        engine = entry["engine"]
+        if not isinstance(engine, str) or not engine:
+            raise PolicyManifestError(
+                MALFORMED_MANIFEST, f"wickets[{wicket_id!r}].engine must be a non-empty string: {entry!r}"
+            )
         digest = _check_digest(entry["digest"], f"wickets[{wicket_id!r}].digest")
-        wickets.append(WicketRef(wicket_id=wicket_id, digest=digest))
+        wickets.append(WicketRef(wicket_id=wicket_id, engine=engine, digest=digest))
 
     return Manifest(manifest_id=manifest_id, folds=tuple(folds), wickets=tuple(wickets))

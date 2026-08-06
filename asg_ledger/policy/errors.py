@@ -17,6 +17,7 @@ UNKNOWN_FOLD_ID = "unknown_fold_id"
 UNKNOWN_WICKET_ID = "unknown_wicket_id"
 FOLD_DIGEST_DRIFT = "fold_digest_drift"
 WICKET_DIGEST_DRIFT = "wicket_digest_drift"
+UNKNOWN_ENGINE = "unknown_engine"
 
 
 class PolicyManifestError(ValueError):

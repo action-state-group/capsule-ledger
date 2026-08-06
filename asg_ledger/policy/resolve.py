@@ -3,10 +3,11 @@
 cites, cross-checking every pinned digest.
 
 A manifest that fails to resolve (a cited fold_id/wicket_id no longer
-exists, or its current catalog digest no longer matches what the manifest
-pinned) is not "real, loadable" -- every caller in this task (``manifest
-show``, ``manifest activate``, ``guard dry-run``) treats a resolve failure
-as fail-closed, never a best-effort partial load.
+exists, its current catalog digest no longer matches what the manifest
+pinned, or it names an evaluation ``engine`` this build doesn't recognize)
+is not "real, loadable" -- every caller in this task (``manifest show``,
+``manifest activate``, ``guard dry-run``) treats a resolve failure as
+fail-closed, never a best-effort partial load.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ from ..guards.wickets.catalog import Catalog as WicketCatalog
 from ..guards.wickets.definition import WicketDefinition
 from .errors import (
     FOLD_DIGEST_DRIFT,
+    UNKNOWN_ENGINE,
     UNKNOWN_FOLD_ID,
     UNKNOWN_WICKET_ID,
     WICKET_DIGEST_DRIFT,
@@ -26,7 +28,14 @@ from .errors import (
 )
 from .manifest import Manifest
 
-__all__ = ["ResolvedManifest", "resolve_manifest"]
+__all__ = ["SUPPORTED_FOLD_ENGINES", "SUPPORTED_WICKET_ENGINES", "ResolvedManifest", "resolve_manifest"]
+
+# The only evaluation engines this build knows how to run a fold/wicket
+# entry through -- this repo's own built-in evaluator, one engine per entry
+# kind. A manifest naming anything else is rejected fail-closed rather than
+# silently ignored (see the ``engine`` design note in ``manifest.py``).
+SUPPORTED_FOLD_ENGINES = frozenset({"fold/1"})
+SUPPORTED_WICKET_ENGINES = frozenset({"wicket/1"})
 
 
 @dataclass(frozen=True)
@@ -65,6 +74,12 @@ def resolve_manifest(
 
     folds: dict[str, FoldDefinition] = {}
     for ref in manifest.folds:
+        if ref.engine not in SUPPORTED_FOLD_ENGINES:
+            raise PolicyManifestError(
+                UNKNOWN_ENGINE,
+                f"manifest cites fold {ref.fold_id!r} with engine {ref.engine!r}, this build only "
+                f"evaluates fold engines {sorted(SUPPORTED_FOLD_ENGINES)}",
+            )
         entry = fold_catalog.get(ref.fold_id)
         if entry is None:
             raise PolicyManifestError(
@@ -81,6 +96,12 @@ def resolve_manifest(
 
     wickets: dict[str, WicketDefinition] = {}
     for ref in manifest.wickets:
+        if ref.engine not in SUPPORTED_WICKET_ENGINES:
+            raise PolicyManifestError(
+                UNKNOWN_ENGINE,
+                f"manifest cites wicket {ref.wicket_id!r} with engine {ref.engine!r}, this build only "
+                f"evaluates wicket engines {sorted(SUPPORTED_WICKET_ENGINES)}",
+            )
         entry = wicket_catalog.get(ref.wicket_id)
         if entry is None:
             raise PolicyManifestError(

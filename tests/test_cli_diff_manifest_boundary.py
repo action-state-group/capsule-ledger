@@ -16,7 +16,7 @@ FOLD_CATALOG_DIR = Path(__file__).parent.parent / "asg_ledger" / "folds" / "cata
 WICKET_CATALOG_DIR = Path(__file__).parent.parent / "asg_ledger" / "guards" / "wickets" / "catalog_defs"
 DEFAULT_MANIFEST_PATH = Path(__file__).parent.parent / "asg_ledger" / "policy" / "catalog_defs" / "default.yaml"
 
-EXPECTED_DEFAULT_DIGEST = "586c90d14e98582e5f64da4808779ee2403a5133d7728bac74fa7a4300fd7dc8"
+EXPECTED_DEFAULT_DIGEST = "0e99f3ee3a6ebf3ee93aa464f27e8fcd1a401ccc45460eb267efde327f5c218c"
 
 
 def _seed(ledger_dir: Path) -> None:
