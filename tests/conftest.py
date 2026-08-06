@@ -1,14 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
 
 import pytest
 
-from asg_ledger.folds.loader import load_definition_file
-from asg_ledger.guards import LocalSigner
-from asg_ledger.ledger import LedgerStore
+from capsule_ledger.folds.loader import load_definition_file
+from capsule_ledger.guards import LocalSigner
+from capsule_ledger.ledger import LedgerStore
 
-CATALOG_DIR = Path(__file__).parent.parent / "asg_ledger" / "folds" / "catalog_defs"
-WICKET_CATALOG_DIR = Path(__file__).parent.parent / "asg_ledger" / "guards" / "wickets" / "catalog_defs"
-DEFAULT_MANIFEST_PATH = Path(__file__).parent.parent / "asg_ledger" / "policy" / "catalog_defs" / "default.yaml"
+CATALOG_DIR = Path(__file__).parent.parent / "capsule_ledger" / "folds" / "catalog_defs"
+WICKET_CATALOG_DIR = Path(__file__).parent.parent / "capsule_ledger" / "guards" / "wickets" / "catalog_defs"
+DEFAULT_MANIFEST_PATH = Path(__file__).parent.parent / "capsule_ledger" / "policy" / "catalog_defs" / "default.yaml"
 
 
 @pytest.fixture
@@ -30,7 +31,7 @@ def signer():
 
 @pytest.fixture
 def resolved_manifest():
-    from asg_ledger.policy import load_manifest_file, resolve_manifest
+    from capsule_ledger.policy import load_manifest_file, resolve_manifest
 
     manifest = load_manifest_file(DEFAULT_MANIFEST_PATH)
     return resolve_manifest(manifest, fold_catalog_dir=CATALOG_DIR, wicket_catalog_dir=WICKET_CATALOG_DIR)

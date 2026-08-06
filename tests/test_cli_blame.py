@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from asg_ledger.cli.main import main
-from asg_ledger.ledger import LedgerStore
+from capsule_ledger.cli.main import main
+from capsule_ledger.ledger import LedgerStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
 AMAURY = FIXTURES / "amaury_sample_ledger.jsonl"

@@ -5,15 +5,15 @@ revocation timestamp, and rejected for anything claiming to postdate it
 (gating §2 parking lot, ledger-lane [ldg-key-rotation])."""
 from __future__ import annotations
 
-from asg_ledger.cli.main import main
-from asg_ledger.guards.capsule import build_event_capsule
-from asg_ledger.guards.revocation import (
+from capsule_ledger.cli.main import main
+from capsule_ledger.guards.capsule import build_event_capsule
+from capsule_ledger.guards.revocation import (
     ROTATION_EVENT,
     build_key_timeline,
     check_time_fenced_revocation,
 )
-from asg_ledger.guards.signing import LocalSigner, key_fingerprint
-from asg_ledger.ledger import LedgerStore
+from capsule_ledger.guards.signing import LocalSigner, key_fingerprint
+from capsule_ledger.ledger import LedgerStore
 
 OLD_KEY_ID = "key-2026-q1"
 OLD_SECRET = b"old-secret-material"
@@ -158,7 +158,7 @@ class _FakeLedger:
         self._capsules = capsules
 
     def scan(self, query=None):
-        from asg_ledger.ledger.records import LedgerRecord
+        from capsule_ledger.ledger.records import LedgerRecord
 
         for i, capsule in enumerate(self._capsules, start=1):
             yield LedgerRecord(seq=i, capsule_id=capsule["capsule_id"], capsule=capsule, segment="mem", consequential=True)
@@ -249,7 +249,7 @@ def test_cli_key_rotate_generates_a_secret_when_none_given(tmp_path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "new signing secret (shown once" in out
-    assert f"export ASG_MCP_SIGNING_KEY_ID={NEW_KEY_ID}" in out
+    assert f"export CAPSULE_MCP_SIGNING_KEY_ID={NEW_KEY_ID}" in out
 
 
 def test_cli_key_rotate_requires_old_key_material(tmp_path, capsys):

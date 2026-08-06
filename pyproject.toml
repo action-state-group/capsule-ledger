@@ -31,22 +31,22 @@ Source = "https://github.com/action-state-group/capsule-ledger"
 dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0"]
 # Pinned below 2.0: the 2.0 release restructured the package (split out
 # mcp-types) and dropped the `mcp.server.fastmcp` import path this server
-# uses -- see asg_ledger/mcp/server.py.
+# uses -- see capsule_ledger/mcp/server.py.
 mcp = ["mcp>=1.0,<2.0"]
 
 [project.scripts]
-capsule = "asg_ledger.cli:main"
-capsule-mcp = "asg_ledger.mcp.server:main"
+capsule = "capsule_ledger.cli:main"
+capsule-mcp = "capsule_ledger.mcp.server:main"
 # Hidden aliases, undocumented: kept working for one release post-rename to `capsule`.
-asg = "asg_ledger.cli:main"
-asg-mcp = "asg_ledger.mcp.server:main"
+asg = "capsule_ledger.cli:main"
+asg-mcp = "capsule_ledger.mcp.server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["asg_ledger*"]
+include = ["capsule_ledger*"]
 
 [tool.setuptools.package-data]
-asg_ledger = [
+capsule_ledger = [
     "report/static/*.js",
     "console/*.css",
     "console/*.html",

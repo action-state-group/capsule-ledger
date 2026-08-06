@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
 import json
 import re
 import time
 from pathlib import Path
 
-from asg_ledger.ledger import ChainGap, LedgerAPI, LedgerRecord, LedgerStore, ScanQuery
+from capsule_ledger.ledger import ChainGap, LedgerAPI, LedgerRecord, LedgerStore, ScanQuery
 
 FIXTURES = Path(__file__).parent / "fixtures"
 AMAURY = FIXTURES / "amaury_sample_ledger.jsonl"
@@ -263,7 +264,7 @@ def test_10k_record_scan_under_100ms(tmp_path):
 
 def test_no_direct_sqlite_access_outside_ledger():
     """The ledger query API is the ONLY read path — enforce it, don't just document it."""
-    repo_root = Path(__file__).parent.parent / "asg_ledger"
+    repo_root = Path(__file__).parent.parent / "capsule_ledger"
     offenders = []
     pattern = re.compile(r"^\s*(import sqlite3|from sqlite3)")
     for py_file in repo_root.rglob("*.py"):

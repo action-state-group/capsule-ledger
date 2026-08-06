@@ -26,12 +26,12 @@ wouldn't accumulate:
 
 ```bash
 mkdir -p /tmp/my-ledger
-export ASG_LEDGER=/tmp/my-ledger
+export CAPSULE_LEDGER=/tmp/my-ledger
 ```
 
 ## Path 1: Claude Code — MCP server + a capture hook
 
-`capsule-mcp` (console script: `asg_ledger.mcp.server:main`) is a real,
+`capsule-mcp` (console script: `capsule_ledger.mcp.server:main`) is a real,
 tested MCP server (nine read tools, plus `intent_declare` — the only tool
 that writes). Two ways to wire it into Claude Code:
 
@@ -45,7 +45,7 @@ read tool) directly during a session. Add to `.mcp.json` in your project
     "capsule-mcp": {
       "type": "stdio",
       "command": "capsule-mcp",
-      "env": { "ASG_LEDGER": "/tmp/my-ledger" }
+      "env": { "CAPSULE_LEDGER": "/tmp/my-ledger" }
     }
   }
 }
@@ -77,7 +77,7 @@ for what Claude Code itself would pipe in on a `PostToolUse` event:
 
 ```bash
 echo '{"cwd":"'"$PWD"'","tool_name":"Bash","tool_input":{"command":"npm test"}}' \
-  | ASG_LEDGER=/tmp/my-ledger python3 docs/onboarding/claude_code_hook.py
+  | CAPSULE_LEDGER=/tmp/my-ledger python3 docs/onboarding/claude_code_hook.py
 ```
 
 ```
@@ -120,14 +120,14 @@ integration, reuse `capsule-mcp` as-is rather than forking it.
 
 ## Path 3: Framework adapter (LangGraph / CrewAI / ADK-style)
 
-The public API is `asg_ledger.guards.GuardEngine.check()` — the same call
+The public API is `capsule_ledger.guards.GuardEngine.check()` — the same call
 `capsule-mcp`'s `intent_declare` tool wraps, used in-process instead of over
 MCP. This is what belongs inside a LangGraph node, a CrewAI tool wrapper, or
 an ADK tool handler, right before (or instead of) letting the underlying
 action dispatch:
 
 ```python
-from asg_ledger.guards import Action, GuardEngine, LocalSigner
+from capsule_ledger.guards import Action, GuardEngine, LocalSigner
 
 # one-time setup: `guard = GuardEngine(ledger=..., caps_fold=..., signer_provider=...)`
 # — see docs/onboarding/framework_adapter_example.py for the full setup.
@@ -142,7 +142,7 @@ decision = guard.check(action)
 version (setup + the two lines above), confirmed against this repo:
 
 ```bash
-ASG_LEDGER=/tmp/my-ledger python3 docs/onboarding/framework_adapter_example.py
+CAPSULE_LEDGER=/tmp/my-ledger python3 docs/onboarding/framework_adapter_example.py
 ```
 
 ```
@@ -155,8 +155,8 @@ verify <id>`, `capsule bundle`.
 
 There is no `capsule_emit`/`capsule-emit` dependency in this integration —
 that's a separate repo in this workspace with a different scope; this path
-only uses what `capsule-ledger` itself exposes (`asg_ledger.guards`,
-`asg_ledger.ledger`, `asg_ledger.folds.catalog`).
+only uses what `capsule-ledger` itself exposes (`capsule_ledger.guards`,
+`capsule_ledger.ledger`, `capsule_ledger.folds.catalog`).
 
 ## Path 4: Dapr sidecar — not yet built
 
@@ -227,4 +227,4 @@ there's nothing to omit-silently since it doesn't exist here yet.
 | 2. Goose extension | **Not built.** No Goose-specific code anywhere in this workspace. `capsule-mcp` is reusable as-is once someone wires up Goose's own extension config — don't fork it, extend it. |
 | 3. Framework adapter | **Real, verified.** `GuardEngine.check()` is the real public API; `docs/onboarding/framework_adapter_example.py` really runs and really appends a capsule. |
 | 4. Dapr sidecar | **Not built.** No component/binding config, and no HTTP surface for one to front yet. |
-| `capsule agents --status` honest-state | **Real, verified**, including the `--enrolled` fix landed alongside this doc (see `asg_ledger/cli/agents_cmd.py` and `tests/test_cli_agents.py`). |
+| `capsule agents --status` honest-state | **Real, verified**, including the `--enrolled` fix landed alongside this doc (see `capsule_ledger/cli/agents_cmd.py` and `tests/test_cli_agents.py`). |

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`capsule agents --status` golden-output tests. The headline number is a real
 fold evaluation (`actions.count_by_developer`), not a number this command
 invents -- assert the literal DM Mono envelope line, not just a bare count."""
@@ -6,7 +7,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from asg_ledger.cli.main import main
+from capsule_ledger.cli.main import main
 
 FIXTURE_LEDGER = Path(__file__).parent / "fixtures" / "sample_ledger.jsonl"
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """MmrLedger wired to a real LedgerAPI (LedgerStore): append/sync, inclusion
 and range proofs over real capsule data, and the MMR stability property
 across appends -- the whole point of this data structure over a naive
@@ -11,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from asg_ledger.ledger import LedgerStore
-from asg_ledger.mmr import core
-from asg_ledger.mmr.index import MmrLedger, verify_range
+from capsule_ledger.ledger import LedgerStore
+from capsule_ledger.mmr import core
+from capsule_ledger.mmr.index import MmrLedger, verify_range
 
 FIXTURES = Path(__file__).parent / "fixtures"
 AMAURY = FIXTURES / "amaury_sample_ledger.jsonl"

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Fold engine vectors (spec §6, the shipping gate): per-reducer KATs,
 determinism mutants, and MUST-FAIL cases with named reasons."""
 from __future__ import annotations
@@ -6,11 +7,11 @@ import json
 
 import pytest
 
-from asg_ledger.folds.engine import evaluate_one
-from asg_ledger.folds.errors import FoldDefinitionError, FoldDeterminismError
-from asg_ledger.folds.loader import load_definition_file
-from asg_ledger.vectors import determinism_cases, kat_cases, must_fail_cases
-from asg_ledger.vectors.runner import read_jsonl
+from capsule_ledger.folds.engine import evaluate_one
+from capsule_ledger.folds.errors import FoldDefinitionError, FoldDeterminismError
+from capsule_ledger.folds.loader import load_definition_file
+from capsule_ledger.vectors import determinism_cases, kat_cases, must_fail_cases
+from capsule_ledger.vectors.runner import read_jsonl
 
 
 @pytest.mark.parametrize("case", kat_cases(), ids=lambda c: c.name)

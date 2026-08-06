@@ -23,7 +23,7 @@ jobs:
         id: guard-check
         uses: ./.github/actions/guard-check
         with:
-          fold-dir: asg_ledger/folds/catalog_defs
+          fold-dir: capsule_ledger/folds/catalog_defs
           guard-ledger: tests/fixtures/amaury_sample_ledger.jsonl
           cap: money.transfer=10000000
           diff-ledger: tests/fixtures/amaury_sample_ledger.jsonl
@@ -54,7 +54,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/guard-check
         with:
-          fold-dir: asg_ledger/vectors/fixtures/must_fail/undeclared_field_read
+          fold-dir: capsule_ledger/vectors/fixtures/must_fail/undeclared_field_read
 
       - name: 'Negative case: unresolvable epoch-diff ref must fail'
         id: bad-diff
