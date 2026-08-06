@@ -2,8 +2,9 @@
 (log/show/verify/bundle/diff/blame/bisect), the fold catalog (fold
 list/new/test/lint), the guard-check/action-class catalog (constraints
 list), a per-agent summary (agents --status), the guard API's dry-run
-report (guard dry-run), and telemetry disclosure/funnel reporting
-(telemetry status/funnel).
+report (guard dry-run), telemetry disclosure/funnel reporting (telemetry
+status/funnel), and the local console UI (console) -- a record stream +
+per-record inspector served to localhost only.
 
 `log`/`show`/`verify`/`bundle` are registered only in the "full" packaging
 arm -- see `asg_ledger/packaging.py` for the two-arm switch. `diff`/`blame`/
@@ -24,6 +25,7 @@ from . import (
     bisect_cmd,
     blame_cmd,
     bundle_cmd,
+    console_cmd,
     constraints_cmd,
     diff_cmd,
     fold_cmds,
@@ -60,6 +62,7 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
         show_cmd.add_parser(sub)
         verify_cmd.add_parser(sub)
         bundle_cmd.add_parser(sub)
+        console_cmd.add_parser(sub)
 
     return parser
 
