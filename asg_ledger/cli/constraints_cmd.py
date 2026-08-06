@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg constraints list`: the registered guard checks + the starter
+"""`capsule constraints list`: the registered guard checks + the starter
 action-class taxonomy (T3's ``guards/classes.py``) -- a static catalog, not
 a ledger query, so it needs no ``--ledger``."""
 from __future__ import annotations

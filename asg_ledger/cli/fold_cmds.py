@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg fold` verbs: hot-load a catalog directory, lint a definition, replay
+"""`capsule fold` verbs: hot-load a catalog directory, lint a definition, replay
 one over a fixture ledger (T1's stub, moved here unchanged so `main.py`
 stays a thin dispatcher; see that module's original docstring for why this
 lives in `cli/` at all)."""

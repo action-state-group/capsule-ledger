@@ -1,4 +1,4 @@
-"""`asg` CLI entry point: git-style verbs over the ledger query API
+"""`capsule` CLI entry point: git-style verbs over the ledger query API
 (log/show/verify/bundle/diff/blame/bisect), the fold catalog (fold
 list/new/test/lint), the guard-check/action-class catalog (constraints
 list), a per-agent summary (agents --status), the guard API's dry-run
@@ -39,7 +39,7 @@ __all__ = ["main"]
 
 def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     arm = arm or packaging.current_arm()
-    parser = argparse.ArgumentParser(prog="asg", description="asg-ledger control plane")
+    parser = argparse.ArgumentParser(prog="capsule", description="capsule-ledger control plane")
     parser.add_argument("--version", action="store_true", help="print the version and exit")
     sub = parser.add_subparsers(dest="command")
 

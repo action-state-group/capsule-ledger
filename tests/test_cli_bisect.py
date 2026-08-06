@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg bisect` golden-output tests."""
+"""`capsule bisect` golden-output tests."""
 from __future__ import annotations
 
 import json
@@ -23,7 +23,7 @@ def test_bisect_verdict_finds_first_matching_record(capsys):
     assert "first record where disposition.verdict_class == 'blocked':" in out
     assert f"capsule {BLOCKED_ID}" in out
     assert "seq:      #2 (of 4)" in out
-    assert out.rstrip().endswith("≡ asg bisect --verdict blocked")
+    assert out.rstrip().endswith("≡ capsule bisect --verdict blocked")
 
 
 def test_bisect_verdict_no_match_is_a_clean_failure(capsys):

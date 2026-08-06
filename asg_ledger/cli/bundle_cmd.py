@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg bundle`: a self-contained, independently verifiable slice of the
+"""`capsule bundle`: a self-contained, independently verifiable slice of the
 ledger, plus a verify-surface permalink.
 
 "Self-contained" is load-bearing: the bundle transitively pulls in any

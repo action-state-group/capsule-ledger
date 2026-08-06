@@ -215,4 +215,4 @@ def test_gallery_makes_no_outbound_network_requests():
 
 
 def test_cli_echo_bar_uses_canonical_prefix():
-    assert re.search(r'cli-echo">≡ asg ', GALLERY_HTML)
+    assert re.search(r'cli-echo">≡ capsule ', GALLERY_HTML)

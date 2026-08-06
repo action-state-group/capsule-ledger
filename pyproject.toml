@@ -33,6 +33,9 @@ dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0"]
 mcp = ["mcp>=1.0,<2.0"]
 
 [project.scripts]
+capsule = "asg_ledger.cli:main"
+capsule-mcp = "asg_ledger.mcp.server:main"
+# Hidden aliases, undocumented: kept working for one release post-rename to `capsule`.
 asg = "asg_ledger.cli:main"
 asg-mcp = "asg_ledger.mcp.server:main"
 

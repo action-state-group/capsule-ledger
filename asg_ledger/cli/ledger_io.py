@@ -54,7 +54,7 @@ def require_ledger_path(verb: str, args: argparse.Namespace) -> str | None:
     code instead of an uncaught ``SystemExit``."""
     path = getattr(args, "ledger", None) or os.environ.get("ASG_LEDGER")
     if path is None:
-        print(f"asg {verb}: --ledger is required (or set $ASG_LEDGER)", file=sys.stderr)
+        print(f"capsule {verb}: --ledger is required (or set $ASG_LEDGER)", file=sys.stderr)
     return path
 
 

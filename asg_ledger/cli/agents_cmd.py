@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg agents --status`: per-agent summary derived from the ledger.
+"""`capsule agents --status`: per-agent summary derived from the ledger.
 
 The headline number per agent (``records``) is a real fold evaluation
 (the built-in ``actions.count_by_developer/1.0.0`` catalog fold, T1's fold
@@ -7,7 +7,7 @@ engine) rather than a number this command computes itself -- per the
 workspace's standing rule that "the model never computes evidence; every
 numeric output carries a fold envelope or names its record." first/last
 seen and the verdict breakdown are read directly off the scanned records
-(each one individually visible via `asg log --agent <id>`, i.e. "names its
+(each one individually visible via `capsule log --agent <id>`, i.e. "names its
 record" rather than needing its own fold).
 
 There is no ledger-level notion of agent *enrollment* (the Onboarding
@@ -45,7 +45,7 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace) -> int:
     if not args.status:
-        print("asg agents: only --status is implemented", file=sys.stderr)
+        print("capsule agents: only --status is implemented", file=sys.stderr)
         return 2
 
     ledger_path = require_ledger_path("agents", args)
@@ -55,7 +55,7 @@ def run(args: argparse.Namespace) -> int:
     catalog_dir = args.dir or os.environ.get("ASG_FOLD_DIR") or DEFAULT_CATALOG_DIR
     count_entry = Catalog(catalog_dir).get(COUNT_FOLD_ID)
     if count_entry is None:
-        print(f"asg agents: fold {COUNT_FOLD_ID!r} not found in catalog {catalog_dir}", file=sys.stderr)
+        print(f"capsule agents: fold {COUNT_FOLD_ID!r} not found in catalog {catalog_dir}", file=sys.stderr)
         return 2
 
     first_seen: dict[str, str] = {}
@@ -86,7 +86,7 @@ def run(args: argparse.Namespace) -> int:
             print(f"  {format_envelope_line(trace.to_envelope())}")
         print(f"  first seen: {first_seen[agent]}")
         print(f"  last seen:  {last_seen[agent]}")
-        print(f"  verdicts:   {breakdown}  (see `asg log --agent {agent}` for the records)")
+        print(f"  verdicts:   {breakdown}  (see `capsule log --agent {agent}` for the records)")
         print()
 
     print(f"{len(first_seen)} agent(s) · as of {format_staleness(0)}")

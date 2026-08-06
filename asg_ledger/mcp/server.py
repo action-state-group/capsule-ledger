@@ -6,7 +6,7 @@ custom client), stdio transport.
     python -m asg_ledger.mcp.server        # stdio -- the default for every
                                             # MCP host that spawns a subprocess
 
-Every tool here is a thin wrapper over the same modules the `asg` CLI uses
+Every tool here is a thin wrapper over the same modules the `capsule` CLI uses
 (`ledger.api.LedgerAPI`, the fold engine, `guards.GuardEngine`) -- see
 `tools.py`, which contains 100% of the actual logic and has no dependency on
 this module or on the `mcp` package at all. This module's only job is
@@ -123,7 +123,7 @@ def ledger_query(
     agents do" questions (add `since`/`until` for a time window: "...last
     night", "...this week").
 
-    Every field is optional and independently composable, exactly like `asg
+    Every field is optional and independently composable, exactly like `capsule
     log`'s flags. The response always reports both the filtered `matched`
     count and the ledger's true `total`, plus the ledger's `checkpoint` and
     any `chain_gaps` -- a filtered view is never mistaken for the whole
@@ -306,7 +306,7 @@ def intent_declare(
     """Declare an intended action and get a real guard decision: allow, deny,
     or escalate. THE ONLY WRITE TOOL on this server -- every other tool only
     reads. The decision is appended to the ledger as a signed capsule (same
-    as a live `asg guard` call); the returned `capsule_id` is immediately
+    as a live `capsule guard` call); the returned `capsule_id` is immediately
     queryable via `record_get` or `ledger_query` -- this tool never reports
     success without the record actually landing.
     """

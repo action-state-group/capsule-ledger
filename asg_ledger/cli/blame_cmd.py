@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg blame <target>`: walk a record's ``chain.parent_capsule_id`` links
+"""`capsule blame <target>`: walk a record's ``chain.parent_capsule_id`` links
 backward to show what led to it -- the guard decisions and records upstream
 of the target, in chain order.
 
@@ -14,7 +14,7 @@ codebase already uses (T2's ``ChainGap``, and the upstream
                      gap; see that module's ``verify_chain_completeness``)
   - gap          -- ``chain.parent_capsule_id`` doesn't resolve in this ledger
                      (cross-referenced against ``store.find_gaps()`` for the
-                     browsable window, same as `asg log`'s gap reporting)
+                     browsable window, same as `capsule log`'s gap reporting)
   - cycle        -- a parent_capsule_id repeats a capsule already walked
                      (defensive; should not occur in a well-formed ledger)
   - truncated    -- ``--max-depth`` was reached before any of the above

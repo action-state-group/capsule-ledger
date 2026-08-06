@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg verify`: verify one ledger record, or an entire bundle file offline.
+"""`capsule verify`: verify one ledger record, or an entire bundle file offline.
 
 Exit codes (CI-friendly, and distinguished because "not found" and "found
 but tampered" are different failure modes a caller may want to branch on):
@@ -26,7 +26,7 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     p.add_argument("capsule_id", nargs="?", help="a capsule_id or an unambiguous prefix (omit with --bundle)")
     p.add_argument("--ledger", help="ledger store directory or a JSONL fixture file (default: $ASG_LEDGER)")
     p.add_argument(
-        "--bundle", help="verify every record in a bundle file produced by `asg bundle`, offline and self-contained"
+        "--bundle", help="verify every record in a bundle file produced by `capsule bundle`, offline and self-contained"
     )
     p.add_argument("--json", action="store_true", help="print the raw verification result(s) as JSON")
     p.set_defaults(func=run)
@@ -53,7 +53,7 @@ def run(args: argparse.Namespace) -> int:
     if args.bundle:
         return _run_bundle(args)
     if not args.capsule_id:
-        print("asg verify: capsule_id is required unless --bundle is given", file=sys.stderr)
+        print("capsule verify: capsule_id is required unless --bundle is given", file=sys.stderr)
         return 2
 
     ledger_path = require_ledger_path("verify", args)
@@ -93,7 +93,7 @@ def _run_bundle(args: argparse.Namespace) -> int:
         with open(args.bundle, encoding="utf-8") as fh:
             bundle = json.load(fh)
     except OSError as exc:
-        print(f"asg verify: cannot read bundle {args.bundle!r}: {exc}", file=sys.stderr)
+        print(f"capsule verify: cannot read bundle {args.bundle!r}: {exc}", file=sys.stderr)
         return 2
 
     records = bundle.get("records", [])

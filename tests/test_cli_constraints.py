@@ -1,4 +1,4 @@
-"""`asg constraints list` golden-output test: the registered guard checks
+"""`capsule constraints list` golden-output test: the registered guard checks
 and the starter action-class taxonomy (no ledger needed -- code-derived)."""
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""`asg fold` CLI stub: hot-load catalog, lint, and replay-over-a-ledger.
+"""`capsule fold` CLI stub: hot-load catalog, lint, and replay-over-a-ledger.
 
 ``tests/fixtures/sample_ledger.jsonl`` is a checked-in copy of
 capsule-emit/examples/amaury-receipt-pack/sample_ledger.jsonl (the fixture
