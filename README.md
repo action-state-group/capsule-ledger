@@ -35,6 +35,13 @@ See `asg_ledger/packaging.py` for the mechanism and the reasoning behind picking
 
 Off by default. If explicitly turned on (`ASG_LEDGER_TELEMETRY=1`), this install reports a handful of yes/no or count-shaped facts about how the package gets used (e.g. "was a guard configured shortly after install") — never what was configured, blocked, or held, and never any ledger content. Run `capsule telemetry status` to see the full disclosure text and current state, and `capsule telemetry funnel --dry-run` to see the report shape rendered against synthetic data. See `asg_ledger/telemetry/` for the implementation.
 
+## Onboarding
+
+Four ways to hook an agent up to a capsule-ledger instance (Claude Code,
+Goose, a framework adapter, Dapr), each ending in a real, independently
+verifiable record — see [`docs/onboarding.md`](docs/onboarding.md). Two of
+the four paths aren't built yet; the doc says so rather than inventing them.
+
 ## Failure semantics
 
 The guard fails closed by default and records every degradation — see
