@@ -166,7 +166,31 @@ own latest record (`7d`, or `all` for no filter). Writes a self-contained HTML
 report whose data lives only in the URL fragment; `--share` prints the full
 shareable link, `--verify` re-replays and re-verifies every cited capsule before
 exiting (use this in CI to catch a report that quietly stopped being
-reproducible).
+reproducible). Prints `evaluated under manifest <digest>` when a policy
+manifest resolves (the default; `--no-manifest` skips it) — see below.
+
+### `capsule manifest show|activate|verify` — declare-attest-verify for guard policy
+
+```bash
+capsule manifest show                                             # resolve + print the digest
+capsule manifest activate --ledger $ASG_LEDGER --operator acme --developer ops
+capsule manifest verify --ledger $ASG_LEDGER --capsule <decision-capsule-id>
+```
+
+A policy manifest is one file listing the active fold and wicket ("wicket" =
+this workspace's name for a guard constraint — `dedupe`/`caps`/
+`verify_before_dispatch`) definitions *by digest* — a lockfile, never a copy.
+`show` resolves it against the real fold/wicket catalogs and fails closed if
+any pinned digest has drifted from what's actually there now. `activate`
+appends a signed, passive config-change record (`chain.relation=epoch_opens`,
+chained to the ledger's previous activation if any) citing the manifest's own
+digest — this *is* the adoption event. Every decision `GuardEngine.check()`
+makes while configured with a manifest's digest carries that same digest on
+`asg_payload.manifest_digest`, so "which policy governed this decision" is
+checkable directly off the capsule; `verify` confirms a given decision
+capsule's cited digest actually resolves to a real, loadable manifest.
+`capsule diff` renders a manifest activation as a distinct "manifest boundary
+event", never silently folded into an ordinary added-record count.
 
 ### Reserved, not yet implemented
 
@@ -179,7 +203,8 @@ don't silently typo into a shell error; don't build against them yet.
 | Variable | Used by | Meaning |
 |---|---|---|
 | `$ASG_LEDGER` | every ledger-backed verb | default `--ledger` |
-| `$ASG_FOLD_DIR` | `fold`, `constraints list`, `agents --status`, `guard dry-run` | default fold catalog directory (falls back to the built-in catalog) |
+| `$ASG_FOLD_DIR` | `fold`, `constraints list`, `agents --status`, `guard dry-run`, `manifest` | default fold catalog directory (falls back to the built-in catalog) |
+| `$ASG_WICKET_DIR` | `guard dry-run`, `manifest` | default wicket catalog directory (falls back to the built-in catalog) |
 | `$ASG_VERIFY_BASE_URL` | `bundle` | base URL the verify permalink's fragment is appended to |
 
 ## Reading the output

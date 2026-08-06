@@ -53,6 +53,8 @@ asg_ledger = [
     "console/*.js",
     "telemetry/fixtures/*.jsonl",
     "folds/catalog_defs/*.yaml",
+    "guards/wickets/catalog_defs/*.yaml",
+    "policy/catalog_defs/*.yaml",
     "vectors/fixtures/kat/*/*.yaml",
     "vectors/fixtures/kat/*/*.jsonl",
     "vectors/fixtures/kat/*/*.json",
