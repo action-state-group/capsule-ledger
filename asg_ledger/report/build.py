@@ -107,10 +107,13 @@ def build_dry_run_report(
     operator: str | None = None,
     model_note: str | None = None,
     model_id: str | None = None,
+    manifest_digest: str | None = None,
 ) -> DryRunReport:
     all_records = load_records(ledger_paths)
     replayed_records = filter_since(all_records, since)
-    result: ReplayResult = replay(replayed_records, caps_fold=caps_fold, caps_minor=caps_minor)
+    result: ReplayResult = replay(
+        replayed_records, caps_fold=caps_fold, caps_minor=caps_minor, manifest_digest=manifest_digest
+    )
 
     sections: dict[str, list[ReportRow]] = {guard_id: [] for guard_id in GUARD_ORDER}
     operators: Counter[str] = Counter()
@@ -149,6 +152,7 @@ def build_dry_run_report(
         replay_command=replay_command,
         generated_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         model_note=note,
+        manifest_digest=manifest_digest,
     )
 
 
