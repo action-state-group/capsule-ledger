@@ -1,4 +1,4 @@
-"""`asg agents --status` golden-output tests. The headline number is a real
+"""`capsule agents --status` golden-output tests. The headline number is a real
 fold evaluation (`actions.count_by_developer`), not a number this command
 invents -- assert the literal DM Mono envelope line, not just a bare count."""
 from __future__ import annotations
@@ -16,13 +16,13 @@ def test_agents_status(capsys):
     assert rc == 0
     out = capsys.readouterr().out
 
-    assert out.startswith("≡ asg agents --status\n")
+    assert out.startswith("≡ capsule agents --status\n")
     assert "procurement-agent@v1" in out
     assert re.search(r"fold [0-9a-f]{64} · records 0–3 · checkpoint #4 · as of just now", out)
     assert "first seen: 2026-07-06T21:53:50.729284Z" in out
     assert "last seen:  2026-07-06T21:53:50.730668Z" in out
     assert "verdicts:   blocked:1 confirmed:1 executed:2" in out
-    assert "see `asg log --agent procurement-agent@v1`" in out
+    assert "see `capsule log --agent procurement-agent@v1`" in out
     assert "1 agent(s) · as of just now" in out
 
 

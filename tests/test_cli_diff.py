@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg diff` golden-output tests.
+"""`capsule diff` golden-output tests.
 
 Epoch-diff acceptance (per the task): a meaningful before/after diff on the
 tax-audit-style fixture (`nanda_transaction_ledger.jsonl`) -- see
@@ -34,7 +34,7 @@ def test_diff_by_seq_refs_shows_added_records_and_verdict_delta(capsys):
     assert "verdict distribution delta:" in out
     assert "blocked: 0 → 1 (+1)" in out
     assert "executed: 1 → 2 (+1)" in out
-    assert out.rstrip().endswith("≡ asg diff 1 3")
+    assert out.rstrip().endswith("≡ capsule diff 1 3")
 
 
 def test_diff_to_ref_defaults_to_head(capsys):

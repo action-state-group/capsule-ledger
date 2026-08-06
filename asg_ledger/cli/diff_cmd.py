@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg diff <from-ref> <to-ref>`: a structural set diff between two ledger
+"""`capsule diff <from-ref> <to-ref>`: a structural set diff between two ledger
 checkpoints.
 
 "Epoch" per this package's own upstream dependency (``agent_action_capsule.
@@ -75,7 +75,7 @@ def _resolve_ref(store, all_records: list, ref: str) -> int | None:
 def _build_echo(args: argparse.Namespace) -> str:
     """`diff` takes two positionals, so it can't reuse `format.build_echo`
     (one positional only) -- same tokenization convention, extended."""
-    tokens = ["asg", "diff", shlex.quote(args.from_ref), shlex.quote(args.to_ref)]
+    tokens = ["capsule", "diff", shlex.quote(args.from_ref), shlex.quote(args.to_ref)]
     for fold_ref in args.folds:
         tokens += ["--fold", shlex.quote(fold_ref)]
     if args.key is not None:
@@ -116,7 +116,7 @@ def _fold_delta(fold_ref: str, args: argparse.Namespace, state_from: list, state
     directory = catalog_dir(args)
     definition = resolve_fold(fold_ref, directory)
     if definition is None:
-        print(f"asg diff: no such fold {fold_ref!r} in catalog {directory}", file=sys.stderr)
+        print(f"capsule diff: no such fold {fold_ref!r} in catalog {directory}", file=sys.stderr)
         return None
 
     capsules_from = [r.capsule for r in state_from]
@@ -128,7 +128,7 @@ def _fold_delta(fold_ref: str, args: argparse.Namespace, state_from: list, state
         trace_from = evaluate_one(definition, capsules_from, key_value=args.key, as_of=as_of_from)
         trace_to = evaluate_one(definition, capsules_to, key_value=args.key, as_of=as_of_to)
     except FoldDeterminismError as exc:
-        print(f"asg diff: fold {fold_ref!r}: {exc}", file=sys.stderr)
+        print(f"capsule diff: fold {fold_ref!r}: {exc}", file=sys.stderr)
         return None
 
     return definition.fold_id, trace_from.result, trace_to.result
@@ -146,7 +146,7 @@ def run(args: argparse.Namespace) -> int:
         if seq_from is None or seq_to is None:
             bad = args.from_ref if seq_from is None else args.to_ref
             print(
-                f"asg diff: cannot resolve ref {bad!r} (not a seq number, capsule_id, "
+                f"capsule diff: cannot resolve ref {bad!r} (not a seq number, capsule_id, "
                 "ISO-8601 timestamp, or HEAD)",
                 file=sys.stderr,
             )
@@ -196,7 +196,7 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     print(
-        f"asg diff: checkpoint #{seq_from} ({args.from_ref}) → checkpoint #{seq_to} ({args.to_ref})"
+        f"capsule diff: checkpoint #{seq_from} ({args.from_ref}) → checkpoint #{seq_to} ({args.to_ref})"
     )
     print()
 

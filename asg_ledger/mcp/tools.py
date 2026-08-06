@@ -81,9 +81,9 @@ def ledger_query(
     action_type: str | None = None,
     limit: int | None = None,
 ) -> dict[str, Any]:
-    """The same filtered scan `asg log` runs: every matching record, plus the
+    """The same filtered scan `capsule log` runs: every matching record, plus the
     honest total (a filtered view is never mistaken for the whole ledger) and
-    the chain-gap count `asg log`'s own footer reports."""
+    the chain-gap count `capsule log`'s own footer reports."""
     total = sum(1 for _ in ledger.scan(ScanQuery()))
     query = ScanQuery(
         agent=agent,
@@ -114,7 +114,7 @@ def ledger_query(
 
 def fold_list(catalog_dir: str | Path) -> dict[str, Any]:
     """The fold catalog: every declared fold's id, definition digest, and
-    source path, matching `asg fold list` exactly (same `Catalog`)."""
+    source path, matching `capsule fold list` exactly (same `Catalog`)."""
     catalog = Catalog(catalog_dir)
     entries = catalog.list_entries()
     errors = catalog.list_errors()
@@ -138,7 +138,7 @@ def fold_get(
     as_of: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate one fold over the current ledger and return its full result
-    envelope -- the same replay `asg fold test` runs, against the live
+    envelope -- the same replay `capsule fold test` runs, against the live
     ledger instead of a one-off `--ledger` file.
 
     ``fold`` is a fold_id, a definition digest, or a path to a definition
@@ -277,7 +277,7 @@ def action_been_done(
 
 def constraints_list(catalog_dir: str | Path) -> dict[str, Any]:
     """The registered guard checks and the action-class taxonomy -- the same
-    static catalog `asg constraints list` prints, structured instead of
+    static catalog `capsule constraints list` prints, structured instead of
     formatted for a terminal."""
     caps_entry = Catalog(catalog_dir).get(DEFAULT_CAPS_FOLD_ID)
     caps_method = caps_entry.definition.fold_id if caps_entry is not None else None
@@ -306,7 +306,7 @@ def constraints_list(catalog_dir: str | Path) -> dict[str, Any]:
 def decision_explain(ledger: LedgerAPI, *, capsule_id: str) -> dict[str, Any]:
     """Why a decision came out the way it did: the capsule's own constraints
     breakdown (`id`/`result`/`method` per check that ran) plus its verdict --
-    the same information `asg show` prints, never a separately-generated
+    the same information `capsule show` prints, never a separately-generated
     explanation. A capsule's constraints ARE the explanation; there is no
     other reasoning to fetch."""
     record = ledger.fetch(capsule_id)
@@ -338,7 +338,7 @@ def decision_explain(ledger: LedgerAPI, *, capsule_id: str) -> dict[str, Any]:
 
 
 def record_get(ledger: LedgerAPI, *, capsule_id: str) -> dict[str, Any]:
-    """The full raw capsule by id or unambiguous prefix -- `asg show --json`'s
+    """The full raw capsule by id or unambiguous prefix -- `capsule show --json`'s
     own output, unchanged."""
     record = ledger.fetch(capsule_id)
     if record is None:
@@ -347,7 +347,7 @@ def record_get(ledger: LedgerAPI, *, capsule_id: str) -> dict[str, Any]:
 
 
 def record_verify(ledger: LedgerAPI, *, capsule_id: str) -> dict[str, Any]:
-    """Independently re-verify one capsule's digest and chain -- `asg verify`'s
+    """Independently re-verify one capsule's digest and chain -- `capsule verify`'s
     own check, run against the live ledger. Returns `ok` plus every finding
     (never just a bare boolean) so a `False` always comes with a reason."""
     record = ledger.fetch(capsule_id)
@@ -388,11 +388,11 @@ def intent_declare(
     decision -- allow, deny, or escalate. THE ONLY WRITE TOOL on this server:
     every other tool only reads. On anything but an infra-level failure, the
     decision is appended to the ledger as a signed capsule (`GuardEngine.check`,
-    same as a live `asg guard` call would do) -- `capsule_id` in the response
+    same as a live `capsule guard` call would do) -- `capsule_id` in the response
     is directly queryable afterward via `record.get` or `ledger.query`.
 
     ``action_class`` is looked up in the starter taxonomy
-    (`asg constraints list` shows it); absent or unrecognized both resolve to
+    (`capsule constraints list` shows it); absent or unrecognized both resolve to
     the consequential, fail-closed default -- there is no silent bypass for
     an unclassified action.
     """

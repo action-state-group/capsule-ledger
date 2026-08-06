@@ -30,7 +30,7 @@ Reports are aggregated across installs; nothing here computes or stores an
 individual verdict about your own usage.
 
 Turn on with: {ENV_VAR}=1
-Check current status any time: asg telemetry status
+Check current status any time: capsule telemetry status
 Turn off: unset {ENV_VAR} (or set it to 0)
 """
 

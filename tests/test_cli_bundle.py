@@ -1,4 +1,4 @@
-"""`asg bundle` golden-output tests: the produced slice verifies standalone,
+"""`capsule bundle` golden-output tests: the produced slice verifies standalone,
 transitively includes cited chain parents, and the permalink fragment
 decodes back to the same bundle -- never sent anywhere but the URL fragment."""
 from __future__ import annotations

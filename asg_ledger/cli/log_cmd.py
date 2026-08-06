@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg log`: git-log-style listing over the ledger query API (T2's ScanQuery)."""
+"""`capsule log`: git-log-style listing over the ledger query API (T2's ScanQuery)."""
 from __future__ import annotations
 
 import argparse

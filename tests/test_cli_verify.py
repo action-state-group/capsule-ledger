@@ -1,4 +1,4 @@
-"""`asg verify` golden-output tests, including the exit-code discipline and
+"""`capsule verify` golden-output tests, including the exit-code discipline and
 the negative path (a genuinely tampered record must be *caught*, not just
 structurally exercised -- the recurring "check that never rejects anything"
 defect class)."""
@@ -18,7 +18,7 @@ def test_verify_ok_exits_zero(capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert f"✓ verifies · {APPROVE_ID}" in out
-    assert out.rstrip().endswith(f"≡ asg verify {APPROVE_ID}")
+    assert out.rstrip().endswith(f"≡ capsule verify {APPROVE_ID}")
 
 
 def test_verify_json_flag(capsys):

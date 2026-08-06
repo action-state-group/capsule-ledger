@@ -54,7 +54,7 @@ def build_echo(verb: str, *, positional: str | None = None, flags: list[tuple[st
     Flag order is fixed (whatever the caller passes), not the order the user
     typed them in, so the same query always echoes identically.
     """
-    tokens = ["asg", verb]
+    tokens = ["capsule", verb]
     if positional is not None:
         tokens.append(shlex.quote(str(positional)))
     for flag, value in flags:

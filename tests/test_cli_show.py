@@ -1,4 +1,4 @@
-"""`asg show` golden-output tests."""
+"""`capsule show` golden-output tests."""
 from __future__ import annotations
 
 import json
@@ -21,7 +21,7 @@ def test_show_by_prefix_renders_summary_and_echo(capsys):
     assert "Verdict:    executed" in out
     assert "Chain:      (none)" in out
     assert "Constraints: (none)" in out
-    assert out.rstrip().endswith(f"≡ asg show {APPROVE_ID}")
+    assert out.rstrip().endswith(f"≡ capsule show {APPROVE_ID}")
 
 
 def test_show_renders_constraints(capsys):

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg blame` golden-output tests."""
+"""`capsule blame` golden-output tests."""
 from __future__ import annotations
 
 import json
@@ -24,7 +24,7 @@ def test_blame_walks_confirms_chain_to_standalone_root(capsys):
     assert out.index(CONFIRM_ID) < out.index(APPROVE_ID)
     assert "chain.relation='confirms'" in out
     assert "2 hop(s) in chain · root reached — this record carries no chain (standalone)" in out
-    assert out.rstrip().endswith(f"≡ asg blame {CONFIRM_ID}")
+    assert out.rstrip().endswith(f"≡ capsule blame {CONFIRM_ID}")
 
 
 def test_blame_prefix_target(capsys):

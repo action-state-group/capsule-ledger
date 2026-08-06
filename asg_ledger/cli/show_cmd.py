@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`asg show <capsule_id>`: git-show-style detail view of one ledger record."""
+"""`capsule show <capsule_id>`: git-show-style detail view of one ledger record."""
 from __future__ import annotations
 
 import argparse

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Shared plumbing for verbs that evaluate a fold by reference: `asg diff --fold`
-and `asg bisect --fold` both accept the same thing `fold test` does -- a
+"""Shared plumbing for verbs that evaluate a fold by reference: `capsule diff --fold`
+and `capsule bisect --fold` both accept the same thing `fold test` does -- a
 fold_id, a definition_digest, or a path to a definition YAML file -- resolved
 against the built-in catalog (or `--dir`/`$ASG_FOLD_DIR`)."""
 from __future__ import annotations

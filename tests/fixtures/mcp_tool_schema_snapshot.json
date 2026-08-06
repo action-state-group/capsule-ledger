@@ -185,7 +185,7 @@
     "name": "fold_list"
   },
   {
-    "description": "Declare an intended action and get a real guard decision: allow, deny,\nor escalate. THE ONLY WRITE TOOL on this server -- every other tool only\nreads. The decision is appended to the ledger as a signed capsule (same\nas a live `asg guard` call); the returned `capsule_id` is immediately\nqueryable via `record_get` or `ledger_query` -- this tool never reports\nsuccess without the record actually landing.\n",
+    "description": "Declare an intended action and get a real guard decision: allow, deny,\nor escalate. THE ONLY WRITE TOOL on this server -- every other tool only\nreads. The decision is appended to the ledger as a signed capsule (same\nas a live `capsule guard` call); the returned `capsule_id` is immediately\nqueryable via `record_get` or `ledger_query` -- this tool never reports\nsuccess without the record actually landing.\n",
     "inputSchema": {
       "properties": {
         "action_class": {
@@ -293,7 +293,7 @@
     "name": "intent_declare"
   },
   {
-    "description": "List ledger records matching a filter -- the tool for \"what did my\nagents do\" questions (add `since`/`until` for a time window: \"...last\nnight\", \"...this week\").\n\nEvery field is optional and independently composable, exactly like `asg\nlog`'s flags. The response always reports both the filtered `matched`\ncount and the ledger's true `total`, plus the ledger's `checkpoint` and\nany `chain_gaps` -- a filtered view is never mistaken for the whole\nledger, and a broken chain is never silently reported as intact.\n",
+    "description": "List ledger records matching a filter -- the tool for \"what did my\nagents do\" questions (add `since`/`until` for a time window: \"...last\nnight\", \"...this week\").\n\nEvery field is optional and independently composable, exactly like `capsule\nlog`'s flags. The response always reports both the filtered `matched`\ncount and the ledger's true `total`, plus the ledger's `checkpoint` and\nany `chain_gaps` -- a filtered view is never mistaken for the whole\nledger, and a broken chain is never silently reported as intact.\n",
     "inputSchema": {
       "properties": {
         "action_type": {
