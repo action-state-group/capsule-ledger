@@ -153,12 +153,12 @@ _EXPECTED_PEAKS_BY_LEAF_COUNT = {
 
 _PINNED_ROOTS_BY_LEAF_COUNT = {
     1: "184208f662bb7a6f5cc14a39988f74f2bb05bd3f934311da0aa3f65a950d8e01",
-    2: "eb385a9988a2d6492773a5dfef077d1c77c48ea8c67c1dfb83467447307ebefc",
-    3: "9c2639040bf61bd172f5bac081ec215e6c47270f5061adfe1dac16842d93f4dd",
-    4: "ea2fbcc44be9d9acb0fdcbb87f8b020c847e0ae8b4a72917d86e26ff54974e35",
-    5: "598fe9836eb8c8ff585e6c4d98e0271f190bca3586eada0e75a77b9279bf1a45",
-    6: "8ea2d2d189dcb81573df77a0be61540f57c9ee94d2a1910ba2a0dec9dfe3bbc7",
-    7: "fc06a0a2a29e68b407c6f920c650ddbe1deada6c97702c23bf36c62f1f8e1a09",
+    2: "f7b19d3f831d2cddfe91865465a8beb649e4bf16c3aa2fde7378e7ee2e215694",
+    3: "e5280e43815bcb82f184d4dbe10741b65a28c34488a9a3029e0e08d1cbed9a17",
+    4: "44588de7a213cb67d681fd0822d22f57248a50b5cab4d5579c1d9162403b6755",
+    5: "a19de527084fc32502d998b4dd0e73f942d3b4ddc55b2c093dfd907e95a93f1a",
+    6: "ade39981df4d01db5a3c3e5d1ff0a6f87ea3a63077820d37599c6a39fb904b01",
+    7: "a0c0e8e7d78bf06dee4c988a228ff034dca8a25964a4af89a3d7d11670f31d10",
 }
 
 
@@ -177,27 +177,34 @@ def test_kat_7_leaf_append_sequence_peak_structure_and_root():
 def test_kat_hashing_scheme_independent_cross_check_5_leaves():
     """Reconstructs the 5-leaf root via bare hashlib calls (not this module's
     own leaf_hash/interior_hash/root_from_peaks) to confirm the pinned root
-    above isn't just self-consistent with a buggy implementation."""
+    above isn't just self-consistent with a buggy implementation.
+
+    Positions for the interior nodes (2, 5, 6) are hand-derived from the flat
+    layout, same as the peak positions above, independent of this module's
+    own code."""
 
     def ref_leaf(bd: bytes) -> bytes:
         return hashlib.sha256(b"\x00" + bd).digest()
 
-    def ref_interior(left: bytes, right: bytes) -> bytes:
-        return hashlib.sha256(b"\x01" + left + right).digest()
+    def ref_interior(left: bytes, right: bytes, position: int) -> bytes:
+        pos_bytes = (position + 1).to_bytes(8, "big")
+        return hashlib.sha256(pos_bytes + left + right).digest()
 
     def ref_bag(ps: list[bytes]) -> bytes:
         if not ps:
             return bytes(32)
-        acc = ps[-1]
-        for i in range(len(ps) - 2, -1, -1):
-            acc = hashlib.sha256(b"\x02" + ps[i] + acc).digest()
-        return acc
+        hashes = list(ps)
+        while len(hashes) > 1:
+            right = hashes.pop()
+            left = hashes.pop()
+            hashes.append(hashlib.sha256(right + left).digest())
+        return hashes[0]
 
     digests = [_body_digest(n) for n in range(1, 6)]
     leaves = [ref_leaf(bd) for bd in digests]
-    p2 = ref_interior(leaves[0], leaves[1])
-    p5 = ref_interior(leaves[2], leaves[3])
-    p6 = ref_interior(p2, p5)
+    p2 = ref_interior(leaves[0], leaves[1], 2)
+    p5 = ref_interior(leaves[2], leaves[3], 5)
+    p6 = ref_interior(p2, p5, 6)
     expected_root = ref_bag([p6, leaves[4]])  # peaks: pos6 (height2), pos7 (leaf4, height0)
 
     assert expected_root.hex() == _PINNED_ROOTS_BY_LEAF_COUNT[5]
@@ -479,3 +486,32 @@ def test_consistency_empty_to_nonempty():
     proof = core.consistency_proof(store, 0, size_b)
     assert proof.old_peaks == ()
     assert core.verify_consistency(root_a, 0, root_b, size_b, proof)
+
+
+# -- massifdb cross-check (internal only, NOT production) --------------------
+#
+# `_massifdb_interior_hash`/`_massifdb_root_from_peaks` reproduce this
+# module's original massifdb-derived scheme and are kept solely as an
+# internal cross-check against that original design source -- see the
+# module docstring. These values were independently verified against a real
+# massifdb TypeScript run; pin them here so any accidental change to the
+# cross-check functions themselves is caught.
+
+
+def test_massifdb_cross_check_matches_verified_typescript_output():
+    aa = bytes([0xAA] * 32)
+    bb = bytes([0xBB] * 32)
+    cc = bytes([0xCC] * 32)
+
+    l0 = core.leaf_hash(aa)
+    l1 = core.leaf_hash(bb)
+    l2 = core.leaf_hash(cc)
+    assert l0.hex() == "e0bb82791bae3c50bd9c20fa4ccdcb8064a56e5c12bc69b07e6712ac9b4429e6"
+    assert l1.hex() == "4f16119d36ccd0da91102f57692d73934fd0ad2494280df88449accedbbfb7ea"
+    assert l2.hex() == "2e3aa189e1f666b2c3e864e21d978388020b89a6725e31ff2657bad5840a7f02"
+
+    n2 = core._massifdb_interior_hash(l0, l1)  # noqa: SLF001 -- testing the internal cross-check directly
+    assert n2.hex() == "03938e2c8f758e6cae443d499b41c899c373eb0c0198bae61796a069f2b05904"
+
+    root = core._massifdb_root_from_peaks([n2, l2])  # noqa: SLF001
+    assert root.hex() == "345abe89806802811606507081c9f710d0615012da316f5e3886afd7e701ec76"
