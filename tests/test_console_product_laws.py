@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-CONSOLE = Path(__file__).parent.parent / "asg_ledger" / "console"
+CONSOLE = Path(__file__).parent.parent / "capsule_ledger" / "console"
 TOKENS_CSS = (CONSOLE / "tokens.css").read_text(encoding="utf-8")
 COMPONENTS_CSS = (CONSOLE / "components.css").read_text(encoding="utf-8")
 GALLERY_HTML = (CONSOLE / "gallery.html").read_text(encoding="utf-8")
@@ -158,7 +158,7 @@ def _envelope_line_section() -> str:
 
 
 def test_envelope_line_matches_pinned_literal_format():
-    """Format pinned in asg_ledger/cli/format.py:format_envelope_line --
+    """Format pinned in capsule_ledger/cli/format.py:format_envelope_line --
     literal text, not a font choice. Every envelope-line div in the
     dedicated envelope-line gallery section must match exactly (this is
     stricter than "at least one line somewhere matches", so a corrupted
@@ -207,7 +207,7 @@ def test_gallery_renders_every_required_component_and_state():
 
 def test_gallery_makes_no_outbound_network_requests():
     """Matches the repo's existing verify-surface discipline
-    (asg_ledger/report/render.py): no external network calls in a page
+    (capsule_ledger/report/render.py): no external network calls in a page
     meant to be served locally."""
     for match in re.finditer(r'(?:href|src)\s*=\s*"([^"]+)"', GALLERY_HTML):
         url = match.group(1)

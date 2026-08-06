@@ -3,7 +3,7 @@
 **Status: this describes the actual current mechanism, not a target design.**
 v0 has no COSE/asymmetric signer anywhere in this package. Every capsule this
 package produces is `attestation_mode: self_attested`, sealed with a local
-HMAC-SHA256 "signature" (see `asg_ledger/guards/signing.py`) — enough to make
+HMAC-SHA256 "signature" (see `capsule_ledger/guards/signing.py`) — enough to make
 key material a real, checkable precondition for [the fail-closed rule on an
 unavailable signing key](failure-semantics.md), and to make the signature
 itself tamper-evident (it is committed into `capsule_id`), without pulling in
@@ -14,8 +14,8 @@ as a first-class, recorded operation is separate, tracked work (see
 | Question | Current answer |
 |---|---|
 | Key type | HMAC-SHA256 shared secret (`LocalSigner`), not an asymmetric keypair |
-| Provisioning | Set two env vars on the MCP server process: `ASG_MCP_SIGNING_KEY_ID`, `ASG_MCP_SIGNING_SECRET` |
-| Default if unset | A **fixed, checked-in dev key** (`key_id="asg-mcp-server"`, secret `b"asg-mcp-server-dev-key"`) so the server runs out of the box for local experimentation |
+| Provisioning | Set two env vars on the MCP server process: `CAPSULE_MCP_SIGNING_KEY_ID`, `CAPSULE_MCP_SIGNING_SECRET` (legacy `ASG_MCP_SIGNING_KEY_ID`/`ASG_MCP_SIGNING_SECRET` still honored) |
+| Default if unset | A **fixed, checked-in dev key** (`key_id="capsule-mcp-server"`, secret `b"capsule-mcp-server-dev-key"`) so the server runs out of the box for local experimentation |
 | Where the key lives on disk | Nowhere, by design — it exists only as an env var value or the in-source dev-key fallback; there is no key file, keystore, or on-disk secret store in this package |
 | Scope | One key per running server process, held in memory for the process lifetime; not shared across processes or persisted between restarts unless the same env vars are set again |
 | Rotation | Not implemented. Restarting the process with new env vars starts signing new decisions with the new key; nothing in this package records that a rotation happened, revokes the old key, or re-signs anything — see "Rotation" below |
@@ -24,18 +24,18 @@ as a first-class, recorded operation is separate, tracked work (see
 ## Provisioning today
 
 The only live signing path is the MCP server's `intent.declare` tool
-(`asg_ledger/mcp/server.py`, `_get_guard`): it builds one `LocalSigner` from
+(`capsule_ledger/mcp/server.py`, `_get_guard`): it builds one `LocalSigner` from
 `ServerConfig.signing_key_id` / `signing_secret` at first use and reuses it
-for the life of the process (`asg_ledger/mcp/config.py`, `load_config`).
+for the life of the process (`capsule_ledger/mcp/config.py`, `load_config`).
 There is no key-generation step, ceremony, or CLI verb — an operator sets
 the two env vars (or accepts the dev default) before starting the server.
 
 Two other places construct a `LocalSigner`, and neither is the live decision
 path:
-- `asg_ledger/report/replay.py`'s dry-run report builder uses its own
+- `capsule_ledger/report/replay.py`'s dry-run report builder uses its own
   hardcoded key (`key_id="dry-run-report"`) to produce a read-only replay
   artifact, unrelated to the MCP server's key.
-- The CLI's `capsule guard enforce` command (`asg_ledger/cli/guard_cmds.py`)
+- The CLI's `capsule guard enforce` command (`capsule_ledger/cli/guard_cmds.py`)
   does not sign anything — it is a local, honest telemetry marker that
   records the operator declared enforcement-on; `GuardEngine.check(...,
   dry_run=...)` is the only thing that ever gates a real decision, and the
@@ -43,11 +43,11 @@ path:
 
 ## The dev-default key is not a secret boundary
 
-`_DEFAULT_SIGNING_SECRET` in `asg_ledger/mcp/config.py` is a literal string
+`_DEFAULT_SIGNING_SECRET` in `capsule_ledger/mcp/config.py` is a literal string
 checked into source. It exists so the server runs immediately with no setup;
 it provides no confidentiality once the source is public (flagged in PR
 #13). Anything beyond local experimentation must set both
-`ASG_MCP_SIGNING_KEY_ID` and `ASG_MCP_SIGNING_SECRET` explicitly — running
+`CAPSULE_MCP_SIGNING_KEY_ID` and `CAPSULE_MCP_SIGNING_SECRET` explicitly — running
 the dev default in a shared or production deployment means anyone who has
 read the source can forge signed capsules.
 
@@ -55,8 +55,8 @@ read the source can forge signed capsules.
 
 There is no rotation or revocation mechanism, so recovery is entirely
 out-of-band and manual:
-1. Generate a new secret and set it via `ASG_MCP_SIGNING_SECRET` /
-   `ASG_MCP_SIGNING_KEY_ID`.
+1. Generate a new secret and set it via `CAPSULE_MCP_SIGNING_SECRET` /
+   `CAPSULE_MCP_SIGNING_KEY_ID`.
 2. Restart the MCP server process. It picks up the new key on next launch
    (`load_config()` reads the environment once, at construction).
 3. Nothing marks the old key as revoked, records the compromise, or

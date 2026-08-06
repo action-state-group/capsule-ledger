@@ -1,8 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
 """`capsule constraints list` golden-output test: the registered guard checks
 and the starter action-class taxonomy (no ledger needed -- code-derived)."""
 from __future__ import annotations
 
-from asg_ledger.cli.main import main
+from capsule_ledger.cli.main import main
 
 
 def test_constraints_list(capsys):

@@ -36,7 +36,7 @@ Action itself:
    `capsule guard dry-run --verify` already ships, not a reimplementation.
 3. **Epoch-diff** — `capsule diff <diff-from> <diff-to> --ledger
    <diff-ledger>`, reusing the real epoch-diff/checkpoint-diff logic in
-   [`asg_ledger/cli/diff_cmd.py`](../asg_ledger/cli/diff_cmd.py) unchanged.
+   [`capsule_ledger/cli/diff_cmd.py`](../capsule_ledger/cli/diff_cmd.py) unchanged.
    Prints the added/removed records and verdict-distribution delta to the
    job log and `$GITHUB_STEP_SUMMARY`, and fails the check if either ref is
    unresolvable.

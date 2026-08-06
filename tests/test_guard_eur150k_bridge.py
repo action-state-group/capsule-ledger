@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """The EUR150k bridge scenario: the real amaury sample ledger, capsule
 cd0692b3 (a transfer_funds/€150,000 attempt already recorded as `blocked`
 by a prior, independent policy engine). This guard, given the same action
@@ -24,7 +25,7 @@ Needs decision (unrelated to D1/D2, not resolved by this task).
 """
 from pathlib import Path
 
-from asg_ledger.guards import Action, GuardEngine, LocalSigner
+from capsule_ledger.guards import Action, GuardEngine, LocalSigner
 
 FIXTURES = Path(__file__).parent / "fixtures"
 AMAURY = FIXTURES / "amaury_sample_ledger.jsonl"

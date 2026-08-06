@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import asg_ledger.mcp.server as srv
+import capsule_ledger.mcp.server as srv
 
 
 @pytest.fixture(autouse=True)
@@ -119,7 +119,7 @@ def test_scripted_session_answers_carry_verification_data():
     # -- "is that refusal record actually intact?"
     verified = _call("record_verify", {"capsule_id": over_cap["capsule_id"]})
     assert verified["ok"] is True
-    # `hitl_dispatched` (D1) is asg-ledger's own policy vocabulary and isn't
+    # `hitl_dispatched` (D1) is capsule-ledger's own policy vocabulary and isn't
     # yet a seeded value in AAC's REGISTRY.md -- the reference verifier
     # correctly flags that as informational (§12), not a rejection.
     assert verified["findings"] == [

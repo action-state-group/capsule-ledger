@@ -1,10 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
 """Definition parsing/validation and the definition_digest (spec §2, §3)."""
 from __future__ import annotations
 
 import pytest
 
-from asg_ledger.folds.definition import parse_definition
-from asg_ledger.folds.errors import (
+from capsule_ledger.folds.definition import parse_definition
+from capsule_ledger.folds.errors import (
     DUPLICATE_READ_PATH,
     FLOAT_IN_DEFINITION,
     INVALID_FOLD_ID,

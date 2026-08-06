@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """dry_run over the sample ledgers: would-have-held outcomes, never blocking.
 
 nanda_transaction_ledger.jsonl is 36 near-identical `record_transaction`
@@ -13,7 +14,7 @@ see D2, 2026-08-05).
 import json
 from pathlib import Path
 
-from asg_ledger.guards import Action, GuardEngine
+from capsule_ledger.guards import Action, GuardEngine
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NANDA = FIXTURES / "nanda_transaction_ledger.jsonl"

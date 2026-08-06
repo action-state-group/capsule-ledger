@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Opt-in-disclosed, aggregate-only telemetry: default-off, no PII/ledger
 content in any payload, and the CLI hooks that turn real usage into the
-six raw metric facts. See ``asg_ledger/telemetry/`` for the modules under
+six raw metric facts. See ``capsule_ledger/telemetry/`` for the modules under
 test and ``test_two_arm_packaging.py`` for the arm-visibility side of T8.
 """
 from __future__ import annotations
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from asg_ledger.cli.main import main as cli_main
-from asg_ledger.telemetry import consent, events, funnel, record
-from asg_ledger.telemetry.sink import LocalJSONLSink, emit
+from capsule_ledger.cli.main import main as cli_main
+from capsule_ledger.telemetry import consent, events, funnel, record
+from capsule_ledger.telemetry.sink import LocalJSONLSink, emit
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NANDA = FIXTURES / "nanda_transaction_ledger.jsonl"
@@ -96,7 +96,7 @@ def test_no_metric_event_can_carry_ledger_shaped_fields(builder):
 
 
 def test_install_id_is_a_random_uuid_not_derived_from_the_machine(state_dir, opted_out):
-    from asg_ledger.telemetry.state import load_state
+    from capsule_ledger.telemetry.state import load_state
 
     s1 = load_state()
     uuid.UUID(s1.install_id)  # raises if not a valid UUID
@@ -182,7 +182,7 @@ def test_guard_dry_run_without_opt_in_emits_nothing(opted_out, state_dir, tmp_pa
 def test_funnel_computes_raw_rates_from_synthetic_fixture():
     from importlib import resources
 
-    text = resources.files("asg_ledger.telemetry").joinpath("fixtures", "synthetic_events.jsonl").read_text()
+    text = resources.files("capsule_ledger.telemetry").joinpath("fixtures", "synthetic_events.jsonl").read_text()
     raw_events = [json.loads(line) for line in text.splitlines() if line.strip()]
     report = funnel.compute_funnel(raw_events)
 

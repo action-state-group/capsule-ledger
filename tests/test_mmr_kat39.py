@@ -27,8 +27,8 @@ which likewise takes an already-hashed leaf as an opaque input.
 """
 from __future__ import annotations
 
-from asg_ledger.mmr import core
-from asg_ledger.mmr.store import MemoryNodeStore
+from capsule_ledger.mmr import core
+from capsule_ledger.mmr.store import MemoryNodeStore
 
 # fmt: off
 KAT39_LEAVES = [

@@ -1,10 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
 """`capsule log` golden-output tests."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from asg_ledger.cli.main import main
+from capsule_ledger.cli.main import main
 
 FIXTURE_LEDGER = Path(__file__).parent / "fixtures" / "sample_ledger.jsonl"
 
@@ -55,11 +56,30 @@ def test_log_filter_by_agent_and_action_type_builds_canonical_echo(capsys):
 
 
 def test_log_no_ledger_given_errors(capsys, monkeypatch):
+    monkeypatch.delenv("CAPSULE_LEDGER", raising=False)
     monkeypatch.delenv("ASG_LEDGER", raising=False)
     rc = main(["log"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "--ledger is required" in err
+
+
+def test_log_capsule_ledger_env_var_used_when_no_ledger_flag(capsys, monkeypatch):
+    """CAPSULE_LEDGER set, no --ledger flag, no ASG_LEDGER -> new env var used."""
+    monkeypatch.delenv("ASG_LEDGER", raising=False)
+    monkeypatch.setenv("CAPSULE_LEDGER", str(FIXTURE_LEDGER))
+    rc = main(["log"])
+    assert rc == 0
+    assert "approve_purchase" in capsys.readouterr().out
+
+
+def test_log_legacy_asg_ledger_env_var_still_works_as_fallback(capsys, monkeypatch):
+    """CAPSULE_LEDGER unset, ASG_LEDGER set -> old value used as fallback."""
+    monkeypatch.delenv("CAPSULE_LEDGER", raising=False)
+    monkeypatch.setenv("ASG_LEDGER", str(FIXTURE_LEDGER))
+    rc = main(["log"])
+    assert rc == 0
+    assert "approve_purchase" in capsys.readouterr().out
 
 
 def test_log_reports_a_chain_gap_instead_of_falsely_claiming_unbroken(tmp_path, capsys):

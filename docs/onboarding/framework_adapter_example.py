@@ -3,27 +3,27 @@
 """Minimal framework-adapter integration: the same `GuardEngine.check()` call
 a LangGraph node, CrewAI tool wrapper, or ADK tool handler would make before
 letting an agent's action through. No MCP, no subprocess -- this is the
-public in-process API (`asg_ledger.guards`), the same one `capsule-mcp`'s
+public in-process API (`capsule_ledger.guards`), the same one `capsule-mcp`'s
 `intent_declare` tool wraps. See `../onboarding.md` ("Path 3: framework
 adapter") for how to run this and confirm the record it produces.
 
-Run: ASG_LEDGER=/some/dir python3 docs/onboarding/framework_adapter_example.py
+Run: CAPSULE_LEDGER=/some/dir python3 docs/onboarding/framework_adapter_example.py
 """
 from __future__ import annotations
 
-import os
 import sys
 
-from asg_ledger.cli.constraints_cmd import DEFAULT_CAPS_FOLD_ID, DEFAULT_CATALOG_DIR
-from asg_ledger.folds.catalog import Catalog
-from asg_ledger.guards import Action, GuardEngine, LocalSigner
-from asg_ledger.ledger import LedgerStore
+from capsule_ledger.cli.constraints_cmd import DEFAULT_CAPS_FOLD_ID, DEFAULT_CATALOG_DIR
+from capsule_ledger.envcompat import env_get
+from capsule_ledger.folds.catalog import Catalog
+from capsule_ledger.guards import Action, GuardEngine, LocalSigner
+from capsule_ledger.ledger import LedgerStore
 
 
 def main() -> int:
-    ledger_dir = os.environ.get("ASG_LEDGER")
+    ledger_dir = env_get("CAPSULE_LEDGER", "ASG_LEDGER")
     if not ledger_dir:
-        print("framework_adapter_example: set $ASG_LEDGER to a directory", file=sys.stderr)
+        print("framework_adapter_example: set $CAPSULE_LEDGER to a directory", file=sys.stderr)
         return 2
 
     # --- one-time setup, e.g. at your app's startup ---

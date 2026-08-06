@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Neutrality gate — fail the build if reserved vocabulary appears in this repo.
 
 A small set of concepts is reserved and must not appear here. The reserved
