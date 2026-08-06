@@ -10,10 +10,24 @@ seen and the verdict breakdown are read directly off the scanned records
 (each one individually visible via `capsule log --agent <id>`, i.e. "names its
 record" rather than needing its own fold).
 
-There is no ledger-level notion of agent *enrollment* (the Onboarding
-design's "path in / capturing / rung" columns) in this package yet -- T2's
-ledger only knows about capsules it has actually received, so those columns
-are left out here rather than fabricated; see STATUS.md.
+There is no ledger-level notion of agent *enrollment* -- T2's ledger only
+knows about capsules it has actually received, and there is no separate
+registry this package could consult, so this command never invents one.
+Instead, ``--enrolled`` lets the operator state, out of band, which agent
+ids they set up via an onboarding path (hook, MCP, framework adapter,
+sidecar): that list is cross-checked against what the ledger actually has,
+so a declared agent with zero records still prints -- explicitly marked
+not-capturing -- rather than being silently omitted. Everything under
+"capturing: yes" rows is ledger-derived; everything under "capturing: no"
+rows is the operator's own ``--enrolled`` claim, and the two are never
+blended into one unlabeled list.
+
+"rung" is the per-agent evidence level, read off the real capsules'
+``assurance.attestation_mode`` (v0 only ever produces ``self_attested`` --
+see ``guards/signing.py`` -- but this command reads it off the record
+rather than hardcoding that, so it tracks whatever the ledger actually
+contains as attestation modes are added). Coverage is reported as counts
+in prose ("capturing from N of M declared agent(s)"), never a percentage.
 """
 from __future__ import annotations
 
@@ -39,6 +53,14 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     p.add_argument("--status", action="store_true", help="show per-agent record counts, first/last seen, verdicts")
     p.add_argument("--ledger", help="ledger store directory or a JSONL fixture file (default: $ASG_LEDGER)")
     p.add_argument("--dir", help="fold catalog directory (default: built-in catalog, or $ASG_FOLD_DIR)")
+    p.add_argument(
+        "--enrolled",
+        help=(
+            "comma-separated agent ids you set up via an onboarding path -- operator-"
+            "declared, cross-checked against the ledger so a declared agent with zero "
+            "records still shows, explicitly, instead of being silently omitted"
+        ),
+    )
     p.set_defaults(func=run)
     return p
 
@@ -58,9 +80,12 @@ def run(args: argparse.Namespace) -> int:
         print(f"capsule agents: fold {COUNT_FOLD_ID!r} not found in catalog {catalog_dir}", file=sys.stderr)
         return 2
 
+    enrolled = sorted({a.strip() for a in (args.enrolled or "").split(",") if a.strip()})
+
     first_seen: dict[str, str] = {}
     last_seen: dict[str, str] = {}
     verdicts: dict[str, Counter] = defaultdict(Counter)
+    rungs: dict[str, set] = defaultdict(set)
 
     with open_ledger(ledger_path) as store:
         capsules = [r.capsule for r in store.scan(ScanQuery())]
@@ -73,15 +98,19 @@ def run(args: argparse.Namespace) -> int:
                 last_seen[agent] = ts
             verdict = (capsule.get("disposition") or {}).get("verdict_class") or "(none)"
             verdicts[agent][verdict] += 1
+            mode = (capsule.get("assurance") or {}).get("attestation_mode") or "(unknown)"
+            rungs[agent].add(mode)
 
     traces = evaluate_all(count_entry.definition, capsules, staleness_ms=0)
 
-    print(build_echo("agents", flags=[("--status", True)]))
+    print(build_echo("agents", flags=[("--status", True), ("--enrolled", args.enrolled)]))
     print()
     for agent in sorted(first_seen):
         trace = traces.get(agent)
         breakdown = " ".join(f"{v}:{n}" for v, n in sorted(verdicts[agent].items()))
+        rung = " + ".join(sorted(rungs[agent]))
         print(agent)
+        print(f"  capturing:  yes · rung: {rung}")
         if trace is not None:
             print(f"  {format_envelope_line(trace.to_envelope())}")
         print(f"  first seen: {first_seen[agent]}")
@@ -89,5 +118,22 @@ def run(args: argparse.Namespace) -> int:
         print(f"  verdicts:   {breakdown}  (see `capsule log --agent {agent}` for the records)")
         print()
 
-    print(f"{len(first_seen)} agent(s) · as of {format_staleness(0)}")
+    not_capturing = [a for a in enrolled if a not in first_seen]
+    for agent in not_capturing:
+        print(agent)
+        print("  capturing:  no · declared via --enrolled, no records received yet")
+        print()
+
+    captured_n = len(first_seen)
+    if enrolled:
+        declared_n = captured_n + len(not_capturing)
+        coverage = f"Coverage: capturing from {captured_n} of {declared_n} declared agent(s)"
+        coverage += f"; not yet capturing: {', '.join(not_capturing)}." if not_capturing else "."
+    else:
+        coverage = (
+            f"Coverage: {captured_n} agent(s) captured in this ledger; no --enrolled list was "
+            "given, so an agent that has never sent a record cannot be shown here."
+        )
+    print(coverage)
+    print(f"{captured_n} agent(s) · as of {format_staleness(0)}")
     return 0

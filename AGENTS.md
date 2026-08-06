@@ -224,7 +224,9 @@ shell, `asg_ledger.mcp.server` exposes the same ledger, folds, and guard
 checks as structured tools instead of CLI stdout — every read tool's response
 carries the same envelope shape described above, so an MCP-connected agent
 gets identical verification guarantees to one running the CLI directly. See
-`asg_ledger/mcp/server.py` for the tool catalog and `docs/` (or your harness's
-own MCP config) for wiring it up as a stdio server. The one tool that writes —
+`asg_ledger/mcp/server.py` for the tool catalog and
+[`docs/onboarding.md`](docs/onboarding.md) for wiring it up as a stdio server
+(Claude Code's `.mcp.json`/hook config, verified end to end) or your own
+harness's own MCP config. The one tool that writes —
 `intent.declare` — is the only place either interface ever appends to the
 ledger; everything else, CLI or MCP, is read-only.
