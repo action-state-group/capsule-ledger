@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from asg_ledger.cli.main import main
+from capsule_ledger.cli.main import main
 
 FIXTURES = Path(__file__).parent / "fixtures"
 AMAURY = FIXTURES / "amaury_sample_ledger.jsonl"

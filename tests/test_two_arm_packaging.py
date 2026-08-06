@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Arm A ("guards-only") vs Arm B ("full"): one codebase, one env var
-(``ASG_LEDGER_ARM``), never a fork -- see ``asg_ledger/packaging.py``.
+(``ASG_LEDGER_ARM``), never a fork -- see ``capsule_ledger/packaging.py``.
 
 Also the one place this repo checks, mechanically, that the private
 thresholds doc's PASS/WORRY/FAIL numbers never made it into this repo: see
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from asg_ledger.cli.main import _build_parser
-from asg_ledger.cli.main import main as cli_main
-from asg_ledger.report import build_dry_run_report, render_report_html
+from capsule_ledger.cli.main import _build_parser
+from capsule_ledger.cli.main import main as cli_main
+from capsule_ledger.report import build_dry_run_report, render_report_html
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NANDA = FIXTURES / "nanda_transaction_ledger.jsonl"
@@ -150,7 +150,7 @@ def test_no_threshold_bands_anywhere_in_telemetry_code():
     intentionally does not encode any specific number from the private
     thresholds doc (that would defeat its own purpose); it only asserts
     that none of the *language* of grading a result appears."""
-    import asg_ledger.telemetry.funnel as funnel_mod
+    import capsule_ledger.telemetry.funnel as funnel_mod
 
     src = Path(funnel_mod.__file__).read_text(encoding="utf-8")
     forbidden = ("pass_band", "worry_band", "fail_band", "verdict =", "grade(", "is_passing")

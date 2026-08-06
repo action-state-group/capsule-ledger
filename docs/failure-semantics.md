@@ -23,7 +23,7 @@ than no guard, because everyone still believes it is on.
   fail closed**. This is the default every other row protects: an
   unclassified action does not get to skip the table by omission. A small
   starter class taxonomy ships so day-one use is not blocked on everything
-  — see `asg_ledger/guards/classes.py`.
+  — see `capsule_ledger/guards/classes.py`.
 
 ## What this means in practice
 
@@ -36,5 +36,5 @@ the fact of the degradation is written as soon as it safely can be, on the
 next successful decision.
 
 This is the guard API's implementation of that table, not a restatement of
-it — see `asg_ledger/guards/engine.py`, and the failure-semantics test
+it — see `capsule_ledger/guards/engine.py`, and the failure-semantics test
 matrix in `tests/test_guard_failure_semantics.py` (one test per row above).

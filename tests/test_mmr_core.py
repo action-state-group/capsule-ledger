@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Core MMR algorithm tests: identity/position-math properties, pinned KAT
 append-sequence vectors, inclusion-proof matrices, and adversarial
 tamper-rejection (I2 discipline -- pinned known-answer tests, not just unit
@@ -9,8 +10,8 @@ import hashlib
 
 import pytest
 
-from asg_ledger.mmr import core
-from asg_ledger.mmr.store import MemoryNodeStore
+from capsule_ledger.mmr import core
+from capsule_ledger.mmr.store import MemoryNodeStore
 
 
 def _popcount(n: int) -> int:

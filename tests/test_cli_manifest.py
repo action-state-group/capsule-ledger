@@ -5,14 +5,14 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from asg_ledger.cli.main import main
-from asg_ledger.guards import Action, GuardEngine, LocalSigner
-from asg_ledger.ledger import LedgerStore
-from asg_ledger.policy import load_manifest_file, resolve_manifest
+from capsule_ledger.cli.main import main
+from capsule_ledger.guards import Action, GuardEngine, LocalSigner
+from capsule_ledger.ledger import LedgerStore
+from capsule_ledger.policy import load_manifest_file, resolve_manifest
 
-WICKET_CATALOG_DIR = Path(__file__).parent.parent / "asg_ledger" / "guards" / "wickets" / "catalog_defs"
-FOLD_CATALOG_DIR = Path(__file__).parent.parent / "asg_ledger" / "folds" / "catalog_defs"
-DEFAULT_MANIFEST_PATH = Path(__file__).parent.parent / "asg_ledger" / "policy" / "catalog_defs" / "default.yaml"
+WICKET_CATALOG_DIR = Path(__file__).parent.parent / "capsule_ledger" / "guards" / "wickets" / "catalog_defs"
+FOLD_CATALOG_DIR = Path(__file__).parent.parent / "capsule_ledger" / "folds" / "catalog_defs"
+DEFAULT_MANIFEST_PATH = Path(__file__).parent.parent / "capsule_ledger" / "policy" / "catalog_defs" / "default.yaml"
 
 EXPECTED_DEFAULT_DIGEST = "0e99f3ee3a6ebf3ee93aa464f27e8fcd1a401ccc45460eb267efde327f5c218c"
 

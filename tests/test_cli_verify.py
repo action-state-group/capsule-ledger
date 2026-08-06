@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`capsule verify` golden-output tests, including the exit-code discipline and
 the negative path (a genuinely tampered record must be *caught*, not just
 structurally exercised -- the recurring "check that never rejects anything"
@@ -7,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from asg_ledger.cli.main import main
+from capsule_ledger.cli.main import main
 
 FIXTURE_LEDGER = Path(__file__).parent / "fixtures" / "sample_ledger.jsonl"
 APPROVE_ID = "705955419ca6f944a75db77ae2a59844fdd99d355866c6c1dbc4ebe655c024c7"

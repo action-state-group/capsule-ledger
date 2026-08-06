@@ -30,10 +30,11 @@ capsule --version
 ```
 
 Every ledger-backed verb needs a ledger. Point at one with `--ledger` or set
-`$ASG_LEDGER` once per session:
+`$CAPSULE_LEDGER` once per session (legacy `$ASG_LEDGER` is still honored as a
+fallback):
 
 ```bash
-export ASG_LEDGER=tests/fixtures/sample_ledger.jsonl   # or a real LedgerStore directory
+export CAPSULE_LEDGER=tests/fixtures/sample_ledger.jsonl   # or a real LedgerStore directory
 ```
 
 `--ledger` accepts either a `LedgerStore` root (a directory) or a bare JSONL file
@@ -46,7 +47,7 @@ throwaway store for the duration of the command, so every fixture under
 ### `capsule log` — list records matching a filter (git-log style)
 
 ```bash
-capsule log --ledger $ASG_LEDGER --agent procurement-agent@v1 --since 2026-08-01
+capsule log --ledger $CAPSULE_LEDGER --agent procurement-agent@v1 --since 2026-08-01
 ```
 
 Flags (all optional, all composable): `--agent` (developer id), `--since`/`--until`
@@ -77,7 +78,7 @@ the explanation; there's no separate reasoning to fetch.
 ### `capsule verify` — verify one record or a whole bundle, offline
 
 ```bash
-capsule verify <capsule_id> --ledger $ASG_LEDGER
+capsule verify <capsule_id> --ledger $CAPSULE_LEDGER
 capsule verify --bundle bundle.json         # re-verify a self-contained slice, no ledger needed
 ```
 
@@ -90,7 +91,7 @@ grepping stdout. `--json` gives you the findings list as structured data
 ### `capsule bundle` — a self-contained, independently verifiable slice
 
 ```bash
-capsule bundle --ledger $ASG_LEDGER --agent procurement-agent@v1 --out slice.json
+capsule bundle --ledger $CAPSULE_LEDGER --agent procurement-agent@v1 --out slice.json
 ```
 
 Takes the same filter flags as `log`, plus `--out` (default `bundle.json`) and
@@ -105,7 +106,7 @@ is ever sent to a server to render or check it.
 
 ```bash
 capsule fold list                                   # what's defined, and its content digest
-capsule fold test spend.weekly/1.0.0 --ledger $ASG_LEDGER --key procurement-agent@v1 --as-of 2026-08-01T00:00:00Z
+capsule fold test spend.weekly/1.0.0 --ledger $CAPSULE_LEDGER --key procurement-agent@v1 --as-of 2026-08-01T00:00:00Z
 capsule fold lint path/to/my-fold.yaml              # validate a definition file before adding it
 capsule fold new my.custom.fold/1.0.0               # scaffold a new definition
 ```
@@ -116,7 +117,7 @@ hoc. `fold test` prints the full result envelope
 (`fold <digest> · records N–M · checkpoint #X · as of <staleness>`), so a fold
 result is always accompanied by exactly what range and checkpoint it was
 computed against. `--dir` overrides the catalog directory on any fold verb
-(default: the built-in catalog, or `$ASG_FOLD_DIR`). Rolling-window folds
+(default: the built-in catalog, or `$CAPSULE_FOLD_DIR`). Rolling-window folds
 require `--as-of` — this CLI (like the fold engine underneath it) refuses to
 invent a time anchor from the wall clock; you supply one derived from real data.
 
@@ -142,7 +143,7 @@ gates exist, without needing to read guard source.
 ### `capsule agents --status` — per-agent summary
 
 ```bash
-capsule agents --status --ledger $ASG_LEDGER
+capsule agents --status --ledger $CAPSULE_LEDGER
 ```
 
 One block per agent seen in the ledger: a real fold-evaluated record count (not
@@ -154,7 +155,7 @@ have been active, and how much."
 ### `capsule guard dry-run` — replay a ledger through the guard checks
 
 ```bash
-capsule guard dry-run --ledger $ASG_LEDGER --since 7d --cap money.transfer=10000000 --out report.html --share
+capsule guard dry-run --ledger $CAPSULE_LEDGER --since 7d --cap money.transfer=10000000 --out report.html --share
 ```
 
 Replays every record through the same three reference checks `GuardEngine.check`
@@ -173,8 +174,8 @@ manifest resolves (the default; `--no-manifest` skips it) — see below.
 
 ```bash
 capsule manifest show                                             # resolve + print the digest
-capsule manifest activate --ledger $ASG_LEDGER --operator acme --developer ops
-capsule manifest verify --ledger $ASG_LEDGER --capsule <decision-capsule-id>
+capsule manifest activate --ledger $CAPSULE_LEDGER --operator acme --developer ops
+capsule manifest verify --ledger $CAPSULE_LEDGER --capsule <decision-capsule-id>
 ```
 
 A policy manifest is one file listing the active fold and wicket ("wicket" =
@@ -202,10 +203,14 @@ don't silently typo into a shell error; don't build against them yet.
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `$ASG_LEDGER` | every ledger-backed verb | default `--ledger` |
-| `$ASG_FOLD_DIR` | `fold`, `constraints list`, `agents --status`, `guard dry-run`, `manifest` | default fold catalog directory (falls back to the built-in catalog) |
-| `$ASG_WICKET_DIR` | `guard dry-run`, `manifest` | default wicket catalog directory (falls back to the built-in catalog) |
-| `$ASG_VERIFY_BASE_URL` | `bundle` | base URL the verify permalink's fragment is appended to |
+| `$CAPSULE_LEDGER` | every ledger-backed verb | default `--ledger` |
+| `$CAPSULE_FOLD_DIR` | `fold`, `constraints list`, `agents --status`, `guard dry-run`, `manifest` | default fold catalog directory (falls back to the built-in catalog) |
+| `$CAPSULE_WICKET_DIR` | `guard dry-run`, `manifest` | default wicket catalog directory (falls back to the built-in catalog) |
+| `$CAPSULE_VERIFY_BASE_URL` | `bundle` | base URL the verify permalink's fragment is appended to |
+
+Legacy `$ASG_*` names (`ASG_LEDGER`, `ASG_FOLD_DIR`, `ASG_WICKET_DIR`,
+`ASG_VERIFY_BASE_URL`, and their MCP/telemetry equivalents) are still honored
+as a fallback when the `CAPSULE_*` name isn't set.
 
 ## Reading the output
 
@@ -227,7 +232,7 @@ Two conventions repeat across every verb, deliberately:
 - **"What did my agents do last night?"** → `capsule log --agent <id> --since
   <timestamp>` (or `capsule agents --status` first if you don't know which agent).
 - **"How much budget is left?"** → `capsule fold test spend.weekly/1.0.0 --ledger
-  $ASG_LEDGER --key <agent> --as-of <now>`, then compare the envelope's
+  $CAPSULE_LEDGER --key <agent> --as-of <now>`, then compare the envelope's
   `result` against the configured cap (`capsule constraints list` shows the caps
   check's method; the cap value itself is a deployment-specific
   `--cap CLASS=MINOR_UNITS`, not baked into the fold).
@@ -245,11 +250,11 @@ Two conventions repeat across every verb, deliberately:
 ## MCP instead of shell
 
 If your harness speaks MCP (Model Context Protocol) rather than driving a
-shell, `asg_ledger.mcp.server` exposes the same ledger, folds, and guard
+shell, `capsule_ledger.mcp.server` exposes the same ledger, folds, and guard
 checks as structured tools instead of CLI stdout — every read tool's response
 carries the same envelope shape described above, so an MCP-connected agent
 gets identical verification guarantees to one running the CLI directly. See
-`asg_ledger/mcp/server.py` for the tool catalog and
+`capsule_ledger/mcp/server.py` for the tool catalog and
 [`docs/onboarding.md`](docs/onboarding.md) for wiring it up as a stdio server
 (Claude Code's `.mcp.json`/hook config, verified end to end) or your own
 harness's own MCP config. The one tool that writes —

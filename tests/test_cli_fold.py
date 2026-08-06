@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`capsule fold` CLI stub: hot-load catalog, lint, and replay-over-a-ledger.
 
 ``tests/fixtures/sample_ledger.jsonl`` is a checked-in copy of
@@ -10,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from asg_ledger.cli.main import main
+from capsule_ledger.cli.main import main
 
 FIXTURE_LEDGER = Path(__file__).parent / "fixtures" / "sample_ledger.jsonl"
 
@@ -22,7 +23,7 @@ def test_fold_list_builtin_catalog(capsys):
 
 
 def test_fold_lint_ok(capsys):
-    path = Path(__file__).parent.parent / "asg_ledger" / "folds" / "catalog_defs" / "actions.executed_count.yaml"
+    path = Path(__file__).parent.parent / "capsule_ledger" / "folds" / "catalog_defs" / "actions.executed_count.yaml"
     assert main(["fold", "lint", str(path)]) == 0
     out = capsys.readouterr().out
     assert "actions.executed_count/1.0.0" in out

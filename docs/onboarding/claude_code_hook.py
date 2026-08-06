@@ -13,7 +13,7 @@ validation; `repr()` sidesteps that). No `action_class` is passed, so every
 captured action resolves to the guard's consequential/fail-closed default --
 narrow that down with a real classifier before using this past a demo.
 
-Requires `$ASG_LEDGER` to point at a real `LedgerStore` directory (not a
+Requires `$CAPSULE_LEDGER` (or legacy `$ASG_LEDGER`) to point at a real `LedgerStore` directory (not a
 JSONL fixture -- each hook invocation is a fresh, short-lived subprocess, so
 a fixture re-imported into a throwaway store per call would not accumulate
 records across calls).
@@ -39,7 +39,7 @@ async def _declare(tool_name: str, tool_input: dict, cwd: str) -> dict:
                 {
                     "verb": tool_name,
                     "operator": cwd or "local-session",
-                    "developer": os.environ.get("ASG_AGENT_ID", "claude-code@local"),
+                    "developer": os.environ.get("CAPSULE_AGENT_ID") or os.environ.get("ASG_AGENT_ID", "claude-code@local"),
                     "target": repr(tool_input)[:200],
                 },
             )
@@ -50,8 +50,8 @@ async def _declare(tool_name: str, tool_input: dict, cwd: str) -> dict:
 
 
 def main() -> int:
-    if not os.environ.get("ASG_LEDGER"):
-        print("claude_code_hook: $ASG_LEDGER not set, skipping capture", file=sys.stderr)
+    if not (os.environ.get("CAPSULE_LEDGER") or os.environ.get("ASG_LEDGER")):
+        print("claude_code_hook: $CAPSULE_LEDGER not set, skipping capture", file=sys.stderr)
         return 0
     event = json.load(sys.stdin)
     outcome = asyncio.run(

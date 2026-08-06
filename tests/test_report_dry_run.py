@@ -20,15 +20,15 @@ from pathlib import Path
 import pytest
 from agent_action_capsule import compute_capsule_id
 
-from asg_ledger.cli.main import main as cli_main
-from asg_ledger.report import build_dry_run_report, render_report_html
-from asg_ledger.report.render import decode_fragment, to_fragment_payload
+from capsule_ledger.cli.main import main as cli_main
+from capsule_ledger.report import build_dry_run_report, render_report_html
+from capsule_ledger.report.render import decode_fragment, to_fragment_payload
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NANDA = FIXTURES / "nanda_transaction_ledger.jsonl"
 AMAURY = FIXTURES / "amaury_sample_ledger.jsonl"
 SAMPLE = FIXTURES / "sample_ledger.jsonl"
-JS_SOURCE = Path(__file__).parent.parent / "asg_ledger" / "report" / "static" / "verify.js"
+JS_SOURCE = Path(__file__).parent.parent / "capsule_ledger" / "report" / "static" / "verify.js"
 JS_HARNESS = Path(__file__).parent / "js_harness_capsule_digest.mjs"
 
 CAPS_MINOR = {"money.transfer": 10_000_000}
@@ -293,7 +293,7 @@ def test_cli_requires_model_id_alongside_model_note(tmp_path):
 def test_cli_ledger_directory_binding_reads_a_real_store(tmp_path):
     """The real-deployment path: --ledger pointed at a LedgerStore directory,
     not a loose JSONL file."""
-    from asg_ledger.ledger import LedgerStore
+    from capsule_ledger.ledger import LedgerStore
 
     store_dir = tmp_path / "store"
     store = LedgerStore(store_dir)

@@ -1,12 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
 """The gating-decisions doc §1 failure-semantics table, as a literal test
 matrix: one test per row. See docs/failure-semantics.md for the public
 short version of the table each test below cites.
 """
 from dataclasses import dataclass
 
-from asg_ledger.guards import Action, GuardEngine, LocalSigner, SigningKeyUnavailable
-from asg_ledger.guards.classes import classify
-from asg_ledger.ledger import LedgerAPI
+from capsule_ledger.guards import Action, GuardEngine, LocalSigner, SigningKeyUnavailable
+from capsule_ledger.guards.classes import classify
+from capsule_ledger.ledger import LedgerAPI
 
 
 @dataclass
