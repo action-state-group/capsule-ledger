@@ -5,19 +5,58 @@ Classic flat-array MMR: 0-indexed node positions, grown strictly left to
 right, interior nodes appear immediately after both of their children. This
 is a published, implementation-independent accumulator design (originally
 described by Peter Todd) that long predates and is independent of any single
-implementation. The domain-separated hashing scheme below (leaf/interior/
-peak-bagging prefixes) follows the same widely-used convention as other
-public MMR-based transparency-log designs (e.g. the MIT-licensed
-go-datatrails-merklelog family) -- written here from the algorithm's own
-first principles for this codebase's synchronous, SHA-256-hex conventions,
-not translated line-for-line from any single source.
+implementation.
 
-Hashing scheme (domain-separated):
+Production hashing scheme -- MMRIVER-draft-compatible, position-committed:
     leaf_hash     = sha256(0x00 || body_digest)
-    interior_hash = sha256(0x01 || left || right)
-    root          = bagged peaks, right-to-left: acc = peaks[-1], then for
-                    i from len-2 downto 0: acc = sha256(0x02 || peaks[i] || acc)
+    interior_hash = sha256(be64(position + 1) || left || right)
+                    where `position` is the 0-based flat-array index the new
+                    interior node occupies
+    root          = bagged peaks, right-to-left, NO domain-separator byte:
+                    pop the two rightmost peak hashes, combine as
+                    sha256(right || left), push the result back, repeat
+                    until one hash remains
     root of an empty MMR = 32 zero bytes
+
+The interior-hash construction matches the MMRIVER IETF draft as implemented
+by datatrails/go-datatrails-merklelog (`mmr/add.go`, `mmr/hashwritevalue.go`
+-- MIT licensed), verified against that repo's hardcoded 39-node KAT
+(`mmr/draft_kat39_test.go`; see `tests/test_mmr_kat39.py`). `leaf_hash` is
+unchanged from this repo's original scheme -- the reference's own
+`AddHashedLeaf` takes an already-hashed leaf as an opaque input and applies
+no transformation to it, so leaf-hash derivation from raw content is
+caller-defined in this ecosystem, not prescribed by the draft. The root
+peak-bagging formula is reference-source-verified (read directly from
+`mmr/proofbagged.go`'s `hashPeaksRHS`) but, unlike the interior/leaf hashes,
+has no literal hardcoded-root KAT to pin against upstream -- treat its
+provenance accordingly (property/self-consistency tests, not a pinned root
+value).
+
+Position commitment is chosen deliberately over this repo's original
+massifdb-derived scheme (fixed 0x01/0x02 prefix bytes, no position) for three
+reasons: (1) anti-equivocation -- a position-committed interior hash can only
+ever be valid at the one array position it was computed for, so a party
+holding a node hash cannot present it as valid evidence at a different
+position or tree height, closing a residual equivocation attack the fixed-
+prefix scheme does not; (2) it keeps this module aligned with the IETF MMRIVER
+draft, in case that alignment matters for future tooling; (3) it keeps a path
+open for completeness certificates produced here to be checkable by
+independent MMRIVER-conformant tooling, without committing to that as a
+current guarantee.
+
+This remains implementational, never a normative or wire-interop claim.
+capsule-ledger's actual standards-interop surface is scitt-cose's
+RFC9162_SHA256 receipts (a wholly different tree construction, byte-for-byte
+prescribed by RFC 9162); this MMR exists solely to give the local ledger fast
+inclusion/consistency proofs and is not claimed to interoperate with any
+external MMR implementation on the wire.
+
+The original massifdb-derived scheme (0x00/0x01/0x02 fixed-prefix, no
+position commitment) that this module originally shipped with is kept as
+`_massifdb_interior_hash`/`_massifdb_root_from_peaks` below, purely as an
+internal cross-check against that original design source -- it is NOT used
+by `add_leaf`, `inclusion_proof`, `consistency_proof`, or either verifier, and
+must never be reintroduced onto the production path.
 
 Verification functions (`verify_inclusion`/`verify_consistency`) are pure,
 take no reader, and never raise -- any malformed input (wrong lengths, bad
@@ -87,18 +126,70 @@ def leaf_hash(body_digest: bytes) -> bytes:
     return hashlib.sha256(b"\x00" + body_digest).digest()
 
 
-def interior_hash(left: bytes, right: bytes) -> bytes:
-    """interior_hash = sha256(0x01 || left || right)."""
+def interior_hash(left: bytes, right: bytes, position: int) -> bytes:
+    """interior_hash = sha256(be64(position+1) || left || right), per the
+    MMRIVER draft (datatrails/go-datatrails-merklelog mmr/add.go,
+    mmr/hashwritevalue.go -- MIT licensed). `position` is the 0-based
+    array index this interior node occupies."""
+    _assert_digest(left, "left")
+    _assert_digest(right, "right")
+    _require_nonneg_int(position, "position")
+    pos_bytes = (position + 1).to_bytes(8, "big")
+    return hashlib.sha256(pos_bytes + left + right).digest()
+
+
+def root_from_peaks(peak_hashes: list[bytes]) -> bytes:
+    """Root = binary-tree bagging of the peaks, right-to-left pairwise
+    folding with NO domain-separator byte: pop the two rightmost hashes,
+    combine as sha256(right || left), push the result back, repeat until
+    one hash remains. Matches datatrails/go-datatrails-merklelog
+    mmr/proofbagged.go's hashPeaksRHS (MIT licensed) -- reference-source-
+    verified (the Go source was read directly, both for the fold order and
+    for its own "hashes are highest to lowest" ordering comment, matching
+    this module's peaks() left=tallest-to-right=smallest convention), but
+    NOT independently KAT-pinned by a literal published root value the way
+    interior/leaf hashes are (searched, found none -- the upstream repo's
+    own root tests are self-consistency tests, not pinned-value tests).
+    Treat this formula's provenance accordingly in downstream verification
+    (property/self-consistency tests, not a hardcoded-root KAT).
+
+    Root of an empty MMR is still 32 zero bytes (unchanged convention, not
+    contradicted by anything in the reference).
+    """
+    if not peak_hashes:
+        return bytes(DIGEST_LEN)
+    for p in peak_hashes:
+        _assert_digest(p, "peak")
+    hashes = list(peak_hashes)
+    while len(hashes) > 1:
+        right = hashes.pop()
+        left = hashes.pop()
+        hashes.append(hashlib.sha256(right + left).digest())
+    return hashes[0]
+
+
+# -- massifdb cross-check (internal only, NOT production) --------------------
+#
+# Reproduces this module's original massifdb-derived scheme (fixed
+# 0x01/0x02-prefix interior/bagging, no position commitment). Kept solely as
+# an internal cross-check against that original design source -- see the
+# module docstring for why position-commitment replaced it in production.
+# Never call these from add_leaf, inclusion_proof, consistency_proof, or
+# either verifier.
+
+
+def _massifdb_interior_hash(left: bytes, right: bytes) -> bytes:
+    """massifdb-compatible interior_hash = sha256(0x01 || left || right).
+    Internal cross-check only -- NOT the production hashing scheme."""
     _assert_digest(left, "left")
     _assert_digest(right, "right")
     return hashlib.sha256(b"\x01" + left + right).digest()
 
 
-def root_from_peaks(peak_hashes: list[bytes]) -> bytes:
-    """Bag peaks right-to-left: acc = peaks[-1], then fold sha256(0x02||peaks[i]||acc).
-
-    Root of an empty MMR (no peaks) is 32 zero bytes.
-    """
+def _massifdb_root_from_peaks(peak_hashes: list[bytes]) -> bytes:
+    """massifdb-compatible peak bagging: acc = peaks[-1], then fold
+    sha256(0x02||peaks[i]||acc) right-to-left. Internal cross-check only --
+    NOT the production scheme."""
     if not peak_hashes:
         return bytes(DIGEST_LEN)
     for p in peak_hashes:
@@ -228,7 +319,8 @@ def add_leaf(nodes: NodeAppender, leaf: bytes) -> tuple[int, list[bytes]]:
     while peak_idx >= 0 and height_at(existing_peaks[peak_idx]) == height:
         left_pos = existing_peaks[peak_idx]
         left_hash = nodes.node(left_pos)
-        parent_hash = interior_hash(left_hash, cur_hash)
+        parent_pos = leaf_pos + len(new_nodes)
+        parent_hash = interior_hash(left_hash, cur_hash, parent_pos)
         new_nodes.append(parent_hash)
         cur_hash = parent_hash
         height += 1
@@ -245,6 +337,7 @@ def add_leaf(nodes: NodeAppender, leaf: bytes) -> tuple[int, list[bytes]]:
 class _PathStep:
     sibling_pos: int
     target_is_right: bool  # True if the node on the path-so-far is the RIGHT child here.
+    parent_pos: int  # 0-based array position of the parent node produced by this fold step.
 
 
 def _find_containing_peak(pos: int, peak_positions: list[int]) -> int:
@@ -272,14 +365,15 @@ def _locate_path(root_pos: int, height: int, target_pos: int) -> list[_PathStep]
     cur_root = root_pos
     cur_height = height
     while cur_height > 0 and cur_root != target_pos:
+        parent_pos = cur_root
         left_size = 2**cur_height - 1
         left_child_root = cur_root - left_size - 1
         right_child_root = cur_root - 1
         if target_pos <= left_child_root:
-            top_down.append(_PathStep(right_child_root, False))
+            top_down.append(_PathStep(right_child_root, False, parent_pos))
             cur_root = left_child_root
         else:
-            top_down.append(_PathStep(left_child_root, True))
+            top_down.append(_PathStep(left_child_root, True, parent_pos))
             cur_root = right_child_root
         cur_height -= 1
     top_down.reverse()
@@ -388,7 +482,11 @@ def verify_inclusion(
 
         acc = leaf_hash(body_digest)
         for step, sib in zip(path, witness_bytes, strict=True):
-            acc = interior_hash(sib, acc) if step.target_is_right else interior_hash(acc, sib)
+            acc = (
+                interior_hash(sib, acc, step.parent_pos)
+                if step.target_is_right
+                else interior_hash(acc, sib, step.parent_pos)
+            )
 
         all_peaks = [*peaks_left_bytes, acc, *peaks_right_bytes]
         computed_root = root_from_peaks(all_peaks)
@@ -509,7 +607,11 @@ def verify_consistency(
 
             acc = old_peaks_bytes[i]
             for step, sib in zip(path, w_bytes, strict=True):
-                acc = interior_hash(sib, acc) if step.target_is_right else interior_hash(acc, sib)
+                acc = (
+                    interior_hash(sib, acc, step.parent_pos)
+                    if step.target_is_right
+                    else interior_hash(acc, sib, step.parent_pos)
+                )
             if acc != new_peaks_bytes[containing_idx]:
                 return False
 
