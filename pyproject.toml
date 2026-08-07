@@ -28,11 +28,16 @@ Homepage = "https://github.com/action-state-group/capsule-ledger"
 Source = "https://github.com/action-state-group/capsule-ledger"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0"]
+dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0", "capsule-ledger[examples]"]
 # Pinned below 2.0: the 2.0 release restructured the package (split out
 # mcp-types) and dropped the `mcp.server.fastmcp` import path this server
 # uses -- see capsule_ledger/mcp/server.py.
 mcp = ["mcp>=1.0,<2.0"]
+# capsule_ledger/examples/two_agents.py is the only thing in this package
+# that imports capsule-emit -- the rest of capsule-ledger never depends on
+# it. Floor matches the oldest published PyPI release whose emit() signature
+# this example relies on; the local capsule-emit checkout may be ahead.
+examples = ["capsule-emit>=0.3.0"]
 
 [project.scripts]
 capsule = "capsule_ledger.cli:main"
