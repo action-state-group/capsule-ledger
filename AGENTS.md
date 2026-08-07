@@ -102,6 +102,13 @@ standalone — hand `slice.json` to someone with no access to your ledger and
 permalink whose entire payload lives in the URL fragment (after `#`) — nothing
 is ever sent to a server to render or check it.
 
+Add `--with-viewer` (or `--viewer-out <path>` to name it explicitly) to also
+write a self-contained HTML recipient viewer next to `--out` (default:
+`--out` with a `.html` extension) — no `<script src>`, no external requests,
+opens and verifies on a machine with no network at all. The bundle's own
+JSON/fragment is byte-identical whether or not this flag is passed; the
+viewer only ever rides alongside it.
+
 ### `capsule fold` — the declarative-aggregate catalog
 
 ```bash
