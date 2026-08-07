@@ -105,6 +105,17 @@ capsule verify --bundle slice.json   # re-verifies fully offline, no ledger need
 `bundle` also prints a `file://`-safe permalink whose entire payload lives
 in the URL fragment — nothing is sent to a server to render it.
 
+Handing the slice to someone without assuming they have network? Add
+`--with-viewer`: alongside `slice.json` it writes `slice.html`, a
+self-contained recipient viewer (no `<script src>`, no external requests)
+that opens and verifies on any machine, no server or network required on
+either end.
+
+```bash
+capsule bundle --ledger /tmp/my-ledger --out slice.json --with-viewer
+open slice.html   # or hand the whole folder over — it verifies itself
+```
+
 ## Path 2: Goose extension — not yet built
 
 There is no Goose extension, packaged or otherwise, anywhere in this
