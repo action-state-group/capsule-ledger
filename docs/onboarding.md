@@ -105,6 +105,21 @@ capsule verify --bundle slice.json   # re-verifies fully offline, no ledger need
 `bundle` also prints a `file://`-safe permalink whose entire payload lives
 in the URL fragment — nothing is sent to a server to render it.
 
+**Backend seam, for an alternate/remote backend implementation.** `capsule-mcp`
+is wired to a local `LedgerStore` by default, but the server itself doesn't
+know or care where its `LedgerAPI` binding comes from — that's `open_backend`'s
+job (see its own docstring in `capsule_ledger/mcp/config.py` for the contract).
+`capsule_ledger.mcp` re-exports `ServerConfig`, `load_config`, and
+`open_backend` from its public surface:
+
+```python
+from capsule_ledger.mcp import ServerConfig, load_config, open_backend
+```
+
+An implementation reusing `capsule_ledger.mcp.server` with a different
+`LedgerAPI` binding (e.g. a hosted/paid backend) should depend on this public
+import, not reach into `capsule_ledger.mcp.config` directly.
+
 ## Path 2: Goose extension — not yet built
 
 There is no Goose extension, packaged or otherwise, anywhere in this
