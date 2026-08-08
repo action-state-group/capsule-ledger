@@ -65,7 +65,7 @@ different seed reproduces a genuinely different one.
 **Purpose.** This is the repeatable demo/fixture: scripted, seeded, always
 the same. It is not a substitute for a live deployment -- see
 ``ledger-lane/inbox.md``'s ``[ldg-two-agent-demo-sim]`` entry for the
-explicit split with Steven's live Dapr/Goose deployments, which stay
+explicit split with the operator's live agent deployments (Dapr, Goose), which stay
 real and unscripted on purpose. Don't make this one "more realistic" by
 adding non-determinism; that would break its actual job.
 
