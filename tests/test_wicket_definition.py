@@ -19,12 +19,16 @@ from capsule_ledger.guards.wickets.definition import WicketDefinition
 WICKET_CATALOG_DIR = Path(__file__).parent.parent / "capsule_ledger" / "guards" / "wickets" / "catalog_defs"
 
 # Pinned digests -- independently recomputable from the checked-in YAML.
-# A change to any of these three files' content is a real policy-config
-# change and MUST move its digest; that's the entire point of this test.
+# A change to any of these files' content is a real policy-config change and
+# MUST move its digest; that's the entire point of this test. `caps_holds`
+# and `hold_reconcile` (capsule-emit #51/#53, `holds/engine.py`) were added
+# alongside the original three reference wickets.
 EXPECTED_DIGESTS = {
     "dedupe/1.0.0": "18ab5d489f1e5774d576b8f99897edd4f4b20f609b85683456a3e3b6b4912abb",
     "caps/1.0.0": "906a75a0b908d38fa7b05823ba11f229c3d593516119ad757b541cee7083f54b",
     "verify_before_dispatch/1.0.0": "a721624813f785de49f3dcef2090662e7045bc393e59db72defcdbf47269453c",
+    "caps_holds/1.0.0": "86a07c5c2739502b1211dbb1c73df0d6950f91ba454ff151ff32cb6946fc21f6",
+    "hold_reconcile/1.0.0": "cf6f76b1aeb1d705f90f89c97667c2db035e697211f7f7dc0f8455c54acaec74",
 }
 
 
@@ -35,7 +39,7 @@ def test_builtin_wicket_digest_is_pinned(wicket_id, expected_digest):
     assert entry.digest == expected_digest
 
 
-def test_catalog_lists_all_three_reference_wickets():
+def test_catalog_lists_all_reference_wickets():
     ids = {e.definition.wicket_id for e in Catalog(WICKET_CATALOG_DIR).list_entries()}
     assert ids == set(EXPECTED_DIGESTS)
     assert Catalog(WICKET_CATALOG_DIR).list_errors() == []
