@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -80,7 +81,14 @@ class LedgerStore(LedgerAPI):
         self._segments_dir.mkdir(parents=True, exist_ok=True)
         self._segment_max_records = segment_max_records
 
-        self._conn = sqlite3.connect(self._root / "index.sqlite3")
+        # Every method that touches self._conn / self._write_fh / self._open_fhs
+        # takes this lock — a per-scope caller (holds/scope.py's ScopeLocks) may
+        # legitimately call into this store from multiple threads concurrently
+        # for *different* scopes, and sqlite3 connections + shared file handles
+        # are not otherwise safe under that. check_same_thread=False because the
+        # lock, not thread affinity, is what makes this safe.
+        self._lock = threading.RLock()
+        self._conn = sqlite3.connect(self._root / "index.sqlite3", check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
@@ -152,47 +160,48 @@ class LedgerStore(LedgerAPI):
         """
         capsule_id = capsule.get("capsule_id") or compute_capsule_id(capsule)
 
-        self._sync_write_segment()
-        fh = self._write_fh
-        offset = fh.tell()
-        line = json.dumps(capsule, separators=(",", ":"))
-        fh.write(line + "\n")
-        fh.flush()
-        if consequential:
-            os.fsync(fh.fileno())
+        with self._lock:
+            self._sync_write_segment()
+            fh = self._write_fh
+            offset = fh.tell()
+            line = json.dumps(capsule, separators=(",", ":"))
+            fh.write(line + "\n")
+            fh.flush()
+            if consequential:
+                os.fsync(fh.fileno())
 
-        chain = capsule.get("chain") or {}
-        disposition = capsule.get("disposition") or {}
-        self._conn.execute(
-            "INSERT INTO records (capsule_id, segment, byte_offset, timestamp, operator, "
-            "developer, action_type, verdict_class, parent_capsule_id, chain_relation, consequential) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                capsule_id,
-                self._write_segment_name,
-                offset,
-                capsule.get("timestamp"),
-                capsule.get("operator"),
-                capsule.get("developer"),
-                capsule.get("action_type"),
-                disposition.get("verdict_class"),
-                chain.get("parent_capsule_id"),
-                chain.get("relation"),
-                1 if consequential else 0,
-            ),
-        )
-        self._conn.commit()
+            chain = capsule.get("chain") or {}
+            disposition = capsule.get("disposition") or {}
+            self._conn.execute(
+                "INSERT INTO records (capsule_id, segment, byte_offset, timestamp, operator, "
+                "developer, action_type, verdict_class, parent_capsule_id, chain_relation, consequential) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    capsule_id,
+                    self._write_segment_name,
+                    offset,
+                    capsule.get("timestamp"),
+                    capsule.get("operator"),
+                    capsule.get("developer"),
+                    capsule.get("action_type"),
+                    disposition.get("verdict_class"),
+                    chain.get("parent_capsule_id"),
+                    chain.get("relation"),
+                    1 if consequential else 0,
+                ),
+            )
+            self._conn.commit()
 
-        seq = self._conn.execute(
-            "SELECT seq FROM records WHERE capsule_id = ?", (capsule_id,)
-        ).fetchone()[0]
-        return LedgerRecord(
-            seq=seq,
-            capsule_id=capsule_id,
-            capsule=capsule,
-            segment=self._write_segment_name,
-            consequential=consequential,
-        )
+            seq = self._conn.execute(
+                "SELECT seq FROM records WHERE capsule_id = ?", (capsule_id,)
+            ).fetchone()[0]
+            return LedgerRecord(
+                seq=seq,
+                capsule_id=capsule_id,
+                capsule=capsule,
+                segment=self._write_segment_name,
+                consequential=consequential,
+            )
 
     def import_jsonl(self, path: str | os.PathLike, *, consequential: bool = False) -> int:
         """Append every record from an external JSONL file, in file order.
@@ -216,30 +225,31 @@ class LedgerStore(LedgerAPI):
 
         The segments are the source of truth; the index is a derived cache.
         """
-        self._conn.execute("DELETE FROM records")
-        self._conn.commit()
-        for segment in self._existing_segments():
-            fh = self._get_fh(segment, mode="r")
-            fh.seek(0)
-            offset = 0
-            for raw in fh:
-                capsule = json.loads(raw)
-                capsule_id = capsule.get("capsule_id") or compute_capsule_id(capsule)
-                chain = capsule.get("chain") or {}
-                disposition = capsule.get("disposition") or {}
-                self._conn.execute(
-                    "INSERT INTO records (capsule_id, segment, byte_offset, timestamp, operator, "
-                    "developer, action_type, verdict_class, parent_capsule_id, chain_relation, consequential) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        capsule_id, segment, offset, capsule.get("timestamp"), capsule.get("operator"),
-                        capsule.get("developer"), capsule.get("action_type"),
-                        disposition.get("verdict_class"), chain.get("parent_capsule_id"),
-                        chain.get("relation"), 1,
-                    ),
-                )
-                offset += len(raw.encode("utf-8"))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM records")
+            self._conn.commit()
+            for segment in self._existing_segments():
+                fh = self._get_fh(segment, mode="r")
+                fh.seek(0)
+                offset = 0
+                for raw in fh:
+                    capsule = json.loads(raw)
+                    capsule_id = capsule.get("capsule_id") or compute_capsule_id(capsule)
+                    chain = capsule.get("chain") or {}
+                    disposition = capsule.get("disposition") or {}
+                    self._conn.execute(
+                        "INSERT INTO records (capsule_id, segment, byte_offset, timestamp, operator, "
+                        "developer, action_type, verdict_class, parent_capsule_id, chain_relation, consequential) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            capsule_id, segment, offset, capsule.get("timestamp"), capsule.get("operator"),
+                            capsule.get("developer"), capsule.get("action_type"),
+                            disposition.get("verdict_class"), chain.get("parent_capsule_id"),
+                            chain.get("relation"), 1,
+                        ),
+                    )
+                    offset += len(raw.encode("utf-8"))
+            self._conn.commit()
 
     # -- read path --------------------------------------------------------
 
@@ -264,56 +274,63 @@ class LedgerStore(LedgerAPI):
         if query is None:
             query = ScanQuery()
 
-        self._conn.row_factory = sqlite3.Row
-        clauses: list[str] = []
-        params: list[Any] = []
-        if query.agent is not None:
-            clauses.append("developer = ?")
-            params.append(query.agent)
-        if query.counterparty is not None:
-            clauses.append("operator = ?")
-            params.append(query.counterparty)
-        if query.verdict is not None:
-            clauses.append("verdict_class = ?")
-            params.append(query.verdict)
-        if query.action_type is not None:
-            clauses.append("action_type = ?")
-            params.append(query.action_type)
-        if query.since is not None:
-            clauses.append("timestamp >= ?")
-            params.append(query.since)
-        if query.until is not None:
-            clauses.append("timestamp <= ?")
-            params.append(query.until)
+        # The query + row materialization happen entirely under the lock, then
+        # this generator yields from a plain list — holding the store lock
+        # across caller-controlled iteration (which may pause indefinitely
+        # between `next()` calls) would let one slow consumer block every
+        # other thread's access to the store.
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            clauses: list[str] = []
+            params: list[Any] = []
+            if query.agent is not None:
+                clauses.append("developer = ?")
+                params.append(query.agent)
+            if query.counterparty is not None:
+                clauses.append("operator = ?")
+                params.append(query.counterparty)
+            if query.verdict is not None:
+                clauses.append("verdict_class = ?")
+                params.append(query.verdict)
+            if query.action_type is not None:
+                clauses.append("action_type = ?")
+                params.append(query.action_type)
+            if query.since is not None:
+                clauses.append("timestamp >= ?")
+                params.append(query.since)
+            if query.until is not None:
+                clauses.append("timestamp <= ?")
+                params.append(query.until)
 
-        sql = "SELECT * FROM records"
-        if clauses:
-            sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY seq"
-        if query.limit is not None:
-            sql += " LIMIT ?"
-            params.append(query.limit)
+            sql = "SELECT * FROM records"
+            if clauses:
+                sql += " WHERE " + " AND ".join(clauses)
+            sql += " ORDER BY seq"
+            if query.limit is not None:
+                sql += " LIMIT ?"
+                params.append(query.limit)
 
-        cur = self._conn.execute(sql, params)
-        for row in cur:
-            yield self._row_to_record(row)
-        self._conn.row_factory = None
+            cur = self._conn.execute(sql, params)
+            records = [self._row_to_record(row) for row in cur]
+            self._conn.row_factory = None
+        yield from records
 
     def fetch(self, capsule_id: str) -> LedgerRecord | None:
         """Fetch a single record by exact ``capsule_id`` or an unambiguous prefix."""
-        self._conn.row_factory = sqlite3.Row
-        row = self._conn.execute(
-            "SELECT * FROM records WHERE capsule_id = ?", (capsule_id,)
-        ).fetchone()
-        if row is None:
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
             row = self._conn.execute(
-                "SELECT * FROM records WHERE capsule_id LIKE ? ORDER BY seq LIMIT 1",
-                (capsule_id + "%",),
+                "SELECT * FROM records WHERE capsule_id = ?", (capsule_id,)
             ).fetchone()
-        self._conn.row_factory = None
-        if row is None:
-            return None
-        return self._row_to_record(row)
+            if row is None:
+                row = self._conn.execute(
+                    "SELECT * FROM records WHERE capsule_id LIKE ? ORDER BY seq LIMIT 1",
+                    (capsule_id + "%",),
+                ).fetchone()
+            self._conn.row_factory = None
+            if row is None:
+                return None
+            return self._row_to_record(row)
 
     def verify(self, capsule_id: str) -> VerificationResult | None:
         """``agent_action_capsule.verify`` for a stored capsule, plus this
@@ -327,19 +344,20 @@ class LedgerStore(LedgerAPI):
         this capsule's claimed key_id/timestamp against it is store-level
         context, the same category as the parent-existence check below.
         """
-        record = self.fetch(capsule_id)
-        if record is None:
-            return None
-        all_ids = [r[0] for r in self._conn.execute("SELECT capsule_id FROM records")]
-        result = _verify_capsule(record.capsule, store=all_ids)
+        with self._lock:
+            record = self.fetch(capsule_id)
+            if record is None:
+                return None
+            all_ids = [r[0] for r in self._conn.execute("SELECT capsule_id FROM records")]
+            result = _verify_capsule(record.capsule, store=all_ids)
 
-        timeline = build_key_timeline(self)
-        revocation = check_time_fenced_revocation(record.capsule, timeline)
-        if not revocation.ok:
-            result.findings.append(Finding("key_revoked_at_timestamp", revocation.reason, severity="error"))
-            result.ok = False
+            timeline = build_key_timeline(self)
+            revocation = check_time_fenced_revocation(record.capsule, timeline)
+            if not revocation.ok:
+                result.findings.append(Finding("key_revoked_at_timestamp", revocation.reason, severity="error"))
+                result.ok = False
 
-        return result
+            return result
 
     # -- chain-gap detection ------------------------------------------------
 
@@ -349,49 +367,50 @@ class LedgerStore(LedgerAPI):
         Each gap is a browsable window bounded by the ledger-position neighbors of
         the break (``edge_before``/``edge_after``), never a silent null.
         """
-        self._conn.row_factory = sqlite3.Row
-        rows = self._conn.execute(
-            "SELECT * FROM records WHERE parent_capsule_id IS NOT NULL ORDER BY seq"
-        ).fetchall()
-        gaps: list[ChainGap] = []
-        for row in rows:
-            parent_id = row["parent_capsule_id"]
-            exists = self._conn.execute(
-                "SELECT 1 FROM records WHERE capsule_id = ?", (parent_id,)
-            ).fetchone()
-            if exists is not None:
-                continue
-
-            child = self._row_to_record(row)
-            edge_before = None
-            if row["seq"] > 1:
-                before_row = self._conn.execute(
-                    "SELECT * FROM records WHERE seq = ?", (row["seq"] - 1,)
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            rows = self._conn.execute(
+                "SELECT * FROM records WHERE parent_capsule_id IS NOT NULL ORDER BY seq"
+            ).fetchall()
+            gaps: list[ChainGap] = []
+            for row in rows:
+                parent_id = row["parent_capsule_id"]
+                exists = self._conn.execute(
+                    "SELECT 1 FROM records WHERE capsule_id = ?", (parent_id,)
                 ).fetchone()
-                if before_row is not None:
-                    edge_before = self._row_to_record(before_row)
+                if exists is not None:
+                    continue
 
-            duration = None
-            if edge_before is not None:
-                t_before = _parse_ts(edge_before.capsule.get("timestamp"))
-                t_after = _parse_ts(child.capsule.get("timestamp"))
-                if t_before is not None and t_after is not None:
-                    duration = (t_after - t_before).total_seconds()
+                child = self._row_to_record(row)
+                edge_before = None
+                if row["seq"] > 1:
+                    before_row = self._conn.execute(
+                        "SELECT * FROM records WHERE seq = ?", (row["seq"] - 1,)
+                    ).fetchone()
+                    if before_row is not None:
+                        edge_before = self._row_to_record(before_row)
 
-            before_label = f"#{edge_before.seq}" if edge_before is not None else "⊥"
-            window = f"{before_label} → #{child.seq}"
+                duration = None
+                if edge_before is not None:
+                    t_before = _parse_ts(edge_before.capsule.get("timestamp"))
+                    t_after = _parse_ts(child.capsule.get("timestamp"))
+                    if t_before is not None and t_after is not None:
+                        duration = (t_after - t_before).total_seconds()
 
-            gaps.append(
-                ChainGap(
-                    missing_parent_id=parent_id,
-                    child=child,
-                    relation=row["chain_relation"],
-                    edge_before=edge_before,
-                    edge_after=child,
-                    window=window,
-                    duration_seconds=duration,
-                    browsable_from_either_edge=True,
+                before_label = f"#{edge_before.seq}" if edge_before is not None else "⊥"
+                window = f"{before_label} → #{child.seq}"
+
+                gaps.append(
+                    ChainGap(
+                        missing_parent_id=parent_id,
+                        child=child,
+                        relation=row["chain_relation"],
+                        edge_before=edge_before,
+                        edge_after=child,
+                        window=window,
+                        duration_seconds=duration,
+                        browsable_from_either_edge=True,
+                    )
                 )
-            )
-        self._conn.row_factory = None
-        return gaps
+            self._conn.row_factory = None
+            return gaps

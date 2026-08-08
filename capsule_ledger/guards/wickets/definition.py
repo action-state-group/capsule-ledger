@@ -40,12 +40,14 @@ __all__ = ["WICKET_ID_RE", "KNOWN_CHECKS", "WicketDefinition", "parse_definition
 # wicket_id: same "human name + semver" shape as fold_id (folds/definition.py).
 WICKET_ID_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*/\d+\.\d+\.\d+$")
 
-# The closed, registered set of checks a wicket may configure -- the same
-# three reference checks ``guards/engine.py`` evaluates and
-# ``cli/constraints_cmd.py``'s ``CHECKS`` catalog lists. Closed for the same
-# reason ``folds/definition.py``'s ``KNOWN_REDUCERS`` is: an unregistered
-# name is a typo or a not-yet-built check, never silently accepted as data.
-KNOWN_CHECKS = frozenset({"dedupe", "caps", "verify_before_dispatch"})
+# The closed, registered set of checks a wicket may configure -- the three
+# reference checks ``guards/engine.py`` evaluates and ``cli/constraints_cmd.
+# py``'s ``CHECKS`` catalog lists, plus ``hold_reconcile`` (``holds/engine.
+# py``'s tolerance check for planned-vs-executed reconciliation, capsule-emit
+# #53). Closed for the same reason ``folds/definition.py``'s
+# ``KNOWN_REDUCERS`` is: an unregistered name is a typo or a not-yet-built
+# check, never silently accepted as data.
+KNOWN_CHECKS = frozenset({"dedupe", "caps", "verify_before_dispatch", "hold_reconcile"})
 
 
 @dataclass(frozen=True)
