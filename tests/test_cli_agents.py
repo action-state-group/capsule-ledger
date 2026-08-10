@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 from capsule_ledger.cli.main import main
+from capsule_ledger.ledger import LedgerStore
 
 FIXTURE_LEDGER = Path(__file__).parent / "fixtures" / "sample_ledger.jsonl"
 
@@ -28,6 +29,32 @@ def test_agents_status(capsys):
     assert "Coverage: 1 agent(s) captured in this ledger; no --enrolled list was given" in out
     assert "1 agent(s) · as of just now" in out
     assert "%" not in out
+
+
+def test_agents_status_renders_gate_decision_fallback_for_absent_verdict_class(tmp_path, capsys):
+    """An allow correctly omits verdict_class (guards/capsule.py) -- the
+    per-agent verdicts breakdown must render the gate decision it stands in
+    for, never a bare "(none)" that reads as missing/broken data."""
+    store = LedgerStore(tmp_path)
+    store.append(
+        {
+            "capsule_id": "9" * 64,
+            "operator": "acme",
+            "developer": "agent-1",
+            "action_type": "approve_purchase",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "disposition": {"decision": "accept", "verdict_class": None},
+            "assurance": {"attestation_mode": "self_attested"},
+        },
+        consequential=False,
+    )
+    store.close()
+
+    rc = main(["agents", "--status", "--ledger", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "verdicts:   (gate decision: accept):1" in out
+    assert "(none)" not in out
 
 
 def test_agents_status_flag_required(capsys):

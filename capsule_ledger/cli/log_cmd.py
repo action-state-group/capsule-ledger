@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from ..ledger.api import ScanQuery
-from .format import build_echo, format_staleness, summarize_action
+from .format import build_echo, format_staleness, format_verdict, summarize_action
 from .ledger_io import add_scan_query_args, build_scan_query, echo_parts, open_ledger, require_ledger_path
 
 __all__ = ["add_parser", "run"]
@@ -37,7 +37,7 @@ def run(args: argparse.Namespace) -> int:
             print(f"capsule {record.capsule_id}")
             print(f"Agent:    {capsule.get('developer', '')}")
             print(f"Operator: {capsule.get('operator', '')}")
-            print(f"Verdict:  {disposition.get('verdict_class') or '(none)'}")
+            print(f"Verdict:  {format_verdict(disposition)}")
             print(f"Date:     {capsule.get('timestamp', '')}")
             print()
             print(f"    {summarize_action(capsule)}")

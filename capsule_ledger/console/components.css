@@ -332,6 +332,18 @@ body {
 .verdict-chip--needs-decision .verdict-glyph { border: 1.5px dashed var(--asg-amber); color: var(--asg-amber); border-radius: 50%; background: transparent; }
 .verdict-subline { display: block; font-family: var(--asg-font-sans); font-size: 10.5px; font-weight: 300; color: var(--asg-text-muted); margin-top: 2px; }
 
+/* gate decision, no effect claimed: dashed neutral outline + open circle --
+ * same visual weight as dispatched (neither positive nor negative), but a
+ * distinct label: this decision never claims an execution outcome at all
+ * (e.g. an allow -- see guards/capsule.py). Never errored -- an absent
+ * verdict_class here is correct, not broken. */
+.verdict-chip--gate-decision {
+  color: var(--asg-text-muted);
+  background: transparent;
+  border: 1px dashed var(--asg-sand-dark);
+}
+.verdict-chip--gate-decision .verdict-glyph { color: var(--asg-text-muted); background: transparent; }
+
 /* errored: plain outline + bang -- a runtime/system error, distinct from
  * a verification failure (brick) and from a refusal (sage) */
 .verdict-chip--errored {

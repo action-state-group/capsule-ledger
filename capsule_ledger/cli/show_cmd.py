@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 
-from .format import build_echo, summarize_action
+from .format import build_echo, format_verdict, summarize_action
 from .ledger_io import open_ledger, require_ledger_path
 
 __all__ = ["add_parser", "run"]
@@ -54,7 +54,7 @@ def run(args: argparse.Namespace) -> int:
         print(f"Operator:   {capsule.get('operator', '')}")
         print(f"Action:     {summarize_action(capsule)} ({capsule.get('action_type', '')})")
         print(f"Date:       {capsule.get('timestamp', '')}")
-        print(f"Verdict:    {disposition.get('verdict_class') or '(none)'}")
+        print(f"Verdict:    {format_verdict(disposition)}")
         print(f"Assurance:  {assurance.get('attestation_mode', '')} · {assurance.get('ledger_mode', '')}")
         if chain:
             print(f"Chain:      {chain.get('parent_capsule_id')} ({chain.get('relation')})")

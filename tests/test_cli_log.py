@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from capsule_ledger.cli.main import main
+from capsule_ledger.ledger import LedgerStore
 
 FIXTURE_LEDGER = Path(__file__).parent / "fixtures" / "sample_ledger.jsonl"
 
@@ -80,6 +81,32 @@ def test_log_legacy_asg_ledger_env_var_still_works_as_fallback(capsys, monkeypat
     rc = main(["log"])
     assert rc == 0
     assert "approve_purchase" in capsys.readouterr().out
+
+
+def test_log_renders_gate_decision_fallback_for_absent_verdict_class(tmp_path, capsys):
+    """An allow correctly omits verdict_class (guards/capsule.py) -- the
+    display must render the gate decision it stands in for, never a bare
+    "(none)" that reads as missing/broken data."""
+    store = LedgerStore(tmp_path)
+    allow_id = "9" * 64
+    store.append(
+        {
+            "capsule_id": allow_id,
+            "operator": "acme",
+            "developer": "agent-1",
+            "action_type": "approve_purchase",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "disposition": {"decision": "accept", "verdict_class": None},
+        },
+        consequential=False,
+    )
+    store.close()
+
+    rc = main(["log", "--ledger", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Verdict:  — (gate decision: accept; no effect claimed)" in out
+    assert "Verdict:  (none)" not in out
 
 
 def test_log_reports_a_chain_gap_instead_of_falsely_claiming_unbroken(tmp_path, capsys):

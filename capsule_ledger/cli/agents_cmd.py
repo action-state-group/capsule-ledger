@@ -40,7 +40,7 @@ from ..folds.catalog import Catalog
 from ..folds.engine import evaluate_all
 from ..ledger.api import ScanQuery
 from .constraints_cmd import DEFAULT_CATALOG_DIR
-from .format import build_echo, format_envelope_line, format_staleness
+from .format import build_echo, format_envelope_line, format_staleness, format_verdict_label
 from .ledger_io import open_ledger, require_ledger_path
 
 __all__ = ["add_parser", "run"]
@@ -96,7 +96,7 @@ def run(args: argparse.Namespace) -> int:
                 first_seen[agent] = ts
             if agent not in last_seen or ts > last_seen[agent]:
                 last_seen[agent] = ts
-            verdict = (capsule.get("disposition") or {}).get("verdict_class") or "(none)"
+            verdict = format_verdict_label(capsule.get("disposition") or {})
             verdicts[agent][verdict] += 1
             mode = (capsule.get("assurance") or {}).get("attestation_mode") or "(unknown)"
             rungs[agent].add(mode)

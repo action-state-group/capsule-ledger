@@ -25,7 +25,7 @@ import argparse
 import json
 import sys
 
-from .format import build_echo, summarize_action
+from .format import build_echo, format_verdict, summarize_action
 from .ledger_io import open_ledger, require_ledger_path
 
 __all__ = ["add_parser", "run"]
@@ -121,7 +121,7 @@ def run(args: argparse.Namespace) -> int:
         print(f"capsule {r.capsule_id}" + ("  (target)" if i == 0 else ""))
         print(f"  seq:      #{r.seq}")
         print(f"  Agent:    {capsule.get('developer', '')}")
-        print(f"  Verdict:  {disposition.get('verdict_class') or '(none)'}")
+        print(f"  Verdict:  {format_verdict(disposition)}")
         print(f"  Date:     {capsule.get('timestamp', '')}")
         print(f"  Action:   {summarize_action(capsule)}")
         if i + 1 < len(hops):

@@ -30,7 +30,7 @@ from ..folds.engine import evaluate_one
 from ..folds.errors import FoldDeterminismError
 from ..ledger.api import ScanQuery
 from .fold_ref import catalog_dir, resolve_fold
-from .format import format_staleness, summarize_action
+from .format import format_staleness, format_verdict_label, summarize_action
 from .ledger_io import open_ledger, require_ledger_path
 
 __all__ = ["add_parser", "run"]
@@ -86,7 +86,7 @@ def _build_echo(args: argparse.Namespace) -> str:
 def _verdict_counts(records: list) -> dict[str, int]:
     counts: dict[str, int] = {}
     for r in records:
-        v = (r.capsule.get("disposition") or {}).get("verdict_class") or "(none)"
+        v = format_verdict_label(r.capsule.get("disposition") or {})
         counts[v] = counts.get(v, 0) + 1
     return counts
 
@@ -252,7 +252,7 @@ def run(args: argparse.Namespace) -> int:
                 capsule = r.capsule
                 disposition = capsule.get("disposition") or {}
                 print(
-                    f"  + capsule {r.capsule_id[:16]}  {disposition.get('verdict_class') or '(none)':<10}  "
+                    f"  + capsule {r.capsule_id[:16]}  {format_verdict_label(disposition):<10}  "
                     f"{capsule.get('developer', ''):<24}  {summarize_action(capsule)}"
                 )
         if removed:
@@ -261,7 +261,7 @@ def run(args: argparse.Namespace) -> int:
                 capsule = r.capsule
                 disposition = capsule.get("disposition") or {}
                 print(
-                    f"  - capsule {r.capsule_id[:16]}  {disposition.get('verdict_class') or '(none)':<10}  "
+                    f"  - capsule {r.capsule_id[:16]}  {format_verdict_label(disposition):<10}  "
                     f"{capsule.get('developer', ''):<24}  {summarize_action(capsule)}"
                 )
     print()

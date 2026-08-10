@@ -61,14 +61,16 @@ def test_blame_json_flag(capsys):
     assert payload["terminal"] == {"kind": "standalone", "detail": None}
 
 
-def _capsule(capsule_id, *, parent=None, relation=None, verdict="executed", ts="2026-01-01T00:00:00Z"):
+def _capsule(
+    capsule_id, *, parent=None, relation=None, verdict="executed", decision=None, ts="2026-01-01T00:00:00Z"
+):
     cap = {
         "capsule_id": capsule_id,
         "operator": "acme",
         "developer": "agent-1",
         "action_type": "approve_purchase",
         "timestamp": ts,
-        "disposition": {"verdict_class": verdict},
+        "disposition": {"verdict_class": verdict, "decision": decision},
     }
     if parent is not None:
         cap["chain"] = {"parent_capsule_id": parent, "relation": relation}
@@ -105,6 +107,22 @@ def test_blame_stops_cleanly_at_epoch_opens_boundary(tmp_path, capsys):
     assert f"capsule {opener_id}" in out
     assert "epoch boundary reached — chain.relation=epoch_opens is a legal chain-start, not a gap" in out
     assert "chain gap" not in out
+
+
+def test_blame_renders_gate_decision_fallback_for_absent_verdict_class(tmp_path, capsys):
+    """An allow correctly omits verdict_class (guards/capsule.py) -- the
+    display must render the gate decision it stands in for, never a bare
+    "(none)" that reads as missing/broken data."""
+    store = LedgerStore(tmp_path)
+    allow_id = "9" * 64
+    store.append(_capsule(allow_id, verdict=None, decision="accept"), consequential=False)
+    store.close()
+
+    rc = main(["blame", allow_id, "--ledger", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Verdict:  — (gate decision: accept; no effect claimed)" in out
+    assert "(none)" not in out
 
 
 def test_blame_detects_a_cycle(tmp_path, capsys):

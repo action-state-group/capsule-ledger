@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from capsule_ledger.cli.main import main
+from capsule_ledger.ledger import LedgerStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
 AMAURY = FIXTURES / "amaury_sample_ledger.jsonl"
@@ -84,6 +85,40 @@ def test_bisect_requires_verdict_or_fold(capsys):
     with pytest.raises(SystemExit) as exc_info:
         main(["bisect", "--ledger", str(AMAURY)])
     assert exc_info.value.code == 2
+
+
+def test_bisect_renders_gate_decision_fallback_for_absent_verdict_class(tmp_path, capsys):
+    """An allow correctly omits verdict_class (guards/capsule.py) -- the
+    display must render the gate decision it stands in for, never a bare
+    "(none)" that reads as missing/broken data."""
+    store = LedgerStore(tmp_path)
+    allow_id = "9" * 64
+    store.append(
+        {
+            "capsule_id": allow_id,
+            "operator": "acme",
+            "developer": "agent-1",
+            "action_type": "approve_purchase",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "disposition": {"decision": "accept", "verdict_class": None},
+        },
+        consequential=False,
+    )
+    store.close()
+
+    rc = main(
+        [
+            "bisect",
+            "--fold", "actions.count_by_developer/1.0.0",
+            "--key", "agent-1",
+            "--gte", "1",
+            "--ledger", str(tmp_path),
+        ]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Verdict:  — (gate decision: accept; no effect claimed)" in out
+    assert "Verdict:  (none)" not in out
 
 
 def test_bisect_verdict_and_fold_are_mutually_exclusive(capsys):

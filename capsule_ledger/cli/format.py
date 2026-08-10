@@ -13,7 +13,14 @@ from __future__ import annotations
 
 import shlex
 
-__all__ = ["format_staleness", "format_envelope_line", "build_echo", "summarize_action"]
+__all__ = [
+    "format_staleness",
+    "format_envelope_line",
+    "build_echo",
+    "summarize_action",
+    "format_verdict",
+    "format_verdict_label",
+]
 
 
 def format_staleness(age_ms: int) -> str:
@@ -64,6 +71,30 @@ def build_echo(verb: str, *, positional: str | None = None, flags: list[tuple[st
         if value is not True:
             tokens.append(shlex.quote(str(value)))
     return "≡ " + " ".join(tokens)
+
+
+def format_verdict(disposition: dict) -> str:
+    """Render ``disposition.verdict_class`` for a single-record "Verdict:"
+    line, falling back to the gate ``decision`` it stands in for when
+    ``verdict_class`` is legitimately absent (an allow asserts the gate's
+    decision, never an execution outcome -- see ``guards/capsule.py``'s
+    module docstring). Absent must never read as missing/broken data."""
+    verdict_class = disposition.get("verdict_class")
+    if verdict_class:
+        return verdict_class
+    decision = disposition.get("decision") or "(none)"
+    return f"— (gate decision: {decision}; no effect claimed)"
+
+
+def format_verdict_label(disposition: dict) -> str:
+    """Compact form of ``format_verdict`` for tabular/breakdown display
+    (verdict-distribution counts, per-record diff rows) where the full
+    sentence would overflow a fixed-width column."""
+    verdict_class = disposition.get("verdict_class")
+    if verdict_class:
+        return verdict_class
+    decision = disposition.get("decision") or "(none)"
+    return f"(gate decision: {decision})"
 
 
 def summarize_action(capsule: dict) -> str:

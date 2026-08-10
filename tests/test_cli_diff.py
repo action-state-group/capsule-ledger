@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 from capsule_ledger.cli.main import main
+from capsule_ledger.ledger import LedgerStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
 AMAURY = FIXTURES / "amaury_sample_ledger.jsonl"
@@ -84,6 +85,34 @@ def test_diff_json_flag(capsys):
     assert set(payload["added"]) == {BLOCKED_ID, REPORT_ID}
     assert payload["removed"] == []
     assert payload["verdict_delta"]["blocked"] == {"from": 0, "to": 1}
+
+
+def test_diff_renders_gate_decision_fallback_for_absent_verdict_class(tmp_path, capsys):
+    """An allow correctly omits verdict_class (guards/capsule.py) -- the
+    added-record row and the verdict-distribution delta must render the
+    gate decision it stands in for, never a bare "(none)" that reads as
+    missing/broken data."""
+    store = LedgerStore(tmp_path)
+    allow_id = "9" * 64
+    store.append(
+        {
+            "capsule_id": allow_id,
+            "operator": "acme",
+            "developer": "agent-1",
+            "action_type": "approve_purchase",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "disposition": {"decision": "accept", "verdict_class": None},
+        },
+        consequential=False,
+    )
+    store.close()
+
+    rc = main(["diff", "0", "HEAD", "--ledger", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert allow_id[:16] in out
+    assert "(gate decision: accept)" in out
+    assert "(none)" not in out
 
 
 def test_diff_fold_delta(capsys):

@@ -63,6 +63,18 @@
     if (effectMode === "confirmed" || verdictClass === "executed" || verdictClass === "confirmed") {
       return { css: "confirmed", glyph: "✓", label: "confirmed" };
     }
+    // verdict_class is legitimately absent for a gate decision that never
+    // claims an execution outcome (e.g. an allow -- see guards/capsule.py's
+    // module docstring): render the decision it stands in for, never the
+    // "errored" chip -- an absent verdict_class here is correct, not broken.
+    if (!verdictClass && disposition && disposition.decision) {
+      return {
+        css: "gate-decision",
+        glyph: "○",
+        label: "gate: " + disposition.decision,
+        subline: "no effect claimed",
+      };
+    }
     // Honestly-unknown fallback: a runtime/system state this console does
     // not recognize, never a guess dressed up as one of the above.
     return { css: "errored", glyph: "!", label: verdictClass || "errored" };
