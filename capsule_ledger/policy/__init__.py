@@ -10,13 +10,14 @@ from .activation import (
 )
 from .errors import PolicyManifestError
 from .loader import load_manifest_file, load_manifest_text
-from .manifest import FoldRef, Manifest, WicketRef, parse_manifest
+from .manifest import FoldRef, Manifest, PackRef, WicketRef, parse_manifest
 from .resolve import ResolvedManifest, resolve_manifest
 
 __all__ = [
     "Manifest",
     "FoldRef",
     "WicketRef",
+    "PackRef",
     "parse_manifest",
     "load_manifest_text",
     "load_manifest_file",

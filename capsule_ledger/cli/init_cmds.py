@@ -1,0 +1,131 @@
+# SPDX-License-Identifier: Apache-2.0
+"""``capsule init --pack <name>``: install a starter pack in observe mode.
+
+Materializes the pack's constraints and folds into ``<project-dir>/.capsule/``,
+writes the policy manifest fragment that cites them plus the pack itself (by
+digest, mode ``observe``) -- so which pack version is in force is provable --
+and, when ``--ledger`` is given, records that installation as a signed
+``policy_manifest_activated`` event capsule (``packs/install.py``'s
+``record_pack_activation``).
+
+This command does not run anything against live traffic itself -- it hands
+back the manifest a caller's own integration resolves and builds a
+``GuardEngine`` from (``packs.build_engine``), calling
+``GuardEngine.check(..., dry_run=True)`` for as long as the pack stays in
+observe mode. "Observe mode" is a property of the installed manifest
+(``PackRef.mode``), not something this command enforces at runtime.
+"""
+from __future__ import annotations
+
+import argparse
+import secrets
+import sys
+from pathlib import Path
+
+from ..envcompat import env_get
+from ..guards.signing import LocalSigner
+from ..ledger import LedgerStore
+from ..packs import PackDefinitionError, install_pack, load_pack_dir, record_pack_activation
+
+__all__ = ["add_parser"]
+
+BUILTIN_PACK_CATALOG_DIR = Path(__file__).resolve().parent.parent / "packs" / "catalog"
+
+_KEY_ID_ENV = "CAPSULE_MCP_SIGNING_KEY_ID"
+_KEY_ID_ENV_LEGACY = "ASG_MCP_SIGNING_KEY_ID"
+_SECRET_ENV = "CAPSULE_MCP_SIGNING_SECRET"
+_SECRET_ENV_LEGACY = "ASG_MCP_SIGNING_SECRET"
+
+
+def _available_packs(catalog_dir: Path) -> list[str]:
+    if not catalog_dir.is_dir():
+        return []
+    return sorted(p.name for p in catalog_dir.iterdir() if (p / "pack.yaml").is_file())
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    catalog_dir = Path(args.pack_catalog_dir) if args.pack_catalog_dir else BUILTIN_PACK_CATALOG_DIR
+    pack_dir = catalog_dir / args.pack
+
+    if not (pack_dir / "pack.yaml").is_file():
+        available = _available_packs(catalog_dir)
+        print(f"capsule init: no pack named {args.pack!r} in {catalog_dir}", file=sys.stderr)
+        print(f"  available packs: {available or '<none>'}", file=sys.stderr)
+        return 2
+
+    try:
+        pack = load_pack_dir(pack_dir)
+    except PackDefinitionError as exc:
+        print(f"capsule init: pack {args.pack!r} failed to load ({exc.reason}): {exc}", file=sys.stderr)
+        return 1
+
+    project_dir = Path(args.project_dir)
+    installed = install_pack(pack, project_dir=project_dir, mode="observe")
+
+    print(f"installed {pack.pack_id} in observe mode")
+    print(f"  manifest:      {installed.manifest_path}")
+    print(f"  manifest id:   {installed.manifest.manifest_id}")
+    print(f"  manifest digest: {installed.resolved.manifest_digest}")
+    print(f"  fold catalog:  {installed.fold_catalog_dir}")
+    print(f"  wicket catalog: {installed.wicket_catalog_dir}")
+    print(f"  obligations:   {', '.join(o.id for o in pack.obligations)}")
+    print(
+        "observe mode: every action this pack governs will be recorded with its would-be verdict "
+        "(allow/deny/escalate) -- nothing is enforced until a human runs `capsule enforce --pack "
+        f"{args.pack}` (not yet built)."
+    )
+
+    if not args.ledger:
+        print()
+        print("no --ledger given: manifest written to disk only, no activation capsule recorded")
+        return 0
+
+    key_id = args.key_id or env_get(_KEY_ID_ENV, _KEY_ID_ENV_LEGACY)
+    secret_text = args.secret or env_get(_SECRET_ENV, _SECRET_ENV_LEGACY)
+    generated_secret = secret_text is None
+    if key_id is None:
+        key_id = f"{args.operator}-pack-install-key"
+    if secret_text is None:
+        secret_text = secrets.token_hex(32)
+    signer = LocalSigner(key_id=key_id, secret=secret_text.encode("utf-8"))
+
+    ledger = LedgerStore(args.ledger)
+    try:
+        capsule = record_pack_activation(
+            installed, ledger=ledger, operator=args.operator, developer=args.developer, signer=signer
+        )
+    finally:
+        ledger.close()
+
+    print()
+    print(f"activation recorded: {capsule['capsule_id']}")
+    if generated_secret:
+        print("(signed with a freshly generated key -- not persisted anywhere; pass --key-id/--secret, or set "
+              f"${_KEY_ID_ENV}/${_SECRET_ENV}, to reuse a stable key next time)")
+        print(f"  export {_KEY_ID_ENV}={key_id}")
+        print(f"  export {_SECRET_ENV}={secret_text}")
+    return 0
+
+
+def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    p_init = sub.add_parser("init", help="install a starter pack in observe mode (records, enforces nothing)")
+    p_init.add_argument("--pack", required=True, help="pack name, e.g. payments-safety (built-in catalog)")
+    p_init.add_argument(
+        "--project-dir", default=".", help="where to materialize .capsule/ (catalogs + manifest); default: cwd"
+    )
+    p_init.add_argument(
+        "--pack-catalog-dir", default=None, help="override the built-in pack catalog directory (mainly for tests)"
+    )
+    p_init.add_argument(
+        "--ledger", default=None,
+        help="ledger store directory to record this install's activation capsule into (default: none, manifest "
+        "is still written to disk)",
+    )
+    p_init.add_argument("--operator", default="local", help="operator identity for the activation capsule (default: 'local')")
+    p_init.add_argument(
+        "--developer", default="capsule-init-tool", help="developer identity for the activation capsule"
+    )
+    p_init.add_argument("--key-id", default=None, help=f"signing key id for the activation capsule (default: ${_KEY_ID_ENV})")
+    p_init.add_argument("--secret", default=None, help=f"signing key secret (default: ${_SECRET_ENV}, or freshly generated)")
+    p_init.set_defaults(func=_cmd_init)
+    return p_init

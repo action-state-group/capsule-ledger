@@ -1,0 +1,177 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Pack definitions: the parsed, validated shape of a ``pack.yaml`` plus its
+referenced wicket/fold files.
+
+Anatomy (starter-packs plan): obligations -> action semantics -> constraints
+(wicket entries) -> folds -> fixtures, one directory per pack, versioned.
+This module intentionally does NOT reinvent constraint or fold validation --
+``constraints`` are parsed with ``guards.wickets.definition.parse_definition``
+and ``folds`` with ``folds.definition.parse_definition``, the exact same
+functions the core catalogs use, so a malformed constraint or fold gets the
+identical, already-hardened error a hand-written wicket/fold file would.
+This module's own errors (``errors.py``) cover only the pack-level shape:
+which fields a pack.yaml itself needs, and the obligation/action-semantics
+declarations that have no core-repo equivalent yet.
+
+``PackDefinition.definition_digest()`` follows the same "definitions-by-
+digest, never definitions-by-copy" rule every other digest in this repo
+follows (``policy/manifest.py``'s module docstring): constraints and folds
+are cited by their own ``definition_digest()``, never copied into the pack's
+canonical form.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from agent_action_capsule.canonical import FloatInDigestError, UnsafeIntegerError, json_digest
+
+from ..folds.definition import FoldDefinition
+from ..guards.wickets.definition import WicketDefinition
+from .errors import FLOAT_IN_PACK_DIGEST, UNSAFE_INTEGER_IN_PACK_DIGEST, PackDefinitionError
+
+__all__ = [
+    "PACK_ID_RE",
+    "NORMALIZED_ACTION_FIELDS",
+    "HOLDS_INTEGRATION_VALUES",
+    "Obligation",
+    "ActionSemantic",
+    "ProposerStub",
+    "FixtureScenario",
+    "PackFixtures",
+    "PackDefinition",
+]
+
+# pack_id: same "human name + semver" shape as fold_id/wicket_id/manifest_id.
+PACK_ID_RE = re.compile(r"^[a-z][a-z0-9_]*(-[a-z0-9_]+)*/\d+\.\d+\.\d+$")
+
+# The normalized ``guards.action.Action`` fields a pack's action semantics may
+# declare as required/optional -- the "canonical field basis per action
+# family" the architecture rule requires packs to bind to instead of any
+# framework object. Closed set, same reasoning as ``KNOWN_CHECKS``/
+# ``KNOWN_REDUCERS``: an unrecognized field name is a typo (or a field the
+# normalization contract doesn't have yet, which is a contract change, not a
+# pack change) -- never silently accepted as data. The five identity/
+# classification fields every ``Action`` always carries (``verb``,
+# ``operator``, ``developer``, ``action_class``, ``action_type``) are not
+# listed here -- they are not something a pack "requires", they are what an
+# action semantic entry itself declares.
+NORMALIZED_ACTION_FIELDS = frozenset(
+    {"amount_minor", "currency", "target", "cited_mandate_capsule_id", "equivalence_key", "model_id", "provider"}
+)
+
+HOLDS_INTEGRATION_VALUES = frozenset({"none", "stubbed", "built"})
+
+
+@dataclass(frozen=True)
+class Obligation:
+    """The human-readable contract this pack encodes, mapped 1:1 to a check
+    (every obligation maps 1:1 to the check that enforces it)."""
+
+    id: str
+    statement: str
+    check: str
+
+
+@dataclass(frozen=True)
+class ActionSemantic:
+    """One action type this pack governs and its required normalized fields."""
+
+    action_type: str
+    action_class: str
+    required_fields: tuple[str, ...] = ()
+    optional_fields: tuple[str, ...] = ()
+    # Pack-facing display name for a normalized field, e.g. {"target":
+    # "counterparty_ref"} -- documentation only, never a second field name:
+    # the wire/engine contract is always the normalized field on the left.
+    field_aliases: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ProposerStub:
+    """A threshold proposer this pack declares. P1 only parses and digests
+    this -- ``capsule thresholds propose`` (P2) is what actually runs it."""
+
+    id: str
+    fold_id: str
+    strategy: str
+    status: str = "planned"
+
+
+@dataclass(frozen=True)
+class FixtureScenario:
+    id: str
+    outcome: str  # allow | deny | escalate
+
+
+@dataclass(frozen=True)
+class PackFixtures:
+    ledger: str | None
+    scenarios: tuple[FixtureScenario, ...] = ()
+
+
+@dataclass(frozen=True)
+class PackDefinition:
+    pack_id: str
+    obligations: tuple[Obligation, ...]
+    action_semantics: tuple[ActionSemantic, ...]
+    constraints: tuple[WicketDefinition, ...]
+    folds: tuple[FoldDefinition, ...]
+    proposers: tuple[ProposerStub, ...] = ()
+    holds_integration: str = "none"
+    fixtures: PackFixtures | None = None
+    bootstrap_path: str | None = None
+    source_dir: Path | None = None
+
+    def canonical_dict(self) -> dict:
+        """The JCS-canonicalizable form of this pack -- drives
+        ``definition_digest()``. Constraints/folds are cited by their own
+        digest, never copied in whole -- see the module docstring."""
+        out: dict[str, Any] = {
+            "pack_id": self.pack_id,
+            "obligations": [{"id": o.id, "statement": o.statement, "check": o.check} for o in self.obligations],
+            "action_semantics": [
+                {
+                    "action_type": a.action_type,
+                    "action_class": a.action_class,
+                    "required_fields": list(a.required_fields),
+                    **({"optional_fields": list(a.optional_fields)} if a.optional_fields else {}),
+                    **({"field_aliases": dict(sorted(a.field_aliases.items()))} if a.field_aliases else {}),
+                }
+                for a in self.action_semantics
+            ],
+            "constraints": [
+                {"wicket_id": c.wicket_id, "check": c.check, "digest": c.definition_digest()} for c in self.constraints
+            ],
+            "folds": [{"fold_id": f.fold_id, "digest": f.definition_digest()} for f in self.folds],
+            "holds_integration": self.holds_integration,
+        }
+        if self.proposers:
+            out["proposers"] = [
+                {"id": p.id, "fold_id": p.fold_id, "strategy": p.strategy, "status": p.status} for p in self.proposers
+            ]
+        return out
+
+    def definition_digest(self) -> str:
+        """SHA-256 over the JCS bytes of the canonical pack definition -- the
+        same digest a manifest's ``PackRef.digest`` cites."""
+        try:
+            return json_digest(self.canonical_dict())
+        except FloatInDigestError as exc:
+            raise PackDefinitionError(FLOAT_IN_PACK_DIGEST, str(exc)) from exc
+        except UnsafeIntegerError as exc:
+            raise PackDefinitionError(UNSAFE_INTEGER_IN_PACK_DIGEST, str(exc)) from exc
+
+    def obligation_for_check(self, check: str) -> Obligation | None:
+        for o in self.obligations:
+            if o.check == check:
+                return o
+        return None
+
+    def action_semantic_for(self, action_type: str) -> ActionSemantic | None:
+        for a in self.action_semantics:
+            if a.action_type == action_type:
+                return a
+        return None

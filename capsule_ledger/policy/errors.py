@@ -10,6 +10,8 @@ MALFORMED_MANIFEST = "malformed_manifest"
 INVALID_DIGEST = "invalid_digest_shape"
 DUPLICATE_FOLD_REF = "duplicate_fold_ref"
 DUPLICATE_WICKET_REF = "duplicate_wicket_ref"
+DUPLICATE_PACK_REF = "duplicate_pack_ref"
+INVALID_PACK_MODE = "invalid_pack_mode"
 
 # Resolve-time (``resolve.py``: cross-checking a manifest's pinned digests
 # against the real fold/wicket catalogs it references).

@@ -103,6 +103,38 @@ silently breaks determinism (or changes the scripted scenarios) fails CI
 rather than being noticed only when someone's tutorial output stops
 matching.
 
+## `payments-safety` pack fixture
+
+`capsule_ledger/packs/catalog/payments-safety/fixtures/mini_ledger.jsonl`
+(6 capsules: 1 policy-manifest activation + 5 guard decisions) is the
+starter pack's own acceptance fixture — generated the same way
+`two_agents_sim_ledger.jsonl` is, by running `tests/test_pack_payments_safety_acceptance.py`
+directly rather than through pytest:
+
+```console
+$ PYTHONPATH=. python3 tests/test_pack_payments_safety_acceptance.py
+wrote 6 record(s) to .../packs/catalog/payments-safety/fixtures/mini_ledger.jsonl
+```
+
+Every fixed input (action ids, timestamps, the activation capsule's own
+action id, the signing key's secret) is hardcoded in that script the same
+way `two_agents.py` hardcodes its own — no wall clock, no `uuid4()`
+default, so re-running it reproduces this exact file. The scenario set
+exercises every one of the pack's three obligations *both ways*: `caps`
+(pass, then fail → escalate — `money.transfer` has an `approver_role`, so a
+sole `caps` failure escalates rather than denies, same D2 rule the two-agent
+sim's own overlap-spend scenario exercises), `dedupe` (pass, then fail →
+deny), and `verify_before_dispatch` (fail by way of a cited mandate that was
+never recorded → deny). `test_fixture_is_reproducible_byte_for_byte`
+(same file) holds this contract in CI: it re-runs the scenario script
+in-process and diffs the result against the checked-in bytes.
+
+No plaintext PII: every `target`/counterparty reference is a synthetic
+`vendor-<name>/invoice-<n>` string, and the one `cited_mandate_capsule_id`
+used to trigger the `verify_before_dispatch` refusal is the same
+obviously-synthetic `"f" * 64` sentinel `two_agents.py`'s own refusal
+scenario uses — never a real-looking id.
+
 ## How the test suite uses these fixtures
 
 A few real examples (there are more — grep `tests/` for a fixture's name to
