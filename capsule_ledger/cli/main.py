@@ -30,6 +30,7 @@ from . import (
     console_cmd,
     constraints_cmd,
     diff_cmd,
+    enforce_cmds,
     fold_cmds,
     guard_cmds,
     init_cmds,
@@ -39,6 +40,7 @@ from . import (
     manifest_cmds,
     show_cmd,
     telemetry_cmd,
+    thresholds_cmds,
     verify_cmd,
 )
 
@@ -53,6 +55,8 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
 
     fold_cmds.add_parser(sub)
     init_cmds.add_parser(sub)
+    thresholds_cmds.add_parser(sub)
+    enforce_cmds.add_parser(sub)
     constraints_cmd.add_parser(sub)
     agents_cmd.add_parser(sub)
     guard_cmds.add_parser(sub)
@@ -130,6 +134,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "lens":
         if getattr(args, "lens_command", None) is None:
             args.lens_parser.print_help()
+            return 0
+        return args.func(args)
+
+    if args.command == "thresholds":
+        if getattr(args, "thresholds_command", None) is None:
+            args.thresholds_parser.print_help()
             return 0
         return args.func(args)
 

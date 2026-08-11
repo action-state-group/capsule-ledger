@@ -67,12 +67,18 @@ class Action:
     ) -> Action:
         """Build an ``Action`` from a capsule already sitting in a ledger.
 
-        Used to replay a historical or foreign capsule (one this guard did
-        not itself produce, so it carries none of ``asg_payload``'s
-        extension fields) back through the guard for a dry-run or
-        end-to-end reproduction. ``action_class`` must be supplied by the
-        caller for foreign capsules -- there is nothing in the -02 schema
-        to infer it from.
+        Used to replay a historical or foreign capsule back through the
+        guard for a dry-run or end-to-end reproduction. A truly foreign
+        capsule (one this guard did not itself produce) carries none of
+        ``asg_payload``'s extension fields, so its ``action_class`` must be
+        supplied by the caller -- there is nothing in the -02 schema to
+        infer it from. But a capsule THIS guard (or a pack installed
+        through it) originally produced carries its own ``action_class`` in
+        ``asg_payload`` (``build_decision_capsule``), so replaying one of
+        those back (the normal dry-run-report path) reads it from the
+        capsule itself when the caller doesn't override it -- an explicit
+        ``action_class`` argument always wins, for the genuinely-foreign
+        case this was written for.
         """
         action_id = capsule.get("action_id", "")
         verb = action_id.split("/", 1)[0] if action_id else "unknown"
@@ -81,7 +87,7 @@ class Action:
             verb=verb,
             operator=capsule.get("operator", ""),
             developer=capsule.get("developer", ""),
-            action_class=action_class,
+            action_class=action_class or payload.get("action_class"),
             action_id=action_id or None,
             action_type=capsule.get("action_type", "decide"),
             timestamp=capsule.get("timestamp"),

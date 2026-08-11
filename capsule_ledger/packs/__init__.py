@@ -9,11 +9,13 @@ See the module docstrings in ``schema.py`` (the parsed pack shape),
 pieces. ``catalog/`` holds the packs this repo ships (``payments-safety``
 today).
 """
+from .enforce import accept_thresholds, enforce_pack
 from .errors import PackDefinitionError, RegistryPinError
 from .install import InstalledPack, build_engine, install_pack, record_pack_activation
 from .loader import load_pack_dir
 from .pins import load_pins_file, verify_pins
 from .schema import ActionSemantic, Obligation, PackDefinition, PackFixtures, ProposerStub
+from .thresholds import ThresholdProposal, load_proposals_file, propose_thresholds, write_proposals_file
 
 __all__ = [
     "PackDefinition",
@@ -30,4 +32,10 @@ __all__ = [
     "load_pins_file",
     "verify_pins",
     "RegistryPinError",
+    "ThresholdProposal",
+    "propose_thresholds",
+    "write_proposals_file",
+    "load_proposals_file",
+    "accept_thresholds",
+    "enforce_pack",
 ]
