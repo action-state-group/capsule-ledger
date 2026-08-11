@@ -1,0 +1,8 @@
+{
+  "action_class_conventions": {
+    "money.transfer": {
+      "label": "Money transfer",
+      "description": "An action that moves funds -- dispatching a payment, initiating a transfer, or otherwise committing money to move. Seeded by the payments-safety starter pack (asg/payments-safety/1.0.0)."
+    }
+  }
+}

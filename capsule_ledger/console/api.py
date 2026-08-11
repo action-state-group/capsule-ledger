@@ -13,11 +13,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..cli.format import build_echo, format_envelope_line, format_staleness, summarize_action
+from ..cli.format import (
+    assurance_grade_parts,
+    build_echo,
+    format_envelope_line,
+    format_staleness,
+    summarize_action,
+)
 from ..envcompat import env_get
 from ..folds import Catalog, FoldDeterminismError, evaluate_one
 from ..ledger.api import LedgerAPI, ScanQuery
 from ..ledger.records import LedgerRecord
+from ..payload_store import PayloadStore
+from ..registry import describe_action_class
 
 __all__ = [
     "checkpoint_status",
@@ -38,6 +46,47 @@ def _fingerprint(capsule_id: str) -> str:
     return capsule_id[:8] + "…" if capsule_id else ""
 
 
+def _payload_store_for(store: LedgerAPI) -> PayloadStore | None:
+    """Resolve-at-read gate (item 5a), console side: only a real, local
+    ``LedgerStore`` directory (never a remote/foreign ``LedgerAPI``
+    implementation) can have a payload store at all -- ``getattr`` rather
+    than an isinstance check so this stays honest about only needing
+    ``.root``, not the whole concrete class."""
+    root = getattr(store, "root", None)
+    if root is None:
+        return None
+    candidate = PayloadStore(root)
+    return candidate if candidate.exists else None
+
+
+def _resolve_info(payload_store: PayloadStore | None, digest: str | None, label: str) -> dict[str, Any] | None:
+    if not digest or payload_store is None:
+        return None
+    resolved = payload_store.resolve(digest)
+    if resolved is None:
+        return None
+    return {
+        "label": label,
+        "digest": resolved.digest,
+        "recomputed_digest": resolved.recomputed_digest,
+        "match": resolved.match,
+        "content": resolved.content,
+    }
+
+
+def _action_class_info(capsule: dict) -> dict[str, Any] | None:
+    action_class = (capsule.get("asg_payload") or {}).get("action_class")
+    if not action_class:
+        return None
+    convention = describe_action_class(action_class)
+    return {"value": action_class, "label": convention.label, "registered": convention.registered}
+
+
+def _assurance_grade_info(assurance: dict) -> dict[str, Any]:
+    grade, badged = assurance_grade_parts(assurance)
+    return {"grade": grade, "badged": badged}
+
+
 def checkpoint_status(store: LedgerAPI) -> dict[str, Any]:
     """The console's freshness status line: "checkpoint #N · as of <age> ·
     verifies offline" -- always computed from a fresh re-scan, never cached,
@@ -54,6 +103,7 @@ def checkpoint_status(store: LedgerAPI) -> dict[str, Any]:
 
 def record_summary(record: LedgerRecord) -> dict[str, Any]:
     capsule = record.capsule
+    assurance = capsule.get("assurance") or {}
     return {
         "capsule_id": record.capsule_id,
         "fingerprint": _fingerprint(record.capsule_id),
@@ -62,9 +112,11 @@ def record_summary(record: LedgerRecord) -> dict[str, Any]:
         "operator": capsule.get("operator", ""),
         "action": summarize_action(capsule),
         "action_type": capsule.get("action_type", ""),
+        "action_class": _action_class_info(capsule),
         "timestamp": capsule.get("timestamp", ""),
         "disposition": capsule.get("disposition") or {},
-        "assurance": capsule.get("assurance") or {},
+        "assurance": assurance,
+        "assurance_grade": _assurance_grade_info(assurance),
     }
 
 
@@ -146,6 +198,8 @@ def record_detail(store: LedgerAPI, capsule_id: str) -> dict[str, Any] | None:
     capsule = record.capsule
     chain = capsule.get("chain") or {}
     constraints = capsule.get("constraints") or []
+    disposition = capsule.get("disposition") or {}
+    payload_store = _payload_store_for(store)
 
     parent_id = chain.get("parent_capsule_id")
     cites = None
@@ -175,7 +229,10 @@ def record_detail(store: LedgerAPI, capsule_id: str) -> dict[str, Any] | None:
         "fingerprint": _fingerprint(record.capsule_id),
         "seq": record.seq,
         "sealed": capsule,
-        "disposition": capsule.get("disposition") or {},
+        "disposition": disposition,
+        "action_class": _action_class_info(capsule),
+        "assurance_grade": _assurance_grade_info(capsule.get("assurance") or {}),
+        "resolved_reason": _resolve_info(payload_store, disposition.get("reason_digest"), "reason"),
         "checks": [
             {
                 "id": c.get("id"),
@@ -183,6 +240,8 @@ def record_detail(store: LedgerAPI, capsule_id: str) -> dict[str, Any] | None:
                 "severity": c.get("severity"),
                 "check_type": c.get("check_type"),
                 "method": c.get("method"),
+                "evidence_digest": c.get("evidence_digest"),
+                "resolved_evidence": _resolve_info(payload_store, c.get("evidence_digest"), "evidence"),
             }
             for c in constraints
         ],

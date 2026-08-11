@@ -75,6 +75,7 @@ capsule_ledger = [
     "packs/catalog/*/folds/*.yaml",
     "packs/catalog/*/wickets/*.yaml",
     "packs/catalog/*/fixtures/*.jsonl",
+    "registry/*.json",
 ]
 
 [tool.pytest.ini_options]

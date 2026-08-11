@@ -24,8 +24,16 @@ from pathlib import Path
 from ..envcompat import env_get
 from ..ledger import LedgerStore
 from ..ledger.api import ScanQuery
+from ..payload_store import PayloadStore
 
-__all__ = ["open_ledger", "require_ledger_path", "add_scan_query_args", "build_scan_query", "echo_parts"]
+__all__ = [
+    "open_ledger",
+    "require_ledger_path",
+    "add_scan_query_args",
+    "build_scan_query",
+    "echo_parts",
+    "local_payload_store",
+]
 
 
 @contextlib.contextmanager
@@ -47,6 +55,20 @@ def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
     finally:
         store.close()
         shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+def local_payload_store(ledger_path: str | os.PathLike) -> PayloadStore | None:
+    """The resolve-at-read gate (item 5a): auto-resolve applies only on a
+    LOCAL, standalone-grade ledger with a payload store actually present --
+    never on an imported JSONL fixture or a foreign bundle, which
+    ``open_ledger()`` opens into a throwaway tempdir with no lasting home
+    for one. Returns ``None`` (never a store you'd have to remember to
+    check ``.exists`` on) unless both conditions hold."""
+    root = Path(ledger_path)
+    if not root.is_dir():
+        return None
+    store = PayloadStore(root)
+    return store if store.exists else None
 
 
 def require_ledger_path(verb: str, args: argparse.Namespace) -> str | None:

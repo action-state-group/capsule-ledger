@@ -11,9 +11,22 @@ name this module invents.
 """
 from __future__ import annotations
 
+import json
 import shlex
 
-__all__ = ["format_staleness", "format_envelope_line", "build_echo", "summarize_action"]
+from ..payload_store import ResolvedPayload
+from ..registry import describe_action_class
+
+__all__ = [
+    "format_staleness",
+    "format_envelope_line",
+    "build_echo",
+    "summarize_action",
+    "format_action_class",
+    "assurance_grade_parts",
+    "format_assurance_grade",
+    "format_resolved_payload",
+]
 
 
 def format_staleness(age_ms: int) -> str:
@@ -72,3 +85,62 @@ def summarize_action(capsule: dict) -> str:
     action_id = capsule.get("action_id") or ""
     verb = action_id.split("/", 1)[0] if action_id else ""
     return verb or capsule.get("action_type") or "(unnamed action)"
+
+
+def format_action_class(capsule: dict) -> str | None:
+    """Convention-label line for this capsule's ``asg_payload.action_class``
+    (design principle item 2) -- ``None`` when the capsule carries no
+    ``action_class`` at all (a legitimately different state from an
+    unregistered *value*, which renders instead of being hidden)."""
+    action_class = (capsule.get("asg_payload") or {}).get("action_class")
+    convention = describe_action_class(action_class)
+    if convention.action_class is None:
+        return None
+    if convention.registered:
+        return f"{convention.action_class} — {convention.label}"
+    return f"{convention.action_class} (unregistered)"
+
+
+_ATTESTATION_LABELS = {"self_attested": "self-attested", "anchored": "anchored"}
+
+
+def assurance_grade_parts(assurance: dict) -> tuple[str, bool]:
+    """(label, badged) for this assurance block -- the one place that
+    decides which attestation modes are "badged" (design principle item 3).
+    Extensible to a future ``countersigned`` value the same way, once that
+    assurance mode is a real field this codebase produces; ``badged`` is
+    never about paid/free, only about attestation strength."""
+    mode = assurance.get("attestation_mode")
+    label = _ATTESTATION_LABELS.get(mode, mode or "(none)")
+    ledger_mode = assurance.get("ledger_mode")
+    grade = f"{label} · ledger: {ledger_mode}" if ledger_mode else label
+    return grade, mode == "anchored"
+
+
+def format_assurance_grade(assurance: dict) -> str:
+    """Assurance grades do the honesty work everywhere (design principle
+    item 3): ``self_attested`` renders plain, ``anchored`` is badged
+    (``[...]``) -- driven only by the real ``attestation_mode``/
+    ``ledger_mode`` values on the record, never invented, never upsell
+    copy."""
+    grade, badged = assurance_grade_parts(assurance)
+    return f"[{grade}]" if badged else grade
+
+
+def format_resolved_payload(label: str, resolved: ResolvedPayload, *, indent: str = "      ") -> list[str]:
+    """Render one resolve-at-read result (item 5): matched content is shown
+    beside the commitment with an explicit "not part of the record"
+    marking; a mismatch is a loud failure line, never a silent fallback to
+    the digest-only view."""
+    if resolved.match:
+        lines = [
+            f"{indent}resolved {label} "
+            "(from your local payload store — not part of the record; digest recomputed live: match):"
+        ]
+        lines.extend(f"{indent}  {line}" for line in json.dumps(resolved.content, indent=2, sort_keys=True).splitlines())
+        return lines
+    return [
+        f"{indent}⚠ resolved {label} found in your local payload store but does NOT match — "
+        f"recomputed {resolved.recomputed_digest} ≠ recorded {resolved.digest} "
+        "(the local copy may be corrupted or tampered; treat this content as unverified)"
+    ]
