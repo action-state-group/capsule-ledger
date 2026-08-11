@@ -3,14 +3,16 @@
 recipes, layered on top of the existing guard/fold/manifest primitives.
 
 See the module docstrings in ``schema.py`` (the parsed pack shape),
-``loader.py`` (``pack.yaml`` -> ``PackDefinition``), and ``engine_factory.py``
-(``PackDefinition`` -> an installed, manifest-governed ``GuardEngine``) for
-the pieces. ``catalog/`` holds the packs this repo ships (``payments-safety``
+``loader.py`` (``pack.yaml`` -> ``PackDefinition``), ``install.py``
+(``PackDefinition`` -> an installed, manifest-governed ``GuardEngine``), and
+``pins.py`` (fail-closed registry-pin verification before install) for the
+pieces. ``catalog/`` holds the packs this repo ships (``payments-safety``
 today).
 """
-from .errors import PackDefinitionError
+from .errors import PackDefinitionError, RegistryPinError
 from .install import InstalledPack, build_engine, install_pack, record_pack_activation
 from .loader import load_pack_dir
+from .pins import load_pins_file, verify_pins
 from .schema import ActionSemantic, Obligation, PackDefinition, PackFixtures, ProposerStub
 
 __all__ = [
@@ -25,4 +27,7 @@ __all__ = [
     "install_pack",
     "build_engine",
     "record_pack_activation",
+    "load_pins_file",
+    "verify_pins",
+    "RegistryPinError",
 ]
