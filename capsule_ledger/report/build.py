@@ -10,13 +10,16 @@ objects ``replay.py`` produced; there is no synthetic fallback.
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace as _dataclass_replace
 from datetime import datetime, timezone
 
 from ..folds.definition import FoldDefinition
 from .model import DryRunReport, GuardSection, ModelNote, ReportRow
 from .replay import ReplayResult, filter_since, load_records, replay
 
-__all__ = ["build_dry_run_report", "GUARD_ORDER", "GUARD_DESCRIPTIONS"]
+__all__ = ["build_dry_run_report", "build_dry_run_report_with_proposal", "GUARD_ORDER", "GUARD_DESCRIPTIONS"]
+
+PROPOSED_CAPS_GUARD_ID = "caps_proposed"
 
 # Fixed check order the guard engine itself evaluates in (engine.py:
 # ``constraints = (dedupe_out.constraint, caps_out.constraint, vbd_out.constraint)``)
@@ -154,6 +157,65 @@ def build_dry_run_report(
         model_note=note,
         manifest_digest=manifest_digest,
     )
+
+
+def build_dry_run_report_with_proposal(
+    ledger_paths: list[str],
+    *,
+    caps_fold: FoldDefinition,
+    proposed_caps_minor: dict[str, int],
+    since: str | None = "7d",
+    caps_minor: dict[str, int] | None = None,
+    proposal_rationale: str | None = None,
+    operator: str | None = None,
+    model_note: str | None = None,
+    model_id: str | None = None,
+    manifest_digest: str | None = None,
+) -> DryRunReport:
+    """Extends ``build_dry_run_report``'s report with one additional
+    section: actions that were ``allow`` under the currently-configured
+    ``caps_minor`` but would ALSO have been held under ``proposed_caps_minor``
+    -- the "what would tightening to the proposed threshold catch" delta
+    (starter-packs plan: "the conversion moment"). Purely additive -- the
+    base sections are untouched, ``render.py`` already loops over
+    ``report.guards`` generically, so this needed no template change.
+
+    Replays the same ledger a second time under ``proposed_caps_minor``;
+    the two replays visit the same records in the same order, so decisions
+    line up positionally for the diff.
+    """
+    base = build_dry_run_report(
+        ledger_paths,
+        caps_fold=caps_fold,
+        since=since,
+        caps_minor=caps_minor,
+        operator=operator,
+        model_note=model_note,
+        model_id=model_id,
+        manifest_digest=manifest_digest,
+    )
+
+    all_records = load_records(ledger_paths)
+    replayed_records = filter_since(all_records, since)
+    current = replay(replayed_records, caps_fold=caps_fold, caps_minor=caps_minor, manifest_digest=manifest_digest)
+    proposed = replay(replayed_records, caps_fold=caps_fold, caps_minor=proposed_caps_minor, manifest_digest=manifest_digest)
+
+    newly_held_rows: list[ReportRow] = []
+    for cur, prop in zip(current.decisions, proposed.decisions, strict=True):
+        if cur.decision.outcome != "allow" or prop.decision.outcome == "allow":
+            continue
+        attributed = _attributed_guard(prop.decision.constraints)
+        if attributed is None:
+            continue
+        _, constraint = attributed
+        newly_held_rows.append(_row_for(prop, constraint))
+
+    what = "allowed today, but would ALSO have been held under the proposed cap"
+    if proposal_rationale:
+        what = f"{what} ({proposal_rationale})"
+    proposed_section = GuardSection(guard_id=PROPOSED_CAPS_GUARD_ID, what=what, rows=tuple(newly_held_rows))
+
+    return _dataclass_replace(base, guards=base.guards + (proposed_section,))
 
 
 def value_held_label(report: DryRunReport) -> str:

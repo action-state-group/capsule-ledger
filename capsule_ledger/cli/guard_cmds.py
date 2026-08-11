@@ -90,7 +90,8 @@ def _cmd_guard_dry_run(args: argparse.Namespace) -> int:
     from agent_action_capsule import compute_capsule_id
 
     from ..folds.loader import load_definition_file
-    from ..report import build_dry_run_report, render_report_html
+    from ..packs import PackDefinitionError, load_proposals_file
+    from ..report import build_dry_run_report, build_dry_run_report_with_proposal, render_report_html
     from ..report.render import TelemetryConfig, decode_fragment, to_fragment_payload
     from ..telemetry.record import record_evidence_touch, record_guard_configured, record_guard_evaluated
 
@@ -106,10 +107,36 @@ def _cmd_guard_dry_run(args: argparse.Namespace) -> int:
     evidence_visible = packaging.evidence_visible(arm)
 
     since = None if args.since in (None, "all") else args.since
-    caps_fold = load_definition_file(_catalog_dir(args) / "spend.weekly.yaml")
+    fold_path = Path(args.fold_file) if args.fold_file else _catalog_dir(args) / "spend.weekly.yaml"
+    caps_fold = load_definition_file(fold_path)
     manifest_digest = _resolve_manifest_digest(args)
 
+    proposed_caps_minor = None
+    proposal_rationale = None
+    if args.proposals:
+        try:
+            _, proposals = load_proposals_file(args.proposals)
+        except PackDefinitionError as exc:
+            print(f"capsule guard dry-run: --proposals failed to load ({exc.reason}): {exc}", file=sys.stderr)
+            return 1
+        proposed_caps_minor = {p["action_class"]: p["proposed_cap_minor"] for p in proposals}
+        parts = [f"{cls}={cap}" for cls, cap in sorted(proposed_caps_minor.items())]
+        proposal_rationale = f"proposed: {', '.join(parts)}"
+
     def _build():
+        if proposed_caps_minor is not None:
+            return build_dry_run_report_with_proposal(
+                args.ledger,
+                caps_fold=caps_fold,
+                proposed_caps_minor=proposed_caps_minor,
+                since=since,
+                caps_minor=caps_minor,
+                proposal_rationale=proposal_rationale,
+                operator=args.operator,
+                model_note=args.model_note,
+                model_id=args.model_id,
+                manifest_digest=manifest_digest,
+            )
         return build_dry_run_report(
             args.ledger,
             caps_fold=caps_fold,
@@ -237,6 +264,19 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     )
     p_dry_run.add_argument(
         "--model-id", default=None, help="model id the note above was drafted by (required together with --model-note)"
+    )
+    p_dry_run.add_argument(
+        "--fold-file", default=None,
+        help="fold definition YAML the caps check evaluates against (default: the built-in "
+        "spend.weekly.yaml) -- point this at a pack's own materialized fold, e.g. "
+        ".capsule/catalog/folds/payments_safety.yaml, to replay under that pack's caps",
+    )
+    p_dry_run.add_argument(
+        "--proposals", default=None,
+        help="proposals YAML file (from `capsule thresholds propose --out`) -- when given, adds a "
+        "section showing what would ALSO have been held under the proposed caps, on top of what "
+        "--cap already configures (the P2 'conversion moment': what tightening to the proposal "
+        "would additionally catch)",
     )
     p_dry_run.add_argument(
         "--dir", help="fold catalog directory the caps check's fold definition lives in (default: built-in catalog, or $CAPSULE_FOLD_DIR)"
