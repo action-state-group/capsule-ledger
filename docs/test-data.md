@@ -106,28 +106,38 @@ matching.
 ## `payments-safety` pack fixture
 
 `capsule_ledger/packs/catalog/payments-safety/fixtures/mini_ledger.jsonl`
-(6 capsules: 1 policy-manifest activation + 5 guard decisions) is the
+(7 capsules: 1 policy-manifest activation + 6 guard decisions) is the
 starter pack's own acceptance fixture — generated the same way
 `two_agents_sim_ledger.jsonl` is, by running `tests/test_pack_payments_safety_acceptance.py`
 directly rather than through pytest:
 
 ```console
 $ PYTHONPATH=. python3 tests/test_pack_payments_safety_acceptance.py
-wrote 6 record(s) to .../packs/catalog/payments-safety/fixtures/mini_ledger.jsonl
+wrote 7 record(s) to .../packs/catalog/payments-safety/fixtures/mini_ledger.jsonl
 ```
 
 Every fixed input (action ids, timestamps, the activation capsule's own
 action id, the signing key's secret) is hardcoded in that script the same
 way `two_agents.py` hardcodes its own — no wall clock, no `uuid4()`
 default, so re-running it reproduces this exact file. The scenario set
-exercises every one of the pack's three obligations *both ways*: `caps`
-(pass, then fail → escalate — `money.transfer` has an `approver_role`, so a
-sole `caps` failure escalates rather than denies, same D2 rule the two-agent
-sim's own overlap-spend scenario exercises), `dedupe` (pass, then fail →
-deny), and `verify_before_dispatch` (fail by way of a cited mandate that was
-never recorded → deny). `test_fixture_is_reproducible_byte_for_byte`
-(same file) holds this contract in CI: it re-runs the scenario script
-in-process and diffs the result against the checked-in bytes.
+exercises every one of the pack's three obligations genuinely *both ways*
+(fixture-shape discipline, 2026-08-11: a "pass" case is required, not just
+absence-of-failure/`n/a`) : `caps` (pass, then fail → escalate —
+`money.transfer` has an `approver_role`, so a sole `caps` failure escalates
+rather than denies, same D2 rule the two-agent sim's own overlap-spend
+scenario exercises), `dedupe` (pass, then fail → deny), and
+`verify_before_dispatch` (genuine pass — cites a real, previously-recorded
+capsule that re-verifies — and fail, by way of a cited mandate that was
+never recorded → deny; the earlier version of this fixture only exercised
+the fail side, a dead rule on the allow side). `test_fixture_is_reproducible_byte_for_byte`
+(same file) holds the reproducibility contract in CI: it re-runs the
+scenario script in-process and diffs the result against the checked-in
+bytes; `test_payments_safety_pack_observe_mode_acceptance` additionally
+re-verifies every produced capsule structurally (`ledger.verify()`), not
+just its `outcome` — this is what caught a real bug during this pack's own
+development (`action_type` briefly carried the pack's own action-type name
+instead of the base spec's required `fyi`/`decide`; see `guards/action.py`
+and `packs/schema.py`'s `ActionSemantic` docstring).
 
 No plaintext PII: every `target`/counterparty reference is a synthetic
 `vendor-<name>/invoice-<n>` string, and the one `cited_mandate_capsule_id`

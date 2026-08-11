@@ -72,6 +72,8 @@ def test_loads_the_real_payments_safety_pack():
         "caps-escalate",
         "dedupe-deny",
         "verify-before-dispatch-refusal",
+        "verify-before-dispatch-pass",
+        "caps-boundary-at-cap",
     }
 
 

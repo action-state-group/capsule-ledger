@@ -29,11 +29,16 @@ def test_proposed_section_flags_the_action_a_tighter_cap_would_newly_hold():
         caps_minor={"money.transfer": 10_000_000},
     )
     proposed = next(s for s in report.guards if s.guard_id == "caps_proposed")
-    assert len(proposed.rows) == 1
-    row = proposed.rows[0]
-    assert row.agent == "checkout-shared-treasury@v1"
-    assert row.amount_minor == 600_000
-    assert row.capsule.get("capsule_id")  # a real, attached capsule, not just a label
+    # Two rows under this fixture: the pooled overlap-spend (treasury,
+    # 650k+600k under the current loose cap) and the standalone
+    # at-the-current-cap boundary payment (zeta, 1,000,000 alone) -- both
+    # allow today, both exceed the tighter 650k proposal.
+    by_agent = {row.agent: row for row in proposed.rows}
+    assert set(by_agent) == {"checkout-shared-treasury@v1", "checkout-agent-zeta@v1"}
+    assert by_agent["checkout-shared-treasury@v1"].amount_minor == 600_000
+    assert by_agent["checkout-agent-zeta@v1"].amount_minor == 1_000_000
+    for row in proposed.rows:
+        assert row.capsule.get("capsule_id")  # a real, attached capsule, not just a label
 
 
 def test_base_sections_are_unchanged_by_adding_a_proposal():

@@ -38,7 +38,11 @@ OPERATOR = "acme-checkout"
 TREASURY_DEVELOPER = "checkout-shared-treasury@v1"
 GAMMA_DEVELOPER = "checkout-agent-gamma@v1"
 DELTA_DEVELOPER = "checkout-agent-delta@v1"
+EPSILON_DEVELOPER = "checkout-agent-epsilon@v1"
+ZETA_DEVELOPER = "checkout-agent-zeta@v1"
 INSTALL_TOOL_DEVELOPER = "capsule-init-tool"
+
+CAPS_MINOR = 1_000_000  # must match capsule_ledger/packs/catalog/payments-safety/pack.yaml's caps_minor
 
 SIGNER_SECRET = b"payments-safety-acceptance-fixture-fixed-key"
 
@@ -82,7 +86,6 @@ def _run_scenarios(ledger, *, project_dir):
             operator=OPERATOR,
             developer=TREASURY_DEVELOPER,
             action_class="money.transfer",
-            action_type="payment.dispatch",
             amount_minor=650_000,
             currency="EUR",
             target="vendor-forge-supplies/invoice-2001",
@@ -103,7 +106,6 @@ def _run_scenarios(ledger, *, project_dir):
             operator=OPERATOR,
             developer=TREASURY_DEVELOPER,
             action_class="money.transfer",
-            action_type="payment.dispatch",
             amount_minor=600_000,
             currency="EUR",
             target="vendor-forge-supplies/invoice-2002",
@@ -121,7 +123,6 @@ def _run_scenarios(ledger, *, project_dir):
         operator=OPERATOR,
         developer=GAMMA_DEVELOPER,
         action_class="money.transfer",
-        action_type="payment.dispatch",
         amount_minor=100_000,
         currency="EUR",
         target="vendor-northwind-logistics/invoice-3001",
@@ -156,7 +157,6 @@ def _run_scenarios(ledger, *, project_dir):
             operator=OPERATOR,
             developer=DELTA_DEVELOPER,
             action_class="money.transfer",
-            action_type="payment.dispatch",
             amount_minor=50_000,
             currency="EUR",
             target="vendor-northwind-logistics/invoice-4001",
@@ -165,6 +165,51 @@ def _run_scenarios(ledger, *, project_dir):
             timestamp="2026-08-10T09:05:00Z",
         ),
         DENY,
+    )
+
+    # -- verify-before-dispatch-pass: cites a REAL, previously-recorded
+    # capsule (this replay's own caps-allow decision) that DOES re-verify --
+    # the genuine pass case, distinct from "n/a" (no citation at all). Every
+    # scenario above with no cited_mandate_capsule_id resolves "n/a" for
+    # this check, never "pass" -- without this one, verify_before_dispatch
+    # would be a dead rule on its allow side (declared, never fires clean).
+    _decide(
+        "verify-before-dispatch-pass",
+        Action(
+            verb="dispatch_payout",
+            operator=OPERATOR,
+            developer=EPSILON_DEVELOPER,
+            action_class="money.transfer",
+            amount_minor=10_000,
+            currency="EUR",
+            target="vendor-northwind-logistics/invoice-4002",
+            cited_mandate_capsule_id=capsules["caps-allow"]["capsule_id"],
+            action_id="dispatch_payout/payments-safety-fixture-vbd-pass",
+            timestamp="2026-08-10T09:06:00Z",
+        ),
+        ALLOW,
+    )
+
+    # -- caps-boundary-at-cap: a single payment for exactly the configured
+    # cap (1,000,000 minor units). check_caps compares `projected <= cap`,
+    # so this is the boundary itself -- must PASS, not fail. Golden-
+    # decision-table discipline: an off-by-one here (projected < cap
+    # instead of <=) would silently deny every payment that lands exactly
+    # on a human-chosen round-number cap, the single most common real case.
+    _decide(
+        "caps-boundary-at-cap",
+        Action(
+            verb="dispatch_payout",
+            operator=OPERATOR,
+            developer=ZETA_DEVELOPER,
+            action_class="money.transfer",
+            amount_minor=CAPS_MINOR,
+            currency="EUR",
+            target="vendor-northwind-logistics/invoice-5001",
+            action_id="dispatch_payout/payments-safety-fixture-caps-boundary",
+            timestamp="2026-08-10T09:07:00Z",
+        ),
+        ALLOW,
     )
 
     records = list(ledger.scan())
@@ -177,8 +222,16 @@ def test_payments_safety_pack_observe_mode_acceptance(tmp_path):
     store = LedgerStore(ledger_dir)
     try:
         installed, activation, outcomes, capsules, records = _run_scenarios(store, project_dir=project_dir)
+        # Every capsule this pack produced must independently, structurally
+        # re-verify -- not just "the outcome matched what we expected".
+        # This is what caught, and now locks in, a real bug: action_type is
+        # a base-spec field with a closed {fyi, decide} vocabulary (§5.1),
+        # and this pack briefly wrote its own action-type name into it.
+        verify_results = {name: store.verify(c["capsule_id"]) for name, c in capsules.items()}
     finally:
         store.close()
+    for name, result in verify_results.items():
+        assert result.ok, f"{name}: capsule failed to re-verify: {[f.detail for f in result.findings]}"
 
     # Every fixture scenario pack.yaml declares actually ran, at the
     # declared outcome -- the pack's own obligations, each exercised.
@@ -203,10 +256,11 @@ def test_payments_safety_pack_observe_mode_acceptance(tmp_path):
     packs_detail = activation["asg_payload"]["detail"]["packs"]
     assert packs_detail == [{"pack_id": "asg/payments-safety/1.0.0", "digest": pack.definition_digest(), "mode": "observe"}]
 
-    # 1 activation + 6 decisions (caps-allow, caps-escalate, dedupe-original,
-    # dedupe-deny, verify-before-dispatch-refusal -- dedupe-original is not
-    # itself a declared fixture scenario, it's what makes dedupe-deny real).
-    assert len(records) == 6
+    # 1 activation + 7 decisions (caps-allow, caps-escalate, dedupe-original,
+    # dedupe-deny, verify-before-dispatch-refusal, verify-before-dispatch-pass,
+    # caps-boundary-at-cap -- dedupe-original is not itself a declared
+    # fixture scenario, it's what makes dedupe-deny real).
+    assert len(records) == 8
 
 
 def test_pack_gives_identical_verdicts_regardless_of_action_origin(tmp_path):
@@ -237,7 +291,6 @@ def test_pack_gives_identical_verdicts_regardless_of_action_origin(tmp_path):
             operator=OPERATOR,
             developer="adapter-parity-check@v1",
             action_class="money.transfer",
-            action_type="payment.dispatch",
             amount_minor=250_000,
             currency="EUR",
             target="vendor-forge-supplies/invoice-9001",
@@ -254,7 +307,7 @@ def test_pack_gives_identical_verdicts_regardless_of_action_origin(tmp_path):
             "action_id": "dispatch_payout/adapter-parity-check",
             "operator": OPERATOR,
             "developer": "adapter-parity-check@v1",
-            "action_type": "payment.dispatch",
+            "action_type": "decide",  # spec §5.1: action_type is 'fyi'/'decide' only, never a pack action type
             "timestamp": "2026-08-10T09:10:00Z",
             "asg_payload": {
                 "amount_minor": 250_000,

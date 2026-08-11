@@ -73,7 +73,7 @@ def test_full_p2_lifecycle(tmp_path):
     # thing a proposer should be able to fold real spend out of. --
     a1 = Action(
         verb="dispatch_payout", operator=OPERATOR, developer=TREASURY_DEVELOPER,
-        action_class="money.transfer", action_type="payment.dispatch",
+        action_class="money.transfer",
         amount_minor=400_000, currency="EUR", target="vendor-forge-supplies/invoice-5001",
         action_id="dispatch_payout/p2-lifecycle-1", timestamp="2026-08-11T09:01:00Z",
     )
@@ -82,7 +82,7 @@ def test_full_p2_lifecycle(tmp_path):
 
     a2 = Action(
         verb="dispatch_payout", operator=OPERATOR, developer=TREASURY_DEVELOPER,
-        action_class="money.transfer", action_type="payment.dispatch",
+        action_class="money.transfer",
         amount_minor=200_000, currency="EUR", target="vendor-forge-supplies/invoice-5002",
         action_id="dispatch_payout/p2-lifecycle-2", timestamp="2026-08-11T09:02:00Z",
     )
@@ -145,7 +145,7 @@ def test_full_p2_lifecycle(tmp_path):
     enforced_engine = build_engine(installed_enforce, ledger=enforce_ledger, signer_provider=lambda: signer)
     a3 = Action(
         verb="dispatch_payout", operator=OPERATOR, developer=TREASURY_DEVELOPER,
-        action_class="money.transfer", action_type="payment.dispatch",
+        action_class="money.transfer",
         amount_minor=600_000, currency="EUR", target="vendor-forge-supplies/invoice-5003",
         action_id="dispatch_payout/p2-lifecycle-3", timestamp="2026-08-11T09:11:00Z",
     )
