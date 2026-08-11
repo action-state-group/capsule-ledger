@@ -14,7 +14,7 @@ from capsule_ledger.policy import (
     load_manifest_text,
     resolve_manifest,
 )
-from capsule_ledger.policy.manifest import parse_manifest
+from capsule_ledger.policy.manifest import PackRef, parse_manifest
 
 CATALOG_DIR = Path(__file__).parent.parent / "capsule_ledger" / "folds" / "catalog_defs"
 WICKET_CATALOG_DIR = Path(__file__).parent.parent / "capsule_ledger" / "guards" / "wickets" / "catalog_defs"
@@ -145,6 +145,28 @@ def test_digest_changes_when_entry_order_changes():
             },
             "duplicate_wicket_ref",
         ),
+        (
+            # missing mode -- required, not optional-with-a-default
+            {"manifest_id": "m/1.0.0", "packs": [{"pack_id": "p/1.0.0", "engine": "pack/1", "digest": "a" * 64}]},
+            "malformed_manifest",
+        ),
+        (
+            {
+                "manifest_id": "m/1.0.0",
+                "packs": [{"pack_id": "p/1.0.0", "engine": "pack/1", "digest": "a" * 64, "mode": "enforced"}],
+            },
+            "invalid_pack_mode",
+        ),
+        (
+            {
+                "manifest_id": "m/1.0.0",
+                "packs": [
+                    {"pack_id": "p/1.0.0", "engine": "pack/1", "digest": "a" * 64, "mode": "observe"},
+                    {"pack_id": "p/1.0.0", "engine": "pack/1", "digest": "b" * 64, "mode": "observe"},
+                ],
+            },
+            "duplicate_pack_ref",
+        ),
         ("not-a-mapping", "malformed_manifest"),
     ],
 )
@@ -164,6 +186,32 @@ def test_folds_and_wickets_default_to_empty_when_omitted():
     manifest = parse_manifest({"manifest_id": "m/1.0.0"})
     assert manifest.folds == ()
     assert manifest.wickets == ()
+    assert manifest.packs == ()
+
+
+def test_pack_ref_round_trips_and_participates_in_the_digest():
+    manifest = parse_manifest(
+        {
+            "manifest_id": "m/1.0.0",
+            "packs": [{"pack_id": "payments_safety/1.0.0", "engine": "pack/1", "digest": "a" * 64, "mode": "observe"}],
+        }
+    )
+    assert manifest.packs == (
+        PackRef(pack_id="payments_safety/1.0.0", engine="pack/1", digest="a" * 64, mode="observe"),
+    )
+    assert "packs" in manifest.canonical_dict()
+
+    without_pack = parse_manifest({"manifest_id": "m/1.0.0"})
+    assert "packs" not in without_pack.canonical_dict()
+    assert manifest.manifest_digest() != without_pack.manifest_digest()
+
+    flipped = parse_manifest(
+        {
+            "manifest_id": "m/1.0.0",
+            "packs": [{"pack_id": "payments_safety/1.0.0", "engine": "pack/1", "digest": "a" * 64, "mode": "enforce"}],
+        }
+    )
+    assert flipped.manifest_digest() != manifest.manifest_digest()
 
 
 def test_resolve_fails_closed_on_unknown_fold_id():

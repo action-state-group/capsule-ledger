@@ -74,17 +74,25 @@ from agent_action_capsule.contracts import is_hex64
 
 from .errors import (
     DUPLICATE_FOLD_REF,
+    DUPLICATE_PACK_REF,
     DUPLICATE_WICKET_REF,
     INVALID_DIGEST,
     INVALID_MANIFEST_ID,
+    INVALID_PACK_MODE,
     MALFORMED_MANIFEST,
     PolicyManifestError,
 )
 
-__all__ = ["MANIFEST_ID_RE", "FoldRef", "WicketRef", "Manifest", "parse_manifest"]
+__all__ = ["MANIFEST_ID_RE", "PACK_MODES", "FoldRef", "WicketRef", "PackRef", "Manifest", "parse_manifest"]
 
 # manifest_id: same "human name + semver" shape as fold_id/wicket_id.
 MANIFEST_ID_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*/\d+\.\d+\.\d+$")
+
+# A pack ref's lifecycle state (starter-packs plan: "observe mode: records,
+# no enforcement" -> "enforce: thresholds accepted by a human, gate goes
+# live"). Closed set, same discipline as ``engine`` below -- an unrecognized
+# mode is a typo, never silently accepted as data.
+PACK_MODES = frozenset({"observe", "enforce"})
 
 
 @dataclass(frozen=True)
@@ -102,10 +110,31 @@ class WicketRef:
 
 
 @dataclass(frozen=True)
+class PackRef:
+    """One installed starter pack, cited by digest like a fold/wicket ref.
+
+    ``digest`` is the pack's own ``definition_digest()`` (``packs/schema.py``
+    -- SHA-256 over the JCS-canonical bytes of its obligations/action-semantics/
+    constraint-and-fold-ref declaration), not a copy of the pack content --
+    same "definitions-by-digest, never definitions-by-copy" rule every other
+    entry in this manifest follows. ``mode`` is which lifecycle state this
+    pack is installed in *as of this manifest* -- flipping observe -> enforce
+    is itself a new manifest (a new ``PackRef.mode``), so "what was in force"
+    stays provable at every point in time, not just today.
+    """
+
+    pack_id: str
+    engine: str
+    digest: str
+    mode: str
+
+
+@dataclass(frozen=True)
 class Manifest:
     manifest_id: str
     folds: tuple[FoldRef, ...] = ()
     wickets: tuple[WicketRef, ...] = ()
+    packs: tuple[PackRef, ...] = ()
 
     def canonical_dict(self) -> dict:
         """The JCS-canonicalizable form of this manifest -- drives manifest_digest().
@@ -113,11 +142,19 @@ class Manifest:
         List order is preserved (not sorted) and is part of what gets
         digested, same as a fold definition's ``reads`` list -- editing the
         manifest file (even just reordering entries) is a manifest change."""
-        return {
+        out: dict[str, Any] = {
             "manifest_id": self.manifest_id,
             "folds": [{"fold_id": f.fold_id, "engine": f.engine, "digest": f.digest} for f in self.folds],
             "wickets": [{"wicket_id": w.wicket_id, "engine": w.engine, "digest": w.digest} for w in self.wickets],
         }
+        # Omitted entirely (not an empty list) when no pack is installed, so
+        # a pre-pack manifest's canonical_dict -- and therefore its digest --
+        # is byte-identical to what it was before this field existed.
+        if self.packs:
+            out["packs"] = [
+                {"pack_id": p.pack_id, "engine": p.engine, "digest": p.digest, "mode": p.mode} for p in self.packs
+            ]
+        return out
 
     def manifest_digest(self) -> str:
         """SHA-256 over the JCS bytes of the canonical manifest.
@@ -196,4 +233,40 @@ def parse_manifest(data: Any) -> Manifest:
         digest = _check_digest(entry["digest"], f"wickets[{wicket_id!r}].digest")
         wickets.append(WicketRef(wicket_id=wicket_id, engine=engine, digest=digest))
 
-    return Manifest(manifest_id=manifest_id, folds=tuple(folds), wickets=tuple(wickets))
+    raw_packs = data.get("packs") or []
+    if not isinstance(raw_packs, list):
+        raise PolicyManifestError(MALFORMED_MANIFEST, "packs must be a list")
+    packs: list[PackRef] = []
+    seen_pack_ids: set[str] = set()
+    for entry in raw_packs:
+        if (
+            not isinstance(entry, dict)
+            or "pack_id" not in entry
+            or "digest" not in entry
+            or "engine" not in entry
+            or "mode" not in entry
+        ):
+            raise PolicyManifestError(
+                MALFORMED_MANIFEST,
+                f"each packs entry needs 'pack_id', 'engine', 'digest', and 'mode': {entry!r}",
+            )
+        pack_id = entry["pack_id"]
+        if not isinstance(pack_id, str) or not pack_id:
+            raise PolicyManifestError(MALFORMED_MANIFEST, f"packs[].pack_id must be a non-empty string: {entry!r}")
+        if pack_id in seen_pack_ids:
+            raise PolicyManifestError(DUPLICATE_PACK_REF, f"pack_id {pack_id!r} declared more than once")
+        seen_pack_ids.add(pack_id)
+        engine = entry["engine"]
+        if not isinstance(engine, str) or not engine:
+            raise PolicyManifestError(
+                MALFORMED_MANIFEST, f"packs[{pack_id!r}].engine must be a non-empty string: {entry!r}"
+            )
+        mode = entry["mode"]
+        if mode not in PACK_MODES:
+            raise PolicyManifestError(
+                INVALID_PACK_MODE, f"packs[{pack_id!r}].mode must be one of {sorted(PACK_MODES)}, got {mode!r}"
+            )
+        digest = _check_digest(entry["digest"], f"packs[{pack_id!r}].digest")
+        packs.append(PackRef(pack_id=pack_id, engine=engine, digest=digest, mode=mode))
+
+    return Manifest(manifest_id=manifest_id, folds=tuple(folds), wickets=tuple(wickets), packs=tuple(packs))

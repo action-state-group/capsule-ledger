@@ -32,6 +32,7 @@ from . import (
     diff_cmd,
     fold_cmds,
     guard_cmds,
+    init_cmds,
     key_cmds,
     lens_cmds,
     log_cmd,
@@ -51,6 +52,7 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     fold_cmds.add_parser(sub)
+    init_cmds.add_parser(sub)
     constraints_cmd.add_parser(sub)
     agents_cmd.add_parser(sub)
     guard_cmds.add_parser(sub)

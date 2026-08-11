@@ -70,6 +70,11 @@ capsule_ledger = [
     "vectors/fixtures/must_fail/*/*.yaml",
     "vectors/fixtures/must_fail/*/*.jsonl",
     "vectors/fixtures/must_fail/*/*.txt",
+    "packs/catalog/*/pack.yaml",
+    "packs/catalog/*/AI-BOOTSTRAP.md",
+    "packs/catalog/*/folds/*.yaml",
+    "packs/catalog/*/wickets/*.yaml",
+    "packs/catalog/*/fixtures/*.jsonl",
 ]
 
 [tool.pytest.ini_options]

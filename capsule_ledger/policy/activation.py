@@ -37,6 +37,7 @@ def build_manifest_activation_capsule(
     signer: Signer,
     previous_activation_capsule_id: str | None = None,
     timestamp: str | None = None,
+    action_id: str | None = None,
 ) -> dict:
     detail = {
         "manifest_id": resolved.manifest.manifest_id,
@@ -44,6 +45,12 @@ def build_manifest_activation_capsule(
         "folds": [{"fold_id": f.fold_id, "digest": f.digest} for f in resolved.manifest.folds],
         "wickets": [{"wicket_id": w.wicket_id, "digest": w.digest} for w in resolved.manifest.wickets],
     }
+    # Omitted when no pack is installed -- same "byte-identical to before
+    # this field existed" rule ``Manifest.canonical_dict()`` follows.
+    if resolved.manifest.packs:
+        detail["packs"] = [
+            {"pack_id": p.pack_id, "digest": p.digest, "mode": p.mode} for p in resolved.manifest.packs
+        ]
     return build_event_capsule(
         operator=operator,
         developer=developer,
@@ -51,6 +58,7 @@ def build_manifest_activation_capsule(
         event=EVENT_MANIFEST_ACTIVATED,
         detail=detail,
         timestamp=timestamp,
+        action_id=action_id,
         chain_parent=previous_activation_capsule_id or GENESIS_PARENT,
         chain_relation="epoch_opens",
     )
