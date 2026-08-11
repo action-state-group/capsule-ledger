@@ -357,11 +357,13 @@ def load_pack_dir(pack_dir: str | Path) -> PackDefinition:
         raise PackDefinitionError(MALFORMED_PACK, f"{pack_yaml_path} is not valid YAML: {exc}") from exc
     data = _require_mapping(data, str(pack_yaml_path))
 
-    pack_id = _require_nonempty_str(data.get("pack_id"), "pack_id", "payments-safety/1.0.0")
+    pack_id = _require_nonempty_str(data.get("pack_id"), "pack_id", "asg/payments-safety/1.0.0")
     if not PACK_ID_RE.match(pack_id):
         raise PackDefinitionError(
             INVALID_PACK_ID,
-            f"pack_id {pack_id!r} must match '<kebab-name>/<major>.<minor>.<patch>' (e.g. 'payments-safety/1.0.0')",
+            f"pack_id {pack_id!r} must match '<publisher>/<kebab-name>/<major>.<minor>.<patch>' "
+            "(e.g. 'asg/payments-safety/1.0.0') -- the publisher segment is a registered namespace "
+            "prefix (registry-architecture ruling, 2026-08-10), not a display name",
         )
 
     constraints = _parse_constraints(data.get("constraints"))

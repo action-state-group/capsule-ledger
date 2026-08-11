@@ -201,7 +201,7 @@ def test_payments_safety_pack_observe_mode_acceptance(tmp_path):
     # The activation capsule that opens this ledger's policy epoch names
     # this pack, at this digest, in observe mode.
     packs_detail = activation["asg_payload"]["detail"]["packs"]
-    assert packs_detail == [{"pack_id": "payments-safety/1.0.0", "digest": pack.definition_digest(), "mode": "observe"}]
+    assert packs_detail == [{"pack_id": "asg/payments-safety/1.0.0", "digest": pack.definition_digest(), "mode": "observe"}]
 
     # 1 activation + 6 decisions (caps-allow, caps-escalate, dedupe-original,
     # dedupe-deny, verify-before-dispatch-refusal -- dedupe-original is not

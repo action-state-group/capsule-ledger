@@ -13,14 +13,14 @@ def test_init_installs_payments_safety_pack(tmp_path, capsys):
     rc = main(["init", "--pack", "payments-safety", "--project-dir", str(tmp_path)])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "payments-safety/1.0.0" in out
+    assert "asg/payments-safety/1.0.0" in out
     assert "observe mode" in out
 
     manifest_path = tmp_path / ".capsule" / "policy" / "manifest.yaml"
     assert manifest_path.is_file()
     manifest = load_manifest_file(manifest_path)
     assert len(manifest.packs) == 1
-    assert manifest.packs[0].pack_id == "payments-safety/1.0.0"
+    assert manifest.packs[0].pack_id == "asg/payments-safety/1.0.0"
     assert manifest.packs[0].mode == "observe"
 
     assert any((tmp_path / ".capsule" / "catalog" / "folds").glob("payments_safety.*.yaml"))
@@ -63,7 +63,7 @@ def test_init_records_activation_capsule_when_ledger_given(tmp_path, capsys):
     assert payload["event"] == "policy_manifest_activated"
     packs_detail = payload["detail"]["packs"]
     assert len(packs_detail) == 1
-    assert packs_detail[0]["pack_id"] == "payments-safety/1.0.0"
+    assert packs_detail[0]["pack_id"] == "asg/payments-safety/1.0.0"
     assert packs_detail[0]["mode"] == "observe"
     assert len(packs_detail[0]["digest"]) == 64
 

@@ -44,12 +44,13 @@ CATALOG_DIRNAME = ".capsule"
 
 
 def manifest_id_for_pack(pack_id: str) -> str:
-    """``payments-safety/1.0.0`` -> ``payments_safety.install/1.0.0`` -- a
-    manifest_id must be dot/underscore-namespaced (``MANIFEST_ID_RE``), while
-    a pack_id is kebab-case (matching the plan's own pack names), so this is
-    a real translation, not a coincidence of matching regexes."""
-    name, _, version = pack_id.partition("/")
-    return f"{name.replace('-', '_')}.install/{version}"
+    """``asg/payments-safety/1.0.0`` -> ``asg.payments_safety.install/1.0.0``
+    -- a manifest_id must be dot/underscore-namespaced (``MANIFEST_ID_RE``),
+    while a pack_id is ``publisher/name/semver`` with a kebab-case name
+    segment (registry-architecture ruling, 2026-08-10), so this is a real
+    translation, not a coincidence of matching regexes."""
+    publisher, name, version = pack_id.split("/")
+    return f"{publisher}.{name.replace('-', '_')}.install/{version}"
 
 
 @dataclass(frozen=True)

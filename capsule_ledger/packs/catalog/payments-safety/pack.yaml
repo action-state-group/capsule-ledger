@@ -10,7 +10,7 @@
 # Holds (reserve/release) integration is intentionally NOT built here --
 # `holds_integration: stubbed` below records that the seam is deferred, not
 # silently absent.
-pack_id: payments-safety/1.0.0
+pack_id: asg/payments-safety/1.0.0
 
 obligations:
   - id: caps-per-scope-window

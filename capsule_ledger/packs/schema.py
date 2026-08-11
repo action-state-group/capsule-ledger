@@ -44,8 +44,16 @@ __all__ = [
     "PackDefinition",
 ]
 
-# pack_id: same "human name + semver" shape as fold_id/wicket_id/manifest_id.
-PACK_ID_RE = re.compile(r"^[a-z][a-z0-9_]*(-[a-z0-9_]+)*/\d+\.\d+\.\d+$")
+# pack_id: publisher/name/semver (registry-architecture ruling, 2026-08-10:
+# pack_ids participate in the policy-manifest digest, so the format has to be
+# right before the first release -- a flat namespace invites collisions once
+# community registration opens, and changing the format later breaks "what
+# was in force" continuity). Publisher segment matches the same namespace
+# grammar fold_id/wicket_id/manifest_id use (dot/underscore, no hyphens --
+# it's a registry-reserved token like "asg", not a display name); the name
+# segment stays kebab-case, matching how packs are named in the wild
+# (payments-safety, external-comms, ...).
+PACK_ID_RE = re.compile(r"^[a-z][a-z0-9_]*/[a-z][a-z0-9_]*(-[a-z0-9_]+)*/\d+\.\d+\.\d+$")
 
 # The normalized ``guards.action.Action`` fields a pack's action semantics may
 # declare as required/optional -- the "canonical field basis per action

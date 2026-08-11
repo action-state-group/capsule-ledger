@@ -18,7 +18,7 @@ PAYMENTS_SAFETY_DIR = (
 )
 
 BASE_PACK = {
-    "pack_id": "test-pack/1.0.0",
+    "pack_id": "test_pub/test-pack/1.0.0",
     "obligations": [{"id": "o1", "statement": "no dup", "check": "dedupe"}],
     "action_semantics": [
         {"action_type": "payment.dispatch", "action_class": "money.transfer", "required_fields": ["amount_minor"]}
@@ -50,7 +50,7 @@ def _write_pack(tmp_path: Path, overrides: dict | None = None, *, omit: list[str
 
 def test_loads_the_real_payments_safety_pack():
     pack = load_pack_dir(PAYMENTS_SAFETY_DIR)
-    assert pack.pack_id == "payments-safety/1.0.0"
+    assert pack.pack_id == "asg/payments-safety/1.0.0"
     assert {o.check for o in pack.obligations} == {"caps", "dedupe", "verify_before_dispatch"}
     assert len(pack.action_semantics) == 1
     semantic = pack.action_semantics[0]
@@ -91,13 +91,14 @@ def test_missing_pack_yaml_is_pack_not_found(tmp_path):
 def test_minimal_valid_pack_loads(tmp_path):
     _write_pack(tmp_path)
     pack = load_pack_dir(tmp_path)
-    assert pack.pack_id == "test-pack/1.0.0"
+    assert pack.pack_id == "test_pub/test-pack/1.0.0"
 
 
 @pytest.mark.parametrize(
     "overrides,omit,expected_reason",
     [
         ({"pack_id": "Not Valid"}, None, "invalid_pack_id_namespace"),
+        ({"pack_id": "payments-safety/1.0.0"}, None, "invalid_pack_id_namespace"),  # missing publisher segment
         (None, ["obligations"], "missing_required_field"),
         ({"obligations": []}, None, "malformed_pack"),
         ({"obligations": [{"id": "o1", "statement": "s", "check": "caps"}]}, None, "obligation_check_not_declared"),
