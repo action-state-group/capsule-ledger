@@ -30,11 +30,31 @@ INVALID_FIXTURES = "invalid_fixtures"
 FLOAT_IN_PACK_DIGEST = "float_in_pack_digest"
 UNSAFE_INTEGER_IN_PACK_DIGEST = "unsafe_integer_in_pack_digest"
 
+# Registry-pin verification (pins.py) -- a distinct failure family from
+# pack.yaml parsing: these are trust/integrity failures against a pins
+# source (a local file today, a live capsule-registry fetch later), not
+# malformed-file failures, so they get their own reason codes and their own
+# exception type (``RegistryPinError`` below) rather than overloading
+# ``PackDefinitionError``.
+MALFORMED_PINS_FILE = "malformed_pins_file"
+PIN_NOT_FOUND = "pin_not_found"
+PIN_DIGEST_MISMATCH = "pin_digest_mismatch"
+
 
 class PackDefinitionError(ValueError):
     """A pack definition (``pack.yaml`` plus its referenced files) fails to
     parse or validate. Carries a stable reason code, same discipline as
     ``FoldDefinitionError`` / ``WicketDefinitionError`` / ``PolicyManifestError``."""
+
+    def __init__(self, reason: str, message: str) -> None:
+        self.reason = reason
+        super().__init__(f"{reason}: {message}")
+
+
+class RegistryPinError(ValueError):
+    """A pack or fold definition fails registry-pin verification: no pin on
+    record, or the definition's real digest doesn't match the pinned one.
+    Always fail-closed -- see ``pins.py``'s module docstring."""
 
     def __init__(self, reason: str, message: str) -> None:
         self.reason = reason

@@ -8,6 +8,16 @@ and, when ``--ledger`` is given, records that installation as a signed
 ``policy_manifest_activated`` event capsule (``packs/install.py``'s
 ``record_pack_activation``).
 
+When ``--pins`` is given, every artifact this install would trust (the pack
+itself, plus every fold it ships) is verified against that pins file before
+anything is installed -- fail closed on a missing or mismatched pin,
+nothing materialized, nothing recorded (``packs/pins.py``). This stands in
+for a live ``capsule-registry`` fetch, which does not exist yet
+(registry-architecture-and-namespace-2026-08-10.md §6); the verification
+gate's shape does not change when that swap happens later. Without
+``--pins``, this command prints each artifact's own digest so a first
+install can seed a pins file for the next one.
+
 This command does not run anything against live traffic itself -- it hands
 back the manifest a caller's own integration resolves and builds a
 ``GuardEngine`` from (``packs.build_engine``), calling
@@ -25,7 +35,15 @@ from pathlib import Path
 from ..envcompat import env_get
 from ..guards.signing import LocalSigner
 from ..ledger import LedgerStore
-from ..packs import PackDefinitionError, install_pack, load_pack_dir, record_pack_activation
+from ..packs import (
+    PackDefinitionError,
+    RegistryPinError,
+    install_pack,
+    load_pack_dir,
+    load_pins_file,
+    record_pack_activation,
+    verify_pins,
+)
 
 __all__ = ["add_parser"]
 
@@ -59,6 +77,16 @@ def _cmd_init(args: argparse.Namespace) -> int:
         print(f"capsule init: pack {args.pack!r} failed to load ({exc.reason}): {exc}", file=sys.stderr)
         return 1
 
+    if args.pins:
+        try:
+            pins = load_pins_file(args.pins)
+            verify_pins(pack, pins)
+        except RegistryPinError as exc:
+            print(f"capsule init: registry-pin verification failed ({exc.reason}): {exc}", file=sys.stderr)
+            print("nothing installed -- fail closed on a missing or mismatched pin.", file=sys.stderr)
+            return 1
+        print(f"registry-pin verification passed against {args.pins} ({1 + len(pack.folds)} artifact(s))")
+
     project_dir = Path(args.project_dir)
     installed = install_pack(pack, project_dir=project_dir, mode="observe")
 
@@ -69,6 +97,11 @@ def _cmd_init(args: argparse.Namespace) -> int:
     print(f"  fold catalog:  {installed.fold_catalog_dir}")
     print(f"  wicket catalog: {installed.wicket_catalog_dir}")
     print(f"  obligations:   {', '.join(o.id for o in pack.obligations)}")
+    if not args.pins:
+        print("  artifact digests (seed a pins file with these to verify future installs with --pins):")
+        print(f"    {pack.pack_id}: {pack.definition_digest()}")
+        for fold in pack.folds:
+            print(f"    {fold.fold_id}: {fold.definition_digest()}")
     print(
         "observe mode: every action this pack governs will be recorded with its would-be verdict "
         "(allow/deny/escalate) -- nothing is enforced until a human runs `capsule enforce --pack "
@@ -115,6 +148,12 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     )
     p_init.add_argument(
         "--pack-catalog-dir", default=None, help="override the built-in pack catalog directory (mainly for tests)"
+    )
+    p_init.add_argument(
+        "--pins", default=None,
+        help="pins file (artifact id -> 64-hex digest) to verify the pack and its folds against before "
+        "installing; fail closed on a missing or mismatched pin (default: none, no verification -- "
+        "this command still prints each artifact's digest so you can seed one)",
     )
     p_init.add_argument(
         "--ledger", default=None,
