@@ -18,6 +18,24 @@ digest, never definitions-by-copy" rule every other digest in this repo
 follows (``policy/manifest.py``'s module docstring): constraints and folds
 are cited by their own ``definition_digest()``, never copied into the pack's
 canonical form.
+
+**Declared constraint scope** (``constraint_scopes``, generalizing a real
+finding): ``capsule-emit`` PR #54 found a cross-class TOCTOU in the holds
+engine -- the lock was scoped per ``(developer, action_class)``, the cap was
+declared per ``action_class``, and the aggregate query summed
+developer-wide across ALL classes with no class filter. Two concurrent
+reserves under different classes for the same developer each took a
+different lock, both read the same (stale, pre-write) dev-wide aggregate,
+and jointly admitted what sequential execution would have denied. Steven's
+ruling: a cap is per ``(developer, action_class)`` -- lock, cap, and
+aggregate must all agree at that granularity. This repo's own ``caps``
+check has the identical shape of risk even without a separate lock: the
+wicket's ``caps_minor`` declares a limit PER ACTION CLASS, while the fold
+it cites aggregates however its own ``key``/``filter`` say to -- if a pack
+ever configures caps for more than one action class, the fold must
+genuinely partition by class or the same "declared per-class, enforced
+pooled" gap opens. ``loader.py``'s scope validator checks this at
+pack-load time, not at incident time.
 """
 from __future__ import annotations
 
@@ -36,6 +54,7 @@ __all__ = [
     "PACK_ID_RE",
     "NORMALIZED_ACTION_FIELDS",
     "HOLDS_INTEGRATION_VALUES",
+    "KNOWN_SCOPE_DIMENSIONS",
     "Obligation",
     "ActionSemantic",
     "ProposerStub",
@@ -72,6 +91,12 @@ NORMALIZED_ACTION_FIELDS = frozenset(
 
 HOLDS_INTEGRATION_VALUES = frozenset({"none", "stubbed", "built"})
 
+# The dimensions a constraint's declared scope may name -- closed set, same
+# "unregistered is a typo" reasoning as everywhere else in this file. These
+# are the fields a numeric-aggregate check (today: caps) can genuinely be
+# partitioned by, given the normalized Action/capsule fields this repo has.
+KNOWN_SCOPE_DIMENSIONS = frozenset({"developer", "operator", "action_class", "target"})
+
 
 @dataclass(frozen=True)
 class Obligation:
@@ -85,7 +110,20 @@ class Obligation:
 
 @dataclass(frozen=True)
 class ActionSemantic:
-    """One action type this pack governs and its required normalized fields."""
+    """One action type this pack governs and its required normalized fields.
+
+    ``action_type`` here is a documentation-level convention name (registry-
+    architecture ruling §2: "bare dotted names ... conventions, not owned
+    artifacts", the OTel-semconv analogy) -- it is how this pack's own
+    obligations/config reference this action family. It is NEVER written
+    into a real capsule's ``action_type`` field, which is a base-spec field
+    with its own closed vocabulary (``{"fyi", "decide"}``, §5.1) that a
+    pack-specific name would violate -- ``loader.py`` refuses any pack that
+    tries to name one of those two reserved values here, precisely so this
+    distinction can't be missed. The normalized ``Action.verb`` (free text,
+    no spec constraint) is where a pack-specific business-action label
+    naturally lives on a real call.
+    """
 
     action_type: str
     action_class: str
@@ -132,6 +170,10 @@ class PackDefinition:
     fixtures: PackFixtures | None = None
     bootstrap_path: str | None = None
     source_dir: Path | None = None
+    # wicket_id -> declared scope dimensions, e.g. {"payments_safety.caps/1.0.0":
+    # ("developer",)}. Required for every `caps` constraint (loader.py enforces
+    # this); optional documentation for other check types.
+    constraint_scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     def canonical_dict(self) -> dict:
         """The JCS-canonicalizable form of this pack -- drives
@@ -151,7 +193,17 @@ class PackDefinition:
                 for a in self.action_semantics
             ],
             "constraints": [
-                {"wicket_id": c.wicket_id, "check": c.check, "digest": c.definition_digest()} for c in self.constraints
+                {
+                    "wicket_id": c.wicket_id,
+                    "check": c.check,
+                    "digest": c.definition_digest(),
+                    **(
+                        {"scope": list(self.constraint_scopes[c.wicket_id])}
+                        if c.wicket_id in self.constraint_scopes
+                        else {}
+                    ),
+                }
+                for c in self.constraints
             ],
             "folds": [{"fold_id": f.fold_id, "digest": f.definition_digest()} for f in self.folds],
             "holds_integration": self.holds_integration,

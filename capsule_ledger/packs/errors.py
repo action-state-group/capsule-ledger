@@ -30,6 +30,14 @@ INVALID_FIXTURES = "invalid_fixtures"
 FLOAT_IN_PACK_DIGEST = "float_in_pack_digest"
 UNSAFE_INTEGER_IN_PACK_DIGEST = "unsafe_integer_in_pack_digest"
 
+# Constraint scope declaration + cross-constraint agreement (generalizes the
+# capsule-emit PR #54 finding: a lock/cap/aggregate scope mismatch let a
+# cross-class race jointly admit what sequential execution would deny --
+# see schema.py's module docstring for the full rationale).
+MISSING_CONSTRAINT_SCOPE = "missing_constraint_scope"
+INVALID_SCOPE_DIMENSION = "invalid_scope_dimension"
+SCOPE_MISMATCH = "scope_mismatch"
+
 # Registry-pin verification (pins.py) -- a distinct failure family from
 # pack.yaml parsing: these are trust/integrity failures against a pins
 # source (a local file today, a live capsule-registry fetch later), not

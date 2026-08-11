@@ -46,6 +46,14 @@ action_semantics:
 constraints:
   - wicket_id: payments_safety.caps/1.0.0
     check: caps
+    # Declared scope (registry-architecture-and-namespace-2026-08-10.md's
+    # generalization of capsule-emit PR #54's cross-class TOCTOU finding):
+    # this cap is enforced per developer -- matches the cited fold's own
+    # `key: developer`. Only one action class is configured today
+    # (money.transfer), so there is nothing to pool across yet; the loader
+    # would refuse a second caps_minor entry here without also adding
+    # 'action_class' to this list AND a class-scoped filter/key to the fold.
+    scope: [developer]
     config:
       fold_id: payments_safety.spend.weekly/1.0.0
       # Real, independently-recomputable digest of
@@ -96,5 +104,9 @@ fixtures:
       outcome: deny
     - id: verify-before-dispatch-refusal
       outcome: deny
+    - id: verify-before-dispatch-pass
+      outcome: allow
+    - id: caps-boundary-at-cap
+      outcome: allow
 
 bootstrap: AI-BOOTSTRAP.md

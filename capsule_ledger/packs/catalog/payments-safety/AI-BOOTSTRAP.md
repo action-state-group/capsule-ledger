@@ -51,7 +51,11 @@ invent others):
        operator="<this deployment's operator id>",
        developer="<the agent/service identity making the call>",
        action_class="money.transfer",
-       action_type="payment.dispatch",
+       # Leave action_type at its default ("decide") -- it's a base-spec
+       # field with a closed set {fyi, decide}, not a place for this pack's
+       # own action-type name. "payment.dispatch" is documentation: it's how
+       # this pack's obligations/config reference this action family, not a
+       # literal field value to set anywhere.
        amount_minor=<integer, minor units>,
        currency="<ISO 4217 code>",
        target="<counterparty_ref>",

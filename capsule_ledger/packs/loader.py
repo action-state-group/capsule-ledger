@@ -51,16 +51,20 @@ from .errors import (
     INVALID_FOLD_REF,
     INVALID_HOLDS_INTEGRATION,
     INVALID_PACK_ID,
+    INVALID_SCOPE_DIMENSION,
     MALFORMED_PACK,
+    MISSING_CONSTRAINT_SCOPE,
     MISSING_REQUIRED_FIELD,
     OBLIGATION_CHECK_NOT_DECLARED,
     PACK_NOT_FOUND,
+    SCOPE_MISMATCH,
     UNKNOWN_ACTION_CLASS,
     UNKNOWN_NORMALIZED_FIELD,
     PackDefinitionError,
 )
 from .schema import (
     HOLDS_INTEGRATION_VALUES,
+    KNOWN_SCOPE_DIMENSIONS,
     NORMALIZED_ACTION_FIELDS,
     PACK_ID_RE,
     ActionSemantic,
@@ -75,6 +79,14 @@ __all__ = ["load_pack_dir"]
 
 _FIXTURE_OUTCOMES = frozenset({"allow", "deny", "escalate"})
 _PROPOSER_STATUSES = frozenset({"planned"})  # "active" lands with P2's thresholds propose
+
+# The base capsule spec's own closed action_type vocabulary (§5.1: "action_type
+# MUST be 'fyi' or 'decide'"). A pack's action_semantics[].action_type is a
+# different, documentation-level thing entirely (an OTel-semconv-style bare
+# convention name) -- but it must not collide with these reserved values, or
+# a pack author could plausibly (and wrongly) believe it's meant to be written
+# into a capsule's own action_type field.
+RESERVED_CAPSULE_ACTION_TYPES = frozenset({"fyi", "decide"})
 
 
 def _require_mapping(data: Any, what: str) -> dict:
@@ -152,6 +164,16 @@ def _parse_action_semantics(raw: Any) -> tuple[ActionSemantic, ...]:
         action_type = _require_nonempty_str(
             entry.get("action_type"), f"action_semantics[{idx}].action_type", "payment.dispatch"
         )
+        if action_type in RESERVED_CAPSULE_ACTION_TYPES:
+            raise PackDefinitionError(
+                INVALID_ACTION_SEMANTIC,
+                f"action_semantics[{idx}].action_type={action_type!r} collides with the base capsule "
+                f"spec's own reserved action_type values {sorted(RESERVED_CAPSULE_ACTION_TYPES)} (§5.1). "
+                "A pack's action_type is a documentation-level convention name (how obligations/config "
+                "reference this action family) -- it is never written into a capsule's own action_type "
+                "field, which stays 'decide' for gate decisions. Pick a name that doesn't collide, e.g. "
+                "'payment.dispatch'.",
+            )
         if action_type in seen_types:
             raise PackDefinitionError(DUPLICATE_ACTION_TYPE, f"action_type {action_type!r} declared more than once")
         seen_types.add(action_type)
@@ -228,15 +250,45 @@ def _parse_field_list(raw: Any, context: str, *, allow_empty: bool = False) -> t
     return tuple(out)
 
 
-def _parse_constraints(raw: Any) -> tuple[WicketDefinition, ...]:
+def _parse_scope(raw: Any, *, wicket_id: str) -> tuple[str, ...]:
+    if not isinstance(raw, list) or not raw:
+        raise PackDefinitionError(
+            MISSING_CONSTRAINT_SCOPE,
+            f"constraints[{wicket_id!r}].scope is required for a 'caps' constraint and must be a "
+            f"non-empty list drawn from {sorted(KNOWN_SCOPE_DIMENSIONS)} -- it declares which "
+            "dimensions this cap is actually enforced per, e.g. scope: [developer]. This closes the "
+            "class of bug where a cap is declared per-class but the fold it cites pools amounts "
+            "across all classes (capsule-emit PR #54: lock/cap/aggregate scope disagreement let a "
+            "cross-class race jointly admit what sequential execution would deny).",
+        )
+    seen: set[str] = set()
+    dims: list[str] = []
+    for dim in raw:
+        if not isinstance(dim, str) or dim not in KNOWN_SCOPE_DIMENSIONS:
+            raise PackDefinitionError(
+                INVALID_SCOPE_DIMENSION,
+                f"constraints[{wicket_id!r}].scope names {dim!r}, which is not in the closed set "
+                f"{sorted(KNOWN_SCOPE_DIMENSIONS)}",
+            )
+        if dim in seen:
+            raise PackDefinitionError(
+                INVALID_SCOPE_DIMENSION, f"constraints[{wicket_id!r}].scope names {dim!r} more than once"
+            )
+        seen.add(dim)
+        dims.append(dim)
+    return tuple(dims)
+
+
+def _parse_constraints(raw: Any) -> tuple[tuple[WicketDefinition, ...], dict[str, tuple[str, ...]]]:
     if not raw:
         raise PackDefinitionError(
             MISSING_REQUIRED_FIELD,
             "'constraints' is required (a pack ships at least one) -- each entry is a wicket definition "
-            "('wicket_id', 'check', 'config'), e.g.:\n"
+            "('wicket_id', 'check', 'config') plus, for 'caps', a declared 'scope', e.g.:\n"
             "constraints:\n"
             "  - wicket_id: payments_safety.caps/1.0.0\n"
             "    check: caps\n"
+            "    scope: [developer]\n"
             "    config:\n"
             "      fold_id: payments_safety.spend.weekly/1.0.0\n"
             "      caps_minor:\n"
@@ -246,8 +298,13 @@ def _parse_constraints(raw: Any) -> tuple[WicketDefinition, ...]:
         raise PackDefinitionError(MALFORMED_PACK, "'constraints' must be a list")
 
     out: list[WicketDefinition] = []
+    scopes: dict[str, tuple[str, ...]] = {}
     seen_ids: set[str] = set()
     for idx, entry in enumerate(raw):
+        # scope lives as a sibling key next to wicket_id/check/config -- the
+        # core wicket parser below ignores unknown keys, so this is read
+        # independently rather than smuggled through WicketDefinition.config.
+        raw_scope = entry.get("scope") if isinstance(entry, dict) else None
         try:
             definition = parse_wicket_definition(entry)
         except WicketDefinitionError as exc:
@@ -258,7 +315,58 @@ def _parse_constraints(raw: Any) -> tuple[WicketDefinition, ...]:
             )
         seen_ids.add(definition.wicket_id)
         out.append(definition)
-    return tuple(out)
+        if definition.check == "caps" or raw_scope is not None:
+            scopes[definition.wicket_id] = _parse_scope(raw_scope, wicket_id=definition.wicket_id)
+    return tuple(out), scopes
+
+
+def _validate_caps_scope_against_folds(
+    constraints: tuple[WicketDefinition, ...], scopes: dict[str, tuple[str, ...]], folds: tuple[FoldDefinition, ...]
+) -> None:
+    """Cross-checks a 'caps' constraint's declared scope against the fold it
+    actually cites -- the generalized capsule-emit PR #54 check (see
+    schema.py's module docstring for the incident this closes)."""
+    folds_by_id = {f.fold_id: f for f in folds}
+    for wicket in constraints:
+        if wicket.check != "caps":
+            continue
+        scope = scopes[wicket.wicket_id]  # guaranteed present -- required for 'caps' in _parse_scope
+        caps_minor = wicket.config.get("caps_minor") or {}
+        fold_id = wicket.config.get("fold_id")
+        fold = folds_by_id.get(fold_id)
+
+        if "developer" in scope and fold is not None and fold.key != "developer":
+            raise PackDefinitionError(
+                SCOPE_MISMATCH,
+                f"constraints[{wicket.wicket_id!r}] declares scope including 'developer', but its fold "
+                f"{fold.fold_id!r} is keyed by {fold.key!r}, not 'developer' -- the declared scope and "
+                "the fold's actual aggregation key disagree.",
+            )
+
+        multi_class = len(caps_minor) > 1
+        if multi_class and "action_class" not in scope:
+            raise PackDefinitionError(
+                SCOPE_MISMATCH,
+                f"constraints[{wicket.wicket_id!r}] configures caps_minor for {len(caps_minor)} action "
+                f"classes ({sorted(caps_minor)}) but its declared scope {list(scope)} does not include "
+                "'action_class' -- a cap declared per-class must say so, or the fold pooling amounts "
+                "across those classes is silently over-broad (capsule-emit PR #54's exact bug shape: "
+                "cap says per-class, aggregate says pooled).",
+            )
+        if "action_class" in scope and multi_class and fold is not None:
+            partitions_by_class = fold.key == "action_class" or any(
+                f.field.endswith("action_class") for f in fold.filter
+            )
+            if not partitions_by_class:
+                raise PackDefinitionError(
+                    SCOPE_MISMATCH,
+                    f"constraints[{wicket.wicket_id!r}] declares scope including 'action_class' and "
+                    f"configures {len(caps_minor)} per-class caps, but its fold {fold.fold_id!r} pools "
+                    f"amounts across ALL action classes (key={fold.key!r}, no action_class filter) -- "
+                    "the cap is declared per-class but the aggregate isn't. Add an action_class-scoped "
+                    "key or filter to the fold, or this pack will admit combined spend across classes "
+                    "that no single class's cap alone would allow.",
+                )
 
 
 def _parse_folds(raw: Any, *, pack_dir: Path) -> tuple[FoldDefinition, ...]:
@@ -366,11 +474,12 @@ def load_pack_dir(pack_dir: str | Path) -> PackDefinition:
             "prefix (registry-architecture ruling, 2026-08-10), not a display name",
         )
 
-    constraints = _parse_constraints(data.get("constraints"))
+    constraints, constraint_scopes = _parse_constraints(data.get("constraints"))
     declared_checks = {c.check for c in constraints}
     obligations = _parse_obligations(data.get("obligations"), declared_checks=declared_checks)
     action_semantics = _parse_action_semantics(data.get("action_semantics"))
     folds = _parse_folds(data.get("folds"), pack_dir=pack_dir)
+    _validate_caps_scope_against_folds(constraints, constraint_scopes, folds)
     proposers = _parse_proposers(data.get("proposers"))
     fixtures = _parse_fixtures(data.get("fixtures"))
 
@@ -400,4 +509,5 @@ def load_pack_dir(pack_dir: str | Path) -> PackDefinition:
         fixtures=fixtures,
         bootstrap_path=bootstrap_path,
         source_dir=pack_dir,
+        constraint_scopes=constraint_scopes,
     )
