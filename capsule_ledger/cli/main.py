@@ -27,6 +27,7 @@ from . import (
     bisect_cmd,
     blame_cmd,
     bundle_cmd,
+    confirm_cmds,
     console_cmd,
     constraints_cmd,
     diff_cmd,
@@ -71,9 +72,11 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     lens_cmds.add_parser(sub)
     telemetry_cmd.add_parser(sub)
     # The record-query/evidence verbs -- git-log-style listing, single-record
-    # show, capsule verify, and the shareable bundle -- are the "evidence"
-    # tier: registered only in the "full" arm. See ``packaging.py``'s
-    # module docstring for why an env var, not a fork, drives this.
+    # show, capsule verify, the shareable bundle, and confirm-ingester (its
+    # whole job is producing a fulfillment *capsule*, capsule vocabulary
+    # throughout its CLI output) -- are the "evidence" tier: registered only
+    # in the "full" arm. See ``packaging.py``'s module docstring for why an
+    # env var, not a fork, drives this.
     if packaging.evidence_visible(arm):
         log_cmd.add_parser(sub)
         show_cmd.add_parser(sub)
@@ -81,6 +84,7 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
         bundle_cmd.add_parser(sub)
         console_cmd.add_parser(sub)
         payload_cmd.add_parser(sub)
+        confirm_cmds.add_parser(sub)
 
     return parser
 
@@ -108,6 +112,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "guard":
         if getattr(args, "guard_command", None) is None:
             args.guard_parser.print_help()
+            return 0
+        return args.func(args)
+
+    if args.command == "confirm":
+        if getattr(args, "confirm_command", None) is None:
+            args.confirm_parser.print_help()
             return 0
         return args.func(args)
 
