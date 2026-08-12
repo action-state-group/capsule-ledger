@@ -40,6 +40,7 @@ from . import (
     manifest_cmds,
     show_cmd,
     telemetry_cmd,
+    tenant_cmds,
     thresholds_cmds,
     verify_cmd,
 )
@@ -62,6 +63,7 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     guard_cmds.add_parser(sub)
     key_cmds.add_parser(sub)
     manifest_cmds.add_parser(sub)
+    tenant_cmds.add_parser(sub)
     diff_cmd.add_parser(sub)
     blame_cmd.add_parser(sub)
     bisect_cmd.add_parser(sub)
@@ -116,6 +118,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "manifest":
         if getattr(args, "manifest_command", None) is None:
             args.manifest_parser.print_help()
+            return 0
+        return args.func(args)
+
+    if args.command == "tenant":
+        if getattr(args, "tenant_command", None) is None:
+            args.tenant_parser.print_help()
             return 0
         return args.func(args)
 
