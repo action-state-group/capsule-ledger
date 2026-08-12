@@ -38,6 +38,13 @@ mcp = ["mcp>=1.0,<2.0"]
 # it. Floor matches the oldest published PyPI release whose emit() signature
 # this example relies on; the local capsule-emit checkout may be ahead.
 examples = ["capsule-emit>=0.3.0"]
+# capsule_ledger/judge/scorers/deepeval_scorer.py -- the judge harness's
+# default (BYOM) Scorer -- is the only thing that imports deepeval; the rest
+# of the judge harness (prompt digest-pinning, judgment/adjudication
+# capsules) has no hard dependency on it. deepeval_scorer.py imports it
+# lazily and raises a named, actionable JudgeError if this extra isn't
+# installed, so `capsule_ledger.judge` stays importable without it.
+judge = ["deepeval>=1.0"]
 
 [project.scripts]
 capsule = "capsule_ledger.cli:main"

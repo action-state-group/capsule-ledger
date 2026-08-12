@@ -35,6 +35,7 @@ from . import (
     fold_cmds,
     guard_cmds,
     init_cmds,
+    judge_cmds,
     key_cmds,
     lens_cmds,
     log_cmd,
@@ -71,6 +72,7 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     bisect_cmd.add_parser(sub)
     lens_cmds.add_parser(sub)
     telemetry_cmd.add_parser(sub)
+    judge_cmds.add_parser(sub)
     # The record-query/evidence verbs -- git-log-style listing, single-record
     # show, capsule verify, the shareable bundle, and confirm-ingester (its
     # whole job is producing a fulfillment *capsule*, capsule vocabulary
@@ -166,6 +168,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "payload":
         if getattr(args, "payload_command", None) is None:
             args.payload_parser.print_help()
+            return 0
+        return args.func(args)
+
+    if args.command == "judge":
+        if getattr(args, "judge_command", None) is None:
+            args.judge_parser.print_help()
             return 0
         return args.func(args)
 
