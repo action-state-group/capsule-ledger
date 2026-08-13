@@ -51,11 +51,15 @@ DEFER = "DEFER"
 DECISION_VALUES = frozenset({ALLOW, DENY, MODIFY, STEP_UP, DEFER})
 
 # GuardEngine's own outcome vocabulary (guards/capsule.py: allow|deny|escalate)
-# mapped onto the AARM R8 decision vocabulary. `escalate` -> STEP_UP, not
-# DEFER: `escalate` routes to a human who has not yet acted (matches
-# guards/capsule.py's own hitl_dispatched mapping for the same outcome);
-# DEFER is a *human*-elected postponement, a different, later state that this
-# guard has no path to produce. `MODIFY` is not emitted by GuardEngine today
+# mapped onto the telemetry-binding profile's decision vocabulary. `escalate`
+# -> STEP_UP, not DEFER: `escalate` routes to a human who has not yet acted
+# (matches guards/capsule.py's own hitl_dispatched mapping for the same
+# outcome); DEFER is reserved here for a *human*-elected postponement, a
+# different, later state this guard has no path to produce. This reservation
+# is this package's own reading, not AARM R4's actual definition -- AARM R4
+# defines DEFER as "delay execution pending additional context" without
+# specifying who elects it; see agent-action-capsule's telemetry-binding
+# profile doc for the full note. `MODIFY` is not emitted by GuardEngine today
 # either -- both are here for producers this event shape doesn't yet have.
 _OUTCOME_TO_DECISION = {"allow": ALLOW, "deny": DENY, "escalate": STEP_UP}
 

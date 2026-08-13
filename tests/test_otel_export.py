@@ -14,6 +14,7 @@ see each test's own comment for what the mutant would be.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -101,6 +102,26 @@ def test_receipt_digest_matches_the_real_capsule_id_for_every_outcome(
     assert event is not None
     assert event.receipt_digest == decision.capsule["capsule_id"]
     assert event.decision == expected_decision
+
+
+def test_receipt_digest_uses_the_json_digest_representation(store, caps_fold, signer):
+    """AARM R8 review item 1: `receipt.digest` MUST carry `capsule_id` in the
+    exact representation pinned by the core spec (§5.1) -- lowercase-hex
+    SHA-256, 64 characters -- not some other encoding (base64url, a
+    `sha256:`-prefixed string, etc). Mutant this catches: swapping
+    ``receipt_digest`` for any re-encoded form of ``capsule_id`` (e.g.
+    ``.encode().hex()`` double-encoding, uppercasing, or a prefixed variant)
+    would still equal the digest under a loose comparison but fail this
+    regex."""
+    from agent_action_capsule import compute_capsule_id
+
+    engine = GuardEngine(ledger=store, caps_fold=caps_fold, signer_provider=lambda: signer)
+    action = Action(verb="info_lookup", operator="acme", developer="dev1", action_class="info.query")
+    decision = engine.check(action)
+    event = decision_event_from_guard_decision(decision, action)
+
+    assert re.fullmatch(r"[0-9a-f]{64}", event.receipt_digest)
+    assert event.receipt_digest == compute_capsule_id(decision.capsule)
 
 
 def test_different_decisions_carry_different_receipt_digests(store, caps_fold, signer):
@@ -281,6 +302,9 @@ def test_decision_outcome_is_identical_whether_or_not_export_is_attempted(monkey
 
 
 def test_jsonl_exporter_never_raises_on_an_unwritable_path():
+    """Mutant this catches: removing the try/except OSError around the write
+    in ``JSONLDecisionExporter.export()`` would raise ``FileNotFoundError``
+    out of it when the parent directory can't be created."""
     unwritable = Path("/nonexistent-root-dir-for-otel-export-test/decisions.jsonl")
     exporter = JSONLDecisionExporter(unwritable)
     event = DecisionEvent(action_verb="transfer_funds", decision=DENY, receipt_digest="a" * 64)
@@ -375,3 +399,141 @@ def test_jsonl_mapping_always_works_with_no_external_config():
 
 def test_decision_values_cover_the_full_aarm_vocabulary():
     assert DECISION_VALUES == {ALLOW, DENY, MODIFY, STEP_UP, DEFER}
+
+
+# -- 6. real OTLP collector round-trip (opt-in integration test) -----------
+#
+# AARM R8 review item 8: the original "OTLP export working against a local
+# collector" evidence was a hand-run Docker session, pasted into a log and
+# torn down after -- reproducible only by re-arguing it, not by re-running
+# it. This test reproduces that verification for real: spins up
+# `otel/opentelemetry-collector-contrib` with a `file` exporter, sends one
+# real DecisionEvent through DecisionExporter's OTLP/http path, and asserts
+# the collector actually received `receipt.digest`. Skipped by default --
+# needs Docker and a network pull of the collector image -- opt in with
+# CAPSULE_LEDGER_OTEL_INTEGRATION_TEST=1.
+
+_INTEGRATION_ENV_VAR = "CAPSULE_LEDGER_OTEL_INTEGRATION_TEST"
+
+
+def _iter_otlp_json_spans(record):
+    for resource_spans in record.get("resourceSpans", []):
+        for scope_spans in resource_spans.get("scopeSpans", []):
+            yield from scope_spans.get("spans", [])
+
+
+@pytest.mark.skipif(
+    os.environ.get(_INTEGRATION_ENV_VAR) != "1",
+    reason=f"opt-in only (needs Docker) -- set {_INTEGRATION_ENV_VAR}=1 to run",
+)
+def test_decision_event_round_trips_through_a_real_otlp_collector(store, caps_fold, signer):
+    """Mutant this catches: anything that silently drops `receipt.digest` (or
+    any other required attribute) between `DecisionExporter.export()` and the
+    wire -- a mapping bug an in-memory exporter test can't see, because it
+    never serializes the OTLP protobuf/JSON payload at all."""
+    import shutil
+    import socket
+    import subprocess
+    import tempfile
+    import time
+
+    if shutil.which("docker") is None:
+        pytest.skip("docker not available")
+
+    def _free_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    http_port = _free_port()
+    # Bind-mounted files must live under $HOME: Docker Desktop/colima on
+    # macOS only shares $HOME into the VM by default, not the system tmp dir
+    # pytest's own `tmp_path` fixture uses -- a mount rooted there fails
+    # opaquely ("not a directory") rather than a clear "no such path" error.
+    cache_dir = Path.home() / ".cache"
+    cache_dir.mkdir(exist_ok=True)
+    work_dir = Path(tempfile.mkdtemp(prefix="capsule_ledger_otel_it_", dir=cache_dir))
+    output_file = work_dir / "collector-output.jsonl"
+    output_file.write_text("")
+    config_path = work_dir / "collector-config.yaml"
+    config_path.write_text(
+        "receivers:\n"
+        "  otlp:\n"
+        "    protocols:\n"
+        "      http:\n"
+        "        endpoint: 0.0.0.0:4318\n"
+        "exporters:\n"
+        "  file:\n"
+        "    path: /output/collector-output.jsonl\n"
+        "service:\n"
+        "  pipelines:\n"
+        "    traces:\n"
+        "      receivers: [otlp]\n"
+        "      exporters: [file]\n"
+    )
+
+    container_name = f"capsule-ledger-otel-it-{os.getpid()}"
+    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+    run = subprocess.run(
+        [
+            "docker", "run", "-d", "--name", container_name,
+            "-p", f"{http_port}:4318",
+            "-v", f"{config_path}:/etc/otelcol-contrib/config.yaml",
+            "-v", f"{work_dir}:/output",
+            "otel/opentelemetry-collector-contrib:latest",
+        ],
+        capture_output=True, text=True,
+    )
+    if run.returncode != 0:
+        pytest.skip(f"could not start otel-collector-contrib: {run.stderr.strip()}")
+
+    try:
+        import requests
+
+        traces_url = f"http://127.0.0.1:{http_port}/v1/traces"
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                # A bare TCP accept can succeed slightly before the HTTP
+                # handler is actually installed -- a real POST is the only
+                # readiness signal that isn't racy.
+                resp = requests.post(traces_url, json={"resourceSpans": []}, timeout=1)
+                if resp.status_code == 200:
+                    break
+            except requests.exceptions.RequestException:
+                pass
+            time.sleep(0.5)
+        else:
+            pytest.fail("collector did not become ready to accept traces within 30s")
+
+        engine = GuardEngine(ledger=store, caps_fold=caps_fold, signer_provider=lambda: signer)
+        action = Action(verb="transfer_funds", operator="acme", developer="dev1", action_class="info.query")
+        decision = engine.check(action)
+        event = decision_event_from_guard_decision(decision, action)
+        assert event is not None
+
+        exporter = DecisionExporter(ExporterConfig(endpoint=f"http://127.0.0.1:{http_port}/v1/traces"))
+        assert exporter.export(event) is True
+
+        deadline = time.monotonic() + 15
+        content = ""
+        while time.monotonic() < deadline:
+            content = output_file.read_text()
+            if content.strip():
+                break
+            time.sleep(0.5)
+        assert content.strip(), "collector never wrote any output -- the span was not received"
+
+        attrs = {}
+        for line in content.strip().splitlines():
+            record = json.loads(line)
+            for span in _iter_otlp_json_spans(record):
+                for attr in span.get("attributes", []):
+                    attrs[attr["key"]] = attr["value"].get("stringValue")
+
+        assert attrs.get("receipt.digest") == event.receipt_digest
+        assert attrs.get("decision") == event.decision
+        assert attrs.get("gen_ai.tool.name") == event.action_verb
+    finally:
+        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        shutil.rmtree(work_dir, ignore_errors=True)

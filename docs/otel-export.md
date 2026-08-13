@@ -71,11 +71,19 @@ Optional fields are **omitted, not null**, when absent — same pattern as
 `asg_payload.manifest_digest` on the decision capsule itself.
 `decision_event_from_guard_decision` maps `GuardEngine`'s own outcome
 vocabulary (`allow`/`deny`/`escalate`) onto this one: `escalate` → `STEP_UP`
-(routed to a human, awaiting resolution — not `DEFER`, which is a *human*-
-elected postponement this guard has no path to produce). `plan.digest` and
-`containment.result` are optional pass-through kwargs pending
+(routed to a human, awaiting resolution — not `DEFER`, which this package
+reserves for a *human*-elected postponement the guard has no path to
+produce). **This is this package's own reading of the telemetry-binding
+profile's decision vocabulary, not a restatement of AARM R4's actual
+definition** — AARM R4 defines `DEFER` as "delay execution pending
+additional context" without specifying who or what elects the delay; see
+`agent-action-capsule`'s telemetry-binding profile for the full note. `plan.digest`
+and `containment.result` are optional pass-through kwargs pending
 `ldg-plan-containment` landing on `main` — this package does not block on
-that branch.
+that branch. `receipt.digest` carries `capsule_id` verbatim, in the
+JSON-DIGEST representation the core spec defines for that field
+(lowercase-hex SHA-256, 64 characters) — this package emits no other
+encoding.
 
 ## Target formats (priority order)
 
