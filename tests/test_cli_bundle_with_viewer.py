@@ -126,10 +126,9 @@ def test_offline_viewer_opens_and_verifies_with_networking_disabled(tmp_path):
     stages = {s["name"]: s["status"] for s in result["ritual"]["stages"]}
     assert stages["Integrity"] == "pass"
     assert stages["Sequence"] == "pass"
-    # capsule bundle doesn't attach a completeness certificate yet -- an
-    # honest "skip", not a fabricated pass (matches scitt-cose's own raw-
-    # bundle acceptance test for the free-tier bundle shape).
-    assert stages["Completeness"] == "skip"
+    # capsule bundle now attaches an MMR completeness certificate for the
+    # bundle's own record range -- genuinely verified here, not skipped.
+    assert stages["Completeness"] == "pass"
     assert stages["Cross-check"] == "pass"
 
 

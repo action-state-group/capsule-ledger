@@ -157,7 +157,12 @@ class MmrLedger:
         return len(self._body_digests)
 
     def root(self) -> bytes:
-        size = self._nodes.size()
+        return self.root_at(self._nodes.size())
+
+    def root_at(self, size: int) -> bytes:
+        """Root of the MMR as it stood at `size` nodes -- any prior size the
+        node store has already grown past, not just the current one. Nodes
+        are write-once, so a historical size's peaks are still readable."""
         pks = core.peaks(size)
         peak_hashes = [self._nodes.node(p) for p in pks]
         return core.root_from_peaks(peak_hashes)

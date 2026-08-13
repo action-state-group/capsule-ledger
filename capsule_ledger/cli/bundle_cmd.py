@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import dataclasses
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +32,8 @@ from agent_action_capsule import verify as verify_capsule
 
 from ..envcompat import env_get
 from ..ledger.api import ScanQuery
+from ..mmr import core as mmr_core
+from ..mmr.index import MmrLedger
 from .format import build_echo, format_staleness
 from .ledger_io import add_scan_query_args, build_scan_query, echo_parts, open_ledger, require_ledger_path
 
@@ -102,6 +105,50 @@ def _collect_with_parents(store, matched):
     return sorted(by_id.values(), key=lambda r: r.seq)
 
 
+def _build_completeness_certificate(store, records, tree_size: int) -> dict | None:
+    """MMR range proof (plus a consistency proof bridging to the full
+    ledger's checkpoint, when the bundle's range doesn't already reach it)
+    over the bundle's own record range.
+
+    Shape matches scitt-cose's viewer (``MMR_JS`` / ``checkCompleteness`` in
+    ``hosted_profiles/hosted.py``) field for field -- that module ports this
+    package's MMR core to JS and already checks a certificate in this shape;
+    this is the CLI side of that contract, not a new one.
+    """
+    if not records:
+        return None
+
+    mmr = MmrLedger(store)
+    mmr.sync()
+
+    from_seq, to_seq = records[0].seq, records[-1].seq
+    proof = mmr.range_proof(from_seq, to_seq)
+    range_root = mmr.root_at(proof.size).hex()
+
+    checkpoint_size = mmr_core.node_count(tree_size)
+    if checkpoint_size == proof.size:
+        checkpoint_root = range_root
+        consistency = None
+    else:
+        checkpoint_root = mmr.root_at(checkpoint_size).hex()
+        consistency = mmr.consistency_proof(proof.size, checkpoint_size)
+
+    return {
+        "v": 1,
+        "range_proof": {
+            "from_seq": proof.from_seq,
+            "to_seq": proof.to_seq,
+            "size": proof.size,
+            "inclusion_from": dataclasses.asdict(proof.inclusion_from),
+            "inclusion_to": dataclasses.asdict(proof.inclusion_to),
+        },
+        "range_root": range_root,
+        "checkpoint_size": checkpoint_size,
+        "checkpoint_root": checkpoint_root,
+        "consistency_proof": dataclasses.asdict(consistency) if consistency is not None else None,
+    }
+
+
 def run(args: argparse.Namespace) -> int:
     # ``bundle`` only exists at all in the "full" packaging arm -- see
     # ``cli/main.py`` -- so any use of it is M5's "bundle/share created" fact.
@@ -131,6 +178,7 @@ def run(args: argparse.Namespace) -> int:
             all_ok = all_ok and result.ok
 
         tree_size = sum(1 for _ in store.scan(ScanQuery()))
+        completeness_certificate = _build_completeness_certificate(store, records, tree_size)
 
     echo = build_echo("bundle", flags=[*echo_parts(args), ("--out", args.out)])
     bundle = {
@@ -154,6 +202,7 @@ def run(args: argparse.Namespace) -> int:
         "range": [records[0].seq, records[-1].seq] if records else [0, -1],
         "checkpoint": {"tree_size": tree_size},
         "verification": verification,
+        "completeness_certificate": completeness_certificate,
     }
 
     with open(args.out, "w", encoding="utf-8") as fh:
