@@ -125,7 +125,12 @@ def test_offline_viewer_opens_and_verifies_with_networking_disabled(tmp_path):
 
     stages = {s["name"]: s["status"] for s in result["ritual"]["stages"]}
     assert stages["Integrity"] == "pass"
-    assert stages["Sequence"] == "pass"
+    # Only 1 of this fixture's 4 records declares a chain parent -- partial
+    # coverage, honestly "skip" per the re-vendored viewer's three-valued
+    # Sequence logic (scitt-cose #32). The pre-#32 viewer collapsed this to
+    # a false "pass"; asserting "pass" here again would silently regress
+    # to that false-assurance bug the moment this fixture is re-vendored.
+    assert stages["Sequence"] == "skip"
     # capsule bundle doesn't attach a completeness certificate yet -- an
     # honest "skip", not a fabricated pass (matches scitt-cose's own raw-
     # bundle acceptance test for the free-tier bundle shape).
