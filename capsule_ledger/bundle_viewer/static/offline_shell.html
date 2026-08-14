@@ -1,6 +1,6 @@
 <!--
   Vendored from action-state-group/scitt-cose, hosted_profiles/hosted.py,
-  render_bundle_page(offline=True), commit c1bd4a7df0c3b91531598c5305e3e39b2a14c4f6.
+  render_bundle_page(offline=True), commit 32e93a03966d63cf4698fbaa0d4f3bc7ee8438c3.
   Apache-2.0, same license as this repo. Do not hand-edit -- re-run
   scripts/vendor_bundle_viewer.py against a scitt-cose checkout instead.
   The one inline <script> tag right after <body> that sets the page's
@@ -142,9 +142,17 @@
 .anchor-banner.anchor-none{background:var(--paper-2);color:var(--muted)}
 .anchor-banner.anchor-offline{background:var(--paper-2);color:var(--muted);border-style:dashed}
 .anchor-banner.anchor-loading{color:var(--muted);background:var(--paper-2)}
+.anchor-banner.anchor-fail{background:var(--fail-soft);border-color:var(--fail);border-width:2px;color:var(--fail);font-weight:700}
+.anchor-banner.rung-standalone{background:var(--paper-2);color:var(--muted)}
+.anchor-banner.rung-countersigned{background:var(--paper-2);color:var(--muted)}
+.anchor-banner.rung-local-anchored{background:var(--pass-soft);border-color:var(--pass);color:var(--pass)}
+.anchor-banner.rung-counterparty-visible{background:var(--pass-soft);border-color:var(--pass);color:var(--pass)}
+.anchor-banner.rung-publicly-anchored{background:var(--pass-soft);border-color:var(--pass);color:var(--pass)}
 .anchor-ok{color:var(--pass);font-weight:700}
 .anchor-offline{color:var(--muted);font-weight:600}
 .anchor-none{color:var(--muted)}
+.anchor-fail{color:var(--fail);font-weight:700}
+.anchor-fail-detail{font-family:var(--mono);font-size:11.5px;color:var(--fail);margin-top:6px;word-break:break-all;font-weight:400}
 .ritual-stages{border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .ritual-stage{display:flex;align-items:baseline;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:13px}
 .ritual-stage:last-child{border-bottom:none}
@@ -158,6 +166,8 @@
 .finding-panel{margin-top:16px;border-radius:12px;padding:14px 18px;border:1px solid var(--line)}
 .finding-panel.finding-fail{background:var(--fail-soft);border-color:var(--fail)}
 .finding-panel.finding-gap{background:var(--fail-soft);border-color:var(--fail)}
+.finding-panel.finding-summary{background:transparent;border-color:var(--line)}
+.finding-summary .finding-label{color:var(--muted)}
 .finding-label{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--fail);margin-bottom:6px}
 .finding-text{font-size:13.5px;color:var(--ink);margin-bottom:6px}
 .finding-meta{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
@@ -194,6 +204,14 @@
 .pl-match{color:var(--pass);font-weight:700;font-family:var(--mono);font-size:12px}
 .pl-mismatch{color:var(--fail);font-weight:700;font-family:var(--mono);font-size:12px}
 .pl-ctx{color:var(--muted);font-family:var(--mono);font-size:11px}
+.pl-payload{max-width:340px}
+.pl-payload-details summary{cursor:pointer;color:var(--muted);font-family:var(--mono);font-size:11.5px}
+.pl-payload-details summary code{color:var(--ink)}
+.pl-payload-full{margin-top:6px}
+.pl-payload-full pre{white-space:pre-wrap;word-break:break-word;background:var(--paper-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11.5px;max-height:280px;overflow:auto;margin:0}
+.pl-payload-truncated{color:#f59e0b;font-size:11px;margin:6px 0 0}
+.pl-payload-digests{display:flex;flex-direction:column;gap:2px;margin-top:6px;font-size:11px;color:var(--muted);font-family:var(--mono)}
+.pl-payload-digests code{color:var(--ink)}
 .chain-table{border-collapse:collapse;width:100%;font-size:13px;margin-bottom:16px}
 .chain-table th,.chain-table td{padding:8px 12px;border:1px solid var(--line);text-align:left;vertical-align:middle}
 .chain-table th{background:var(--paper-2);font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
@@ -691,8 +709,125 @@ var KNOWN_TYPES={"capsule":1,"offer_terms":1,"wicket_manifest":1,"response":1,
   "gate_checks":1,"subject":1,"bilateral_subject":1,"compute_attestation":1,
   "agent_input":1,"agent_output":1};
 function isH64(s){return typeof s==="string"&&s.length===64&&/^[0-9a-f]+$/i.test(s);}
+/* Disclosure Envelope unwrap: {"capsule":{...unmodified...},"disclosures":{...}} ->
+ * the unmodified capsule. A bare capsule (no "capsule" wrapper key, or a
+ * bilateral binding with buyer_capsule/seller_capsule) passes through unchanged. */
+function unwrapEnvelope(item){return(item&&typeof item==="object"&&item.capsule&&typeof item.capsule==="object")?item.capsule:item;}
 function sh(d){return d.slice(0,8)+"…"+d.slice(-4);}
 function safe(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+/* ---------- disclosed-payload rendering (shared helper — same canonicalization as
+ * the digest recompute; see test_bundle_js_shared_helpers_match_capsule_js). The
+ * bytes hashed against the committed digest and the bytes shown to the reader MUST
+ * come from the same function -- a display that re-serializes by a different rule
+ * than JSON.stringify(p, Object.keys(p).sort()) could show content that doesn't
+ * match what was actually verified. */
+var PAYLOAD_TRUNCATE_BYTES=8192;
+function canonicalPayloadText(payload){
+  return typeof payload==="string"?payload:JSON.stringify(payload,Object.keys(payload).sort());
+}
+function payloadPreview(payload){
+  var t=canonicalPayloadText(payload);
+  return t.length>80?t.slice(0,80)+"…":t;
+}
+function payloadCellHtml(entry,recomputedDigest){
+  if(entry.withheld||entry._revPayload==null||entry.matchOk!==true)return"";
+  var full=typeof entry._revPayload==="string"
+    ?entry._revPayload
+    :JSON.stringify(entry._revPayload,Object.keys(entry._revPayload).sort(),2);
+  var bytes=new TextEncoder().encode(full);
+  var truncated=bytes.length>PAYLOAD_TRUNCATE_BYTES;
+  var shown=truncated?new TextDecoder("utf-8").decode(bytes.slice(0,PAYLOAD_TRUNCATE_BYTES)):full;
+  var note=truncated?"<p class='pl-payload-truncated'>truncated for display, full payload is in the URL fragment</p>":"";
+  return"<details class='pl-payload-details'><summary><code>"+safe(payloadPreview(entry._revPayload))+"</code></summary>"
+    +"<div class='pl-payload-full'><pre>"+safe(shown)+"</pre>"+note
+    +"<div class='pl-payload-digests'><div>committed <code>"+safe(entry.digest)+"</code></div>"
+    +"<div>recomputed <code>"+safe(recomputedDigest||"")+"</code></div></div></div></details>";
+}
+
+/* === PORTED FROM CAPSULE_JS (verbatim) — capsule_id recompute (RFC 8785 JCS
+ * + SHA-256), see test_bundle_js_shared_helpers_match_capsule_js === */
+var CHAIN_LINKAGE_FIELDS={"capsule_id":1,"chain":1};
+
+function CapsuleIdError(msg){this.message=msg;this.name="CapsuleIdError";}
+
+function _capIdNormalize(v){
+  if(Array.isArray(v))return v.map(_capIdNormalize);
+  if(v&&typeof v==="object"){
+    var out={};
+    Object.keys(v).forEach(function(k){
+      var nv=_capIdNormalize(v[k]);
+      if(nv===null||nv===undefined)return;
+      if(Array.isArray(nv)&&nv.length===0)return;
+      if(nv&&typeof nv==="object"&&!Array.isArray(nv)&&Object.keys(nv).length===0)return;
+      out[k]=nv;
+    });
+    return out;
+  }
+  return v;
+}
+
+function _capIdJcsString(s){
+  var out=['"'];
+  for(var ch of s){
+    var o=ch.codePointAt(0);
+    if(ch==='"')out.push('\\"');
+    else if(ch==="\\")out.push("\\\\");
+    else if(o===0x08)out.push("\\b");
+    else if(o===0x09)out.push("\\t");
+    else if(o===0x0A)out.push("\\n");
+    else if(o===0x0C)out.push("\\f");
+    else if(o===0x0D)out.push("\\r");
+    else if(o<0x20)out.push("\\u"+o.toString(16).padStart(4,"0"));
+    else out.push(ch);
+  }
+  out.push('"');
+  return out.join("");
+}
+
+function _capIdJcsValue(v){
+  if(v===null||v===undefined)return"null";
+  if(v===true)return"true";
+  if(v===false)return"false";
+  if(typeof v==="string")return _capIdJcsString(v);
+  if(typeof v==="number"){
+    if(!Number.isInteger(v))throw new CapsuleIdError("float in digest-bearing field");
+    if(v>Number.MAX_SAFE_INTEGER||v<-Number.MAX_SAFE_INTEGER)throw new CapsuleIdError("integer outside safe range");
+    return String(v);
+  }
+  if(Array.isArray(v))return"["+v.map(_capIdJcsValue).join(",")+"]";
+  if(typeof v==="object"){
+    var keys=Object.keys(v).sort();
+    return"{"+keys.map(function(k){return _capIdJcsString(k)+":"+_capIdJcsValue(v[k]);}).join(",")+"}";
+  }
+  throw new CapsuleIdError("value not JSON-serializable: "+typeof v);
+}
+
+async function _capIdSha256Hex(bytes){
+  var buf=await crypto.subtle.digest("SHA-256",bytes);
+  return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,"0");}).join("");
+}
+
+async function computeCapsuleId(capsule){
+  if(!capsule||typeof capsule!=="object"||Array.isArray(capsule))throw new CapsuleIdError("capsule must be a JSON object");
+  var canonical={};
+  Object.keys(capsule).forEach(function(k){if(!CHAIN_LINKAGE_FIELDS[k])canonical[k]=capsule[k];});
+  var jcsStr=_capIdJcsValue(_capIdNormalize(canonical));
+  return await _capIdSha256Hex(new TextEncoder().encode(jcsStr));
+}
+
+async function verifyCapsuleId(cap){
+  var c=unwrapEnvelope(cap);
+  var stated=(c&&c.capsule_id)||"";
+  if(!isH64(stated))return{ok:null,stated:stated,recomputed:null};
+  if(typeof crypto==="undefined"||!crypto.subtle)return{ok:null,stated:stated,recomputed:null};
+  try{
+    var recomputed=await computeCapsuleId(c);
+    return{ok:recomputed===stated,stated:stated,recomputed:recomputed};
+  }catch(ex){
+    return{ok:false,stated:stated,recomputed:null,error:ex.message};
+  }
+}
 
 function parseAac(data){
   var nodes=[],edges=[],privlog=[],unk=[],seen={};
@@ -713,7 +848,12 @@ function parseAac(data){
     var k="_e_"+f+"_"+t+"_"+lbl;if(seen[k])return;seen[k]=true;
     edges.push({from:f,to:t,label:lbl});
   }
-  function extractCap(cap,capId,pfx){
+  /* disclosures: the Disclosure Envelope's out-of-band {agent_input, agent_output}
+   * object for this capsule (draft-mih-scitt-agent-action-capsule-disclosure-envelope-00).
+   * NEVER read from cap.model_attestation.compute_attestation — that region is
+   * digest-committed, so embedding a payload there would change capsule_id. */
+  function extractCap(cap,capId,pfx,disclosures){
+    disclosures=disclosures||{};
     var p=pfx?pfx+".":"";
     var chain=cap.chain||{};
     var prior=chain.parent_capsule_id||"";
@@ -723,11 +863,11 @@ function parseAac(data){
     if(isH64(subj)){addArt(subj,"subject","subject",p+"compute_attestation.subject_digest");addEdge(capId,subj,"attests_over");}
     var _actxW=p+"compute_attestation — payload not carried in the record";
     var _actxR="payload carried in fragment; recomputed against committed digest";
-    var ai=ca.agent_input_digest||"",aiPre=ca.agent_input,aiRev=aiPre!=null;
+    var ai=ca.agent_input_digest||"",aiPre=disclosures.agent_input,aiRev=aiPre!=null;
     if(isH64(ai)&&addN(ai,"agent_input","agent input "+sh(ai),!aiRev,aiRev?aiPre:null)){
       privlog.push({id:"agent input",type:"agent_input",digest:ai,withheld:!aiRev,isKnown:true,matchOk:null,
                     ctx:aiRev?_actxR:_actxW,_revPayload:aiRev?aiPre:null});addEdge(capId,ai,"attests_over");}
-    var ao=ca.agent_output_digest||"",aoPre=ca.agent_output,aoRev=aoPre!=null;
+    var ao=ca.agent_output_digest||"",aoPre=disclosures.agent_output,aoRev=aoPre!=null;
     if(isH64(ao)&&addN(ao,"agent_output","agent output "+sh(ao),!aoRev,aoRev?aoPre:null)){
       privlog.push({id:"agent output",type:"agent_output",digest:ao,withheld:!aoRev,isKnown:true,matchOk:null,
                     ctx:aoRev?_actxR:_actxW,_revPayload:aoRev?aoPre:null});addEdge(capId,ao,"attests_over");}
@@ -742,6 +882,7 @@ function parseAac(data){
   if(isB){
     var bc=data.buyer_capsule||{},sc=data.seller_capsule||{};
     var bid=bc.capsule_id||"",sid=sc.capsule_id||"",sth=data.sealed_terms_hash||"",terms=data.terms;
+    var bDisc=(data.disclosures&&data.disclosures.buyer)||{},sDisc=(data.disclosures&&data.disclosures.seller)||{};
     if(isH64(bid))addN(bid,"capsule","buyer capsule "+sh(bid),false,null);
     if(isH64(sid))addN(sid,"capsule","seller capsule "+sh(sid),false,null);
     if(isH64(sth)){
@@ -753,11 +894,16 @@ function parseAac(data){
       if(isH64(sid))addEdge(sid,sth,"attests_over");
     }
     if(isH64(bid)&&isH64(sid))addEdge(sid,bid,"chains_to");
-    if(isH64(bid))extractCap(bc,bid,"buyer");
-    if(isH64(sid))extractCap(sc,sid,"seller");
+    if(isH64(bid))extractCap(bc,bid,"buyer",bDisc);
+    if(isH64(sid))extractCap(sc,sid,"seller",sDisc);
   }else{
-    var cid=data.capsule_id||"";
-    if(isH64(cid)){addN(cid,"capsule","capsule "+sh(cid),false,null);extractCap(data,cid,"");}
+    /* Disclosure Envelope wrapper: {"capsule":{...unmodified...},"disclosures":{...}}.
+     * A bare capsule (no "capsule" wrapper key) is the legacy/WITHHELD-only shape —
+     * still fully supported, just with no disclosures to read. */
+    var envCap=(data.capsule&&typeof data.capsule==="object")?data.capsule:data;
+    var envDisc=(data.capsule&&typeof data.capsule==="object")?(data.disclosures||{}):{};
+    var cid=envCap.capsule_id||"";
+    if(isH64(cid)){addN(cid,"capsule","capsule "+sh(cid),false,null);extractCap(envCap,cid,"",envDisc);}
   }
   return{nodes:nodes,edges:edges,privlog:privlog,unk:unk,isB:isB};
 }
@@ -768,22 +914,35 @@ function _capMismatched(cap){
 }
 
 function findChainGaps(capsules){
+  /* Unwrap first: a Disclosure-Envelope-wrapped bundle item carries capsule_id
+   * and chain nested under "capsule", not at the top level — without this,
+   * every envelope-wrapped item is invisible to gap detection. */
+  var caps=capsules.map(unwrapEnvelope);
   var ids={};
-  capsules.forEach(function(c){if(isH64(c.capsule_id))ids[c.capsule_id]=true;});
+  caps.forEach(function(c){if(isH64(c.capsule_id))ids[c.capsule_id]=true;});
   var gaps=[];
-  for(var i=1;i<capsules.length;i++){
-    var parent=((capsules[i].chain)||{}).parent_capsule_id||"";
+  for(var i=1;i<caps.length;i++){
+    var parent=((caps[i].chain)||{}).parent_capsule_id||"";
     if(isH64(parent)&&!ids[parent])gaps.push({beforeIdx:i-1,afterIdx:i,missingParent:parent});
   }
   return gaps;
 }
 
-function annotateRecords(capsules){
+function annotateRecords(capsules,integrity){
+  /* Same unwrap as findChainGaps — _capMismatched still receives the raw
+   * (possibly enveloped) item, since parseAac needs the sibling "disclosures"
+   * key to check revealed-payload digests. */
+  var caps=capsules.map(unwrapEnvelope);
   var alteredIds={};
-  capsules.forEach(function(c){if(isH64(c.capsule_id)&&_capMismatched(c))alteredIds[c.capsule_id]=true;});
+  capsules.forEach(function(c,i){
+    var cid=caps[i].capsule_id||"";
+    if(!isH64(cid))return;
+    var idr=integrity&&integrity[i];
+    if((idr&&idr.ok===false)||_capMismatched(c))alteredIds[cid]=true;
+  });
   var byId={};
-  capsules.forEach(function(c){if(isH64(c.capsule_id))byId[c.capsule_id]=c;});
-  return capsules.map(function(cap){
+  caps.forEach(function(c){if(isH64(c.capsule_id))byId[c.capsule_id]=c;});
+  return caps.map(function(cap){
     var cid=cap.capsule_id||"";
     if(alteredIds[cid])return{note:"digest_mismatch",isAltered:true,citesAltered:false};
     var cites=false,seen={},cur=cap;
@@ -830,7 +989,7 @@ function encodeFragment(obj){
  * Optional bundle field this viewer knows how to check (capsule-ledger's
  * `capsule bundle` does not populate it yet as of this viewer shipping --
  * a bundle without one is handled honestly as "not available", never a
- * fabricated pass. Schema, mirroring asg_ledger.mmr.index.MmrLedger's own
+ * fabricated pass. Schema, mirroring capsule_ledger.mmr.index.MmrLedger's own
  * RangeProof/ConsistencyProof shapes 1:1 so a future capsule-ledger CLI
  * change can populate it directly from that module's own output:
  *
@@ -844,7 +1003,7 @@ function encodeFragment(obj){
  * }
  *
  * Each <InclusionProof>/<ConsistencyProof> is exactly the JSON shape
- * asg_ledger.mmr.core's dataclasses serialize to (v, kind, size, leaf_index,
+ * capsule_ledger.mmr.core's dataclasses serialize to (v, kind, size, leaf_index,
  * witness, peaks_left, peaks_right / v, kind, size_a, size_b, old_peaks,
  * witness, new_peaks) -- see mmr.js's verifyInclusion/verifyConsistency.
  * Boundary leaf body digests are the bundle's own first/last record
@@ -896,18 +1055,17 @@ async function checkCompleteness(bundle){
  * path — after the ritual/cross-check verdicts had already been decided —
  * so a genuine digest mismatch could never flip either verdict. Fixed here:
  * a verification check that can't reject anything isn't a check. */
-async function verifyCapsuleDigests(cap){
-  var g=parseAac(cap);
+async function verifyCapsuleDigests(cap,disclosures){
+  var g=parseAac(disclosures?{capsule:cap,disclosures:disclosures}:cap);
   if(typeof crypto==="undefined"||!crypto.subtle)return g;  // no WebCrypto: leave matchOk null (skip, not a fabricated pass)
   for(var i=0;i<g.privlog.length;i++){
     var e=g.privlog[i];
     if(e.withheld||e._revPayload==null)continue;
-    var bytes=typeof e._revPayload==="string"
-      ?new TextEncoder().encode(e._revPayload)
-      :new TextEncoder().encode(JSON.stringify(e._revPayload,Object.keys(e._revPayload).sort()));
+    var bytes=new TextEncoder().encode(canonicalPayloadText(e._revPayload));
     var buf=await crypto.subtle.digest("SHA-256",bytes);
     var hex=Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,"0");}).join("");
     e.matchOk=(hex===e.digest);
+    e._recomputedDigest=hex;
   }
   return g;
 }
@@ -922,12 +1080,13 @@ async function verifyCapsuleDigests(cap){
  * source. */
 async function crossCheckSelfReport(bundle,records){
   var selfReport=bundle.verification||{};
+  var bundleDisclosures=bundle.disclosures||{};
   var disagreements=[];
   for(var idx=0;idx<records.length;idx++){
     var cap=records[idx];
     var cid=cap.capsule_id;
     if(!isH64(cid))continue;
-    var g=await verifyCapsuleDigests(cap);
+    var g=await verifyCapsuleDigests(cap,bundleDisclosures[cid]);
     var ours=!g.privlog.some(function(e){return e.matchOk===false;});
     var reported=selfReport[cid];
     if(reported&&typeof reported.ok==="boolean"&&reported.ok!==ours){
@@ -942,29 +1101,120 @@ async function crossCheckSelfReport(bundle,records){
     "disagrees with this viewer's own independent recompute — trust the recompute, investigate the bundle"};
 }
 
+/* ---------- plain-language summary (renders on EVERY bundle) ----------
+ * The ritual answers "does this verify". It does not answer "what happened",
+ * and until now a clean bundle said almost nothing — four terse stage lines and
+ * no prose. A stranger handed a permalink could see green checks without ever
+ * learning what the records claim, or which claims carry weaker assurance.
+ * This states, in English, what the records say AND what they don't establish.
+ * It never asserts more than the fields carry. */
+function describeBundle(capsules){
+  var caps=capsules.map(unwrapEnvelope).filter(function(c){return c&&c.capsule_id;});
+  if(!caps.length)return null;
+  var n=caps.length,parts=[];
+
+  var ts=caps.map(function(c){return c.timestamp;}).filter(Boolean).sort();
+  var when=ts.length?(ts[0]===ts[ts.length-1]?("at "+ts[0]):("between "+ts[0]+" and "+ts[ts.length-1])):null;
+  var ops={};caps.forEach(function(c){if(c.operator)ops[c.operator]=1;});
+  var opNames=Object.keys(ops);
+  parts.push(n+" record"+(n===1?"":"s")+(when?", "+when:"")
+    +(opNames.length===1?", from operator “"+opNames[0]+"”":
+      opNames.length>1?", from "+opNames.length+" operators":"")+".");
+
+  var kinds={};caps.forEach(function(c){var t=c.action_type||"unspecified";kinds[t]=(kinds[t]||0)+1;});
+  var kindBits=Object.keys(kinds).map(function(k){
+    var label=k==="fyi"?"informational":k==="decide"?"decision":k==="act"?"action":k;
+    return kinds[k]+" "+label+(kinds[k]===1?"":"s");
+  });
+  if(kindBits.length)parts.push(kindBits.join(", ")+".");
+
+  var accepted=0,rejected=0,human=0;
+  caps.forEach(function(c){
+    var d=c.disposition||{};
+    if(d.decision==="accept")accepted++;
+    else if(d.decision==="reject"||d.decision==="deny")rejected++;
+    if(d.human_disposed===true)human++;
+  });
+  if(rejected)parts.push(rejected+" of "+n+" "+(rejected===1?"was":"were")+" refused.");
+  if(accepted===n&&n>0)parts.push("All were accepted.");
+  parts.push(human===0
+    ? "No human approved any of them — every disposition was made by policy."
+    : human+" of "+n+" carried a recorded human disposition.");
+
+  /* Assurance is the part a reader cannot infer and most needs. */
+  var selfAtt=0,unconfirmed=0;
+  caps.forEach(function(c){
+    var a=c.assurance||{};
+    if(a.attestation_mode==="self_attested")selfAtt++;
+    if(a.effect_mode==="dispatched_unconfirmed")unconfirmed++;
+  });
+  if(unconfirmed)parts.push(unconfirmed+" record"+(unconfirmed===1?"":"s")+" report"+(unconfirmed===1?"s":"")
+    +" the effect as dispatched but unconfirmed — the runtime says it sent the action; nothing here confirms it landed.");
+  if(selfAtt===n&&n>0)parts.push("Every record is self-attested: the same party took the action and wrote the record.");
+
+  var withheld=0;
+  caps.forEach(function(c){
+    var ca=((c.model_attestation||{}).compute_attestation)||{};
+    if(ca.agent_input_digest||ca.agent_output_digest)withheld++;
+  });
+  if(withheld)parts.push("Inputs and outputs are committed as digests only — the payloads are not in "
+    +(withheld===n?"these records":"all of these records")+", so their contents cannot be read here, only matched if someone later discloses them.");
+
+  return{code:"summary",label:"What these records say",text:parts.join(" "),
+    meta:"plain-language summary of the fields carried; it makes no claim the ritual did not check"};
+}
+
 /* ---------- ritual: Integrity / Sequence / Completeness / Cross-check ---------- */
-async function evaluateBundleRitual(records,completeness,crossCheck){
+async function evaluateBundleRitual(records,completeness,crossCheck,integrity,disclosures){
   var stages=[],finding=null;
-  var alteredIds={},firstMismatch=null;
+  var alteredIds={},firstMismatch=null,firstMismatchIsBody=false;
+  disclosures=disclosures||{};
   for(var idx=0;idx<records.length;idx++){
     var c=records[idx];
     if(!isH64(c.capsule_id))continue;
-    var g=await verifyCapsuleDigests(c);
+    var idr=integrity&&integrity[idx];
+    if(idr&&idr.ok===false){
+      alteredIds[c.capsule_id]=true;
+      if(!firstMismatch){firstMismatch=idr;firstMismatchIsBody=true;}
+    }
+    var g=await verifyCapsuleDigests(c,disclosures[c.capsule_id]);
     var bad=g.privlog.filter(function(e){return e.matchOk===false;});
-    if(bad.length){alteredIds[c.capsule_id]=true;if(!firstMismatch)firstMismatch=bad[0];}
+    if(bad.length){alteredIds[c.capsule_id]=true;if(!firstMismatch){firstMismatch=bad[0];firstMismatchIsBody=false;}}
   }
   if(Object.keys(alteredIds).length){
-    stages.push({name:"Integrity",status:"fail",
-      detail:"record fails at stage digest_mismatch — "+firstMismatch.ctx+" no longer matches its fingerprint"});
-    finding={label:"The finding",
-      text:firstMismatch.id+" ("+firstMismatch.ctx+") is not the value that was sealed.",
-      meta:"failed stage: digest_mismatch · field group: "+firstMismatch.ctx+" · digest "+firstMismatch.digest.slice(0,8)+"…"};
+    if(firstMismatchIsBody){
+      stages.push({name:"Integrity",status:"fail",
+        detail:"capsule_id does not match the recomputed digest of its own body — stated "+sh(firstMismatch.stated)+", recomputed "+(firstMismatch.recomputed?sh(firstMismatch.recomputed):"(could not be computed)")});
+      finding={label:"The finding",
+        text:"This capsule's content does not hash to its stated capsule_id. The body has been altered after the id was assigned — they no longer content-address to each other.",
+        meta:"failed stage: capsule_id_mismatch · stated capsule_id "+firstMismatch.stated+" · recomputed "+(firstMismatch.recomputed||"(error)")};
+    }else{
+      stages.push({name:"Integrity",status:"fail",
+        detail:"record fails at stage digest_mismatch — "+firstMismatch.ctx+" no longer matches its fingerprint"});
+      finding={label:"The finding",
+        text:firstMismatch.id+" ("+firstMismatch.ctx+") is not the value that was sealed.",
+        meta:"failed stage: digest_mismatch · field group: "+firstMismatch.ctx+" · digest "+firstMismatch.digest.slice(0,8)+"…"};
+    }
   }else{
     stages.push({name:"Integrity",status:"pass",detail:"every record matches its fingerprint"});
   }
 
+  /* Same three-valued Sequence as the capsule surface: a bundle where nothing
+   * declares a parent must not render as "unbroken". See CAPSULE_JS. */
+  var _capsForSeq=records.map(unwrapEnvelope);
+  var _declared=0;
+  _capsForSeq.forEach(function(c){
+    if(isH64(((c.chain)||{}).parent_capsule_id||""))_declared++;
+  });
+  var _expectedLinks=Math.max(0,_capsForSeq.length-1);
+
   var gaps=findChainGaps(records);
-  if(gaps.length){
+  if(_capsForSeq.length<2){
+    stages.push({name:"Sequence",status:"skip",detail:"single record — nothing to sequence"});
+  }else if(_declared===0){
+    stages.push({name:"Sequence",status:"skip",
+      detail:"not checked — no record here declares a parent, so the order shown is presentation order, not an attested sequence"});
+  }else if(gaps.length){
     var g0=gaps[0];
     stages.push({name:"Sequence",status:"fail",
       detail:"gap between record "+(g0.beforeIdx+1)+" and record "+(g0.afterIdx+1)+" — record "+(g0.afterIdx+1)+" names a parent that is not here"});
@@ -973,14 +1223,17 @@ async function evaluateBundleRitual(records,completeness,crossCheck){
         text:"Whatever sits between record "+(g0.beforeIdx+1)+" and record "+(g0.afterIdx+1)+" is not in this bundle.",
         meta:"failed stage: chain_gap · missing parent "+g0.missingParent.slice(0,8)+"…"};
     }
+  }else if(_declared<_expectedLinks){
+    stages.push({name:"Sequence",status:"skip",
+      detail:"partial — "+_declared+" of "+_expectedLinks+" expected links declared; the undeclared positions are not attested as adjacent"});
   }else{
-    stages.push({name:"Sequence",status:"pass",detail:"unbroken — every record names the one before it, or nothing"});
+    stages.push({name:"Sequence",status:"pass",detail:"unbroken — every record names the one before it"});
   }
 
   stages.push({name:"Completeness",status:completeness.status,detail:completeness.detail});
   stages.push({name:"Cross-check",status:crossCheck.status,detail:crossCheck.detail});
 
-  return{stages:stages,finding:finding};
+  return{stages:stages,finding:finding,summary:describeBundle(records)};
 }
 
 /* ---------- privilege log (aggregated across every record) ----------
@@ -988,10 +1241,11 @@ async function evaluateBundleRitual(records,completeness,crossCheck){
  * matchOk is already resolved true/false by the time this returns — the
  * displayed log and the ritual/cross-check verdicts read the same, single
  * digest-verification pass, never two independent (and divergent) ones. */
-async function buildBundlePrivlog(records){
+async function buildBundlePrivlog(records,disclosures){
   var rows=[];
+  disclosures=disclosures||{};
   for(var i=0;i<records.length;i++){
-    var g=await verifyCapsuleDigests(records[i]);
+    var g=await verifyCapsuleDigests(records[i],disclosures[records[i].capsule_id]);
     g.privlog.forEach(function(e){
       rows.push({record_index:i,capsule_id:records[i].capsule_id||"",entry:e});
     });
@@ -1007,7 +1261,7 @@ function $(id){return document.getElementById(id);}
 function renderPrivlog(rows){
   var el=$("privlogContent");if(!el)return;
   if(!rows.length){el.innerHTML="<p style='color:var(--muted);font-size:13px'>No committed artifacts found across these records.</p>";return;}
-  var h="<table class='pltable'><thead><tr><th>#</th><th>artifact</th><th>type</th><th>digest</th><th>status</th><th>context</th></tr></thead><tbody>";
+  var h="<table class='pltable'><thead><tr><th>#</th><th>artifact</th><th>type</th><th>digest</th><th>status</th><th>payload</th><th>context</th></tr></thead><tbody>";
   rows.forEach(function(r,idx){
     var e=r.entry;
     var st=e.withheld?"<span class='pl-withheld'>WITHHELD</span>":
@@ -1016,7 +1270,8 @@ function renderPrivlog(rows){
             "<span class='pl-revealed'>REVEALED</span>";
     h+="<tr data-idx='"+idx+"' data-dig='"+safe(e.digest)+"'><td>"+(r.record_index+1)+"</td><td>"+safe(e.id)+"</td>"+
       "<td>"+safe(e.type)+(e.isKnown?"":' <em class="opaque-badge">OPAQUE</em>')+"</td>"+
-      "<td><code>"+safe(e.digest.slice(0,16))+"…</code></td><td class='pl-st'>"+st+"</td><td class='pl-ctx'>"+safe(e.ctx)+"</td></tr>";
+      "<td><code>"+safe(e.digest.slice(0,16))+"…</code></td><td class='pl-st'>"+st+"</td>"+
+      "<td class='pl-payload'>"+payloadCellHtml(e,e._recomputedDigest)+"</td><td class='pl-ctx'>"+safe(e.ctx)+"</td></tr>";
   });
   h+="</tbody></table>";
   el.innerHTML=h;
@@ -1026,9 +1281,9 @@ function renderPrivlog(rows){
   // digest pass here; the table above already reflects the real verdict.
 }
 
-function renderRecordsTable(records){
+function renderRecordsTable(records,integrity){
   var el=$("recordsTableContent");if(!el)return;
-  var notes=annotateRecords(records);
+  var notes=annotateRecords(records,integrity);
   var gaps=findChainGaps(records),gapAt={};
   gaps.forEach(function(g){gapAt[g.afterIdx]=g;});
   var h="<table class='records-table'><thead><tr><th>#</th><th>capsule_id</th><th>action_type</th><th>note</th></tr></thead><tbody>";
@@ -1057,6 +1312,11 @@ function renderRitual(summary){
       "<span class='ritual-name'>"+safe(s.name)+"</span><span class='ritual-detail'>"+safe(s.detail)+"</span></div>";
   });
   h+="</div>";
+  if(summary.summary){
+    var sm=summary.summary;
+    h+="<div class='finding-panel finding-summary'><div class='finding-label'>"+safe(sm.label)+"</div>"+
+      "<p class='finding-text'>"+safe(sm.text)+"</p><div class='finding-meta'>"+safe(sm.meta)+"</div></div>";
+  }
   if(summary.finding){
     var f=summary.finding;
     h+="<div class='finding-panel finding-fail'><div class='finding-label'>"+safe(f.label)+"</div>"+
@@ -1100,14 +1360,16 @@ async function loadBundle(data,fragmentB64u){
   var dl=$("downloadBtn");if(dl){dl.disabled=false;dl.style.opacity="1";}
   var cp=$("copyLinkBtn");if(cp){cp.disabled=false;cp.style.opacity="1";}
 
-  var privlog=await buildBundlePrivlog(records);
+  var integrity=await Promise.all(records.map(verifyCapsuleId));
+
+  var privlog=await buildBundlePrivlog(records,data.disclosures);
   renderPrivlog(privlog);
-  renderRecordsTable(records);
+  renderRecordsTable(records,integrity);
 
   var completeness=await checkCompleteness(data);
   renderCompletenessCard(completeness);
   var crossCheck=await crossCheckSelfReport(data,records);
-  var ritual=await evaluateBundleRitual(records,completeness,crossCheck);
+  var ritual=await evaluateBundleRitual(records,completeness,crossCheck,integrity,data.disclosures);
   renderRitual(ritual);
 
   try{ history.replaceState(null,"",location.pathname+location.search+"#"+_fragmentB64u); }catch(ex){}
