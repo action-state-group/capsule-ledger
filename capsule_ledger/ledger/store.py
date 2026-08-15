@@ -98,6 +98,14 @@ class LedgerStore(LedgerAPI):
         self._open_fhs: dict[str, Any] = {}
         self._sync_write_segment()
 
+    @property
+    def root(self) -> Path:
+        """This store's own directory -- the one legitimate anchor for
+        colocated local-only artifacts that must never be confused with an
+        imported fixture's throwaway tempdir (e.g. ``payload_store.py``'s
+        resolve-at-read store, rooted at ``root / "payloads"``)."""
+        return self._root
+
     # -- lifecycle ---------------------------------------------------------
 
     def close(self) -> None:
