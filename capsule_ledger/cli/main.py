@@ -38,6 +38,7 @@ from . import (
     lens_cmds,
     log_cmd,
     manifest_cmds,
+    payload_cmd,
     show_cmd,
     telemetry_cmd,
     thresholds_cmds,
@@ -77,6 +78,7 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
         verify_cmd.add_parser(sub)
         bundle_cmd.add_parser(sub)
         console_cmd.add_parser(sub)
+        payload_cmd.add_parser(sub)
 
     return parser
 
@@ -140,6 +142,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "thresholds":
         if getattr(args, "thresholds_command", None) is None:
             args.thresholds_parser.print_help()
+            return 0
+        return args.func(args)
+
+    if args.command == "payload":
+        if getattr(args, "payload_command", None) is None:
+            args.payload_parser.print_help()
             return 0
         return args.func(args)
 

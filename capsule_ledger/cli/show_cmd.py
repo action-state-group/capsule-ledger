@@ -6,8 +6,14 @@ import argparse
 import json
 import sys
 
-from .format import build_echo, summarize_action
-from .ledger_io import open_ledger, require_ledger_path
+from .format import (
+    build_echo,
+    format_action_class,
+    format_assurance_grade,
+    format_resolved_payload,
+    summarize_action,
+)
+from .ledger_io import local_payload_store, open_ledger, require_ledger_path
 
 __all__ = ["add_parser", "run"]
 
@@ -33,6 +39,8 @@ def run(args: argparse.Namespace) -> int:
     if ledger_path is None:
         return 2
 
+    payload_store = local_payload_store(ledger_path)
+
     with open_ledger(ledger_path) as store:
         record = store.fetch(args.capsule_id)
         if record is None:
@@ -53,9 +61,20 @@ def run(args: argparse.Namespace) -> int:
         print(f"Agent:      {capsule.get('developer', '')}")
         print(f"Operator:   {capsule.get('operator', '')}")
         print(f"Action:     {summarize_action(capsule)} ({capsule.get('action_type', '')})")
+        action_class_line = format_action_class(capsule)
+        if action_class_line:
+            print(f"Action class: {action_class_line}")
         print(f"Date:       {capsule.get('timestamp', '')}")
         print(f"Verdict:    {disposition.get('verdict_class') or '(none)'}")
-        print(f"Assurance:  {assurance.get('attestation_mode', '')} · {assurance.get('ledger_mode', '')}")
+        print(f"Assurance:  {format_assurance_grade(assurance)}")
+        reason_digest = disposition.get("reason_digest")
+        if reason_digest:
+            print(f"Reason:     digest {reason_digest}")
+            if payload_store is not None:
+                resolved = payload_store.resolve(reason_digest)
+                if resolved is not None:
+                    for line in format_resolved_payload("reason", resolved):
+                        print(line)
         if chain:
             print(f"Chain:      {chain.get('parent_capsule_id')} ({chain.get('relation')})")
         else:
@@ -64,6 +83,14 @@ def run(args: argparse.Namespace) -> int:
             print("Constraints:")
             for c in constraints:
                 print(f"  - {c.get('id')}: {c.get('result')}")
+                evidence_digest = c.get("evidence_digest")
+                if evidence_digest:
+                    print(f"      evidence_digest: {evidence_digest}")
+                    if payload_store is not None:
+                        resolved = payload_store.resolve(evidence_digest)
+                        if resolved is not None:
+                            for line in format_resolved_payload("evidence", resolved):
+                                print(line)
         else:
             print("Constraints: (none)")
         print()

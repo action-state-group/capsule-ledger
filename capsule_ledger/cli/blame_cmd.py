@@ -25,7 +25,7 @@ import argparse
 import json
 import sys
 
-from .format import build_echo, summarize_action
+from .format import build_echo, format_action_class, format_assurance_grade, summarize_action
 from .ledger_io import open_ledger, require_ledger_path
 
 __all__ = ["add_parser", "run"]
@@ -122,8 +122,12 @@ def run(args: argparse.Namespace) -> int:
         print(f"  seq:      #{r.seq}")
         print(f"  Agent:    {capsule.get('developer', '')}")
         print(f"  Verdict:  {disposition.get('verdict_class') or '(none)'}")
+        print(f"  Assurance: {format_assurance_grade(capsule.get('assurance') or {})}")
         print(f"  Date:     {capsule.get('timestamp', '')}")
         print(f"  Action:   {summarize_action(capsule)}")
+        action_class_line = format_action_class(capsule)
+        if action_class_line:
+            print(f"  Action class: {action_class_line}")
         if i + 1 < len(hops):
             print(f"  ↑ chain.relation={chain.get('relation')!r}")
         print()

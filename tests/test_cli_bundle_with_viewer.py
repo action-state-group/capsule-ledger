@@ -125,7 +125,13 @@ def test_offline_viewer_opens_and_verifies_with_networking_disabled(tmp_path):
 
     stages = {s["name"]: s["status"] for s in result["ritual"]["stages"]}
     assert stages["Integrity"] == "pass"
-    assert stages["Sequence"] == "pass"
+    # Only 1 of this fixture's 4 records declares a chain parent -- partial
+    # coverage, honestly "skip" per the re-vendored viewer's three-valued
+    # Sequence logic (scitt-cose #32). The pre-#32 viewer collapsed this to
+    # a false "pass". The completeness certificate this branch adds is a
+    # bundle-range attestation and does not change per-record chain coverage,
+    # so Sequence stays an honest "skip".
+    assert stages["Sequence"] == "skip"
     # capsule bundle now attaches an MMR completeness certificate for the
     # bundle's own record range -- genuinely verified here, not skipped.
     assert stages["Completeness"] == "pass"
