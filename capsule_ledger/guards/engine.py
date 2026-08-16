@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from ..folds.definition import FoldDefinition
-from ..ledger.api import LedgerAPI
+from ..ledger.api import LedgerAPI, serialize_writes
 from .action import Action
 from .capsule import ALLOW, DENY, ESCALATE, ConstraintOutcome, build_decision_capsule, build_event_capsule
 from .checks import CheckOutcome, check_caps, check_dedupe, check_verify_before_dispatch
@@ -200,89 +200,109 @@ class GuardEngine:
         if not self._engine_available():
             reduced_assurance = True
 
-        # -- the three reference checks --------------------------------
-        since_dedupe = _shift(action.resolved_timestamp(), days=_DEDUPE_WINDOW_DAYS)
-        dedupe_out = check_dedupe(action, self._ledger, since=since_dedupe)
+        # -- the three reference checks, decision, and append -----------
+        #
+        # Serialization boundary (the [ldg-guardengine-caps-race] fix). The
+        # caps and dedupe checks each read the ledger, decide "under cap" /
+        # "not a duplicate", and only then does check() append the decision.
+        # Without a lock across that whole span, two concurrent callers for the
+        # same (developer, action_class) both read the pre-write state, both
+        # decide to admit, and both append -- the cap (and dedupe) are not
+        # enforced under concurrency at all. `serialize_writes` holds a
+        # single-writer critical section over the ledger ACROSS THREADS AND
+        # PROCESSES (ledger/store.py's `serialize()`: in-process RLock + an
+        # fcntl file lock), so the second caller's read here sees the first
+        # caller's append. An in-process lock alone would fix the threaded
+        # case while a second worker PROCESS still blew the cap -- which is why
+        # the boundary is the ledger append itself, not a threading.Lock in
+        # this engine. Everything state-dependent (the three ledger-reading
+        # checks, the decision, the tree_size checkpoint, and the append) runs
+        # inside; the infra checks above do not read contended state and stay
+        # outside. When uncontended the lock is taken instantly and behaviour
+        # is byte-for-byte what it was before this span was wrapped.
+        with serialize_writes(self._ledger):
+            since_dedupe = _shift(action.resolved_timestamp(), days=_DEDUPE_WINDOW_DAYS)
+            dedupe_out = check_dedupe(action, self._ledger, since=since_dedupe)
 
-        cap_minor = self._caps_minor.get(action.action_class)
-        if cap_minor is not None:
-            caps_out = check_caps(action, self._ledger, definition=self._caps_fold, cap_minor=cap_minor)
-        else:
-            caps_out = CheckOutcome(
-                constraint=ConstraintOutcome(
-                    id="caps",
-                    result="n/a",
-                    reason="no cap configured for this action class",
-                    check_type="policy",
-                    method=self._caps_fold.fold_id,
+            cap_minor = self._caps_minor.get(action.action_class)
+            if cap_minor is not None:
+                caps_out = check_caps(action, self._ledger, definition=self._caps_fold, cap_minor=cap_minor)
+            else:
+                caps_out = CheckOutcome(
+                    constraint=ConstraintOutcome(
+                        id="caps",
+                        result="n/a",
+                        reason="no cap configured for this action class",
+                        check_type="policy",
+                        method=self._caps_fold.fold_id,
+                    )
                 )
-            )
 
-        vbd_out = check_verify_before_dispatch(action, self._ledger)
+            vbd_out = check_verify_before_dispatch(action, self._ledger)
 
-        constraints = (dedupe_out.constraint, caps_out.constraint, vbd_out.constraint)
-        fold_envelopes = tuple(caps_out.fold_envelopes)
-        outcome = _decide(constraints, ac)
+            constraints = (dedupe_out.constraint, caps_out.constraint, vbd_out.constraint)
+            fold_envelopes = tuple(caps_out.fold_envelopes)
+            outcome = _decide(constraints, ac)
 
-        resolved_parent, resolved_relation = chain_parent, chain_relation
-        if resolved_parent is None:
-            for out in (vbd_out, dedupe_out):
-                if out.chain_parent is not None:
-                    resolved_parent, resolved_relation = out.chain_parent, out.chain_relation
-                    break
+            resolved_parent, resolved_relation = chain_parent, chain_relation
+            if resolved_parent is None:
+                for out in (vbd_out, dedupe_out):
+                    if out.chain_parent is not None:
+                        resolved_parent, resolved_relation = out.chain_parent, out.chain_relation
+                        break
 
-        # Row: "Anchor or witness unreachable" -- NEVER blocks (anchoring is
-        # async; the record is complete without it). v0 has not built
-        # anchoring at all yet, so every checkpoint is unanchored regardless
-        # of witness reachability -- that unconditionality (never a
-        # fail-closed branch keyed on it) is the property under test.
-        checkpoint = {
-            "tree_size": self._tree_size(),
-            "age_ms": age_ms,
-            "anchor_status": "unanchored",
-            "witness_reachable": self._witness_reachable(),
-        }
-        if reduced_assurance:
-            checkpoint["reduced_assurance"] = True
-        if dry_run:
-            checkpoint["dry_run"] = True
+            # Row: "Anchor or witness unreachable" -- NEVER blocks (anchoring is
+            # async; the record is complete without it). v0 has not built
+            # anchoring at all yet, so every checkpoint is unanchored regardless
+            # of witness reachability -- that unconditionality (never a
+            # fail-closed branch keyed on it) is the property under test.
+            checkpoint = {
+                "tree_size": self._tree_size(),
+                "age_ms": age_ms,
+                "anchor_status": "unanchored",
+                "witness_reachable": self._witness_reachable(),
+            }
+            if reduced_assurance:
+                checkpoint["reduced_assurance"] = True
+            if dry_run:
+                checkpoint["dry_run"] = True
 
-        reason_obj = {
-            "outcome": outcome,
-            "constraints": [{"id": c.id, "result": c.result} for c in constraints],
-        }
+            reason_obj = {
+                "outcome": outcome,
+                "constraints": [{"id": c.id, "result": c.result} for c in constraints],
+            }
 
-        capsule = build_decision_capsule(
-            action=action,
-            outcome=outcome,
-            constraints=constraints,
-            signer=signer,
-            checkpoint=checkpoint,
-            reason=reason_obj,
-            chain_parent=resolved_parent,
-            chain_relation=resolved_relation,
-            manifest_digest=self._manifest_digest,
-        )
-
-        # Row: "Ledger append fails (disk full, WAL error)" -- fail closed
-        # for consequential classes; the action does not dispatch.
-        try:
-            self._ledger.append(capsule, consequential=consequential and not dry_run)
-        except OSError as exc:
-            self._open["ledger_append"] = _OpenDegradation(
-                kind="ledger_append", started_at=_utc_now(), cause=str(exc)
-            )
-            return GuardDecision(
-                outcome=DENY,
-                dry_run=dry_run,
-                degraded=True,
-                degradation_kind="ledger_append",
+            capsule = build_decision_capsule(
+                action=action,
+                outcome=outcome,
                 constraints=constraints,
-                fold_envelopes=fold_envelopes,
+                signer=signer,
                 checkpoint=checkpoint,
-                capsule=None,
-                reason=f"ledger append failed ({exc}); fail closed, action does not dispatch",
+                reason=reason_obj,
+                chain_parent=resolved_parent,
+                chain_relation=resolved_relation,
+                manifest_digest=self._manifest_digest,
             )
+
+            # Row: "Ledger append fails (disk full, WAL error)" -- fail closed
+            # for consequential classes; the action does not dispatch.
+            try:
+                self._ledger.append(capsule, consequential=consequential and not dry_run)
+            except OSError as exc:
+                self._open["ledger_append"] = _OpenDegradation(
+                    kind="ledger_append", started_at=_utc_now(), cause=str(exc)
+                )
+                return GuardDecision(
+                    outcome=DENY,
+                    dry_run=dry_run,
+                    degraded=True,
+                    degradation_kind="ledger_append",
+                    constraints=constraints,
+                    fold_envelopes=fold_envelopes,
+                    checkpoint=checkpoint,
+                    capsule=None,
+                    reason=f"ledger append failed ({exc}); fail closed, action does not dispatch",
+                )
 
         self._try_flush_recoveries(action)
 

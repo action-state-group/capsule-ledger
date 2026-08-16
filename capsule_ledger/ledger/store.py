@@ -19,9 +19,15 @@ import os
 import sqlite3
 import threading
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+try:  # POSIX only; the in-process binding targets POSIX (Linux CI, macOS dev).
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback, no cross-process lock
+    fcntl = None  # type: ignore[assignment]
 
 from agent_action_capsule import Finding, VerificationResult, compute_capsule_id
 from agent_action_capsule import verify as _verify_capsule
@@ -57,6 +63,12 @@ CREATE INDEX IF NOT EXISTS idx_records_parent ON records(parent_capsule_id);
 
 _DEFAULT_SEGMENT_MAX_RECORDS = 20_000
 
+# How long a concurrent opener/writer waits on sqlite's own file lock before
+# giving up with `database is locked`. Generous because the contended writes
+# here are tiny (one row + a commit); a real stall means a wedged process, not
+# ordinary contention.
+_SQLITE_BUSY_TIMEOUT_MS = 30_000
+
 
 def _parse_ts(value: str | None) -> datetime | None:
     if not value:
@@ -89,9 +101,26 @@ class LedgerStore(LedgerAPI):
         # lock, not thread affinity, is what makes this safe.
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(self._root / "index.sqlite3", check_same_thread=False)
+        # busy_timeout: when a *second process* opens this same on-disk ledger
+        # concurrently (the ephemeral-mode shape — many short-lived callers, one
+        # ledger directory), the WAL-mode pragma and the first index write race
+        # on sqlite's own file lock. Without a busy timeout that surfaces as a
+        # hard `database is locked` at construction; with it, the loser waits out
+        # the winner's brief write. This is physical sqlite safety, distinct from
+        # the business-atomicity serialization `serialize()` adds below.
+        self._conn.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS}")
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
+
+        # Cross-process append serialization. `self._lock` (a threading.RLock)
+        # only serializes threads *within one process*; it cannot serialize two
+        # separate processes sharing this directory. `serialize()` (below) takes
+        # an OS-level advisory lock on this file, which the kernel enforces
+        # across every process on the host, so a caller can hold a
+        # read→decide→append span atomic against both threads AND processes.
+        self._serialize_lock_path = self._root / "write.lock"
+        self._serialize_lock_path.touch(exist_ok=True)
 
         self._write_fh = None
         self._write_segment_name = None
@@ -158,6 +187,47 @@ class LedgerStore(LedgerAPI):
         return fh
 
     # -- write path -----------------------------------------------------
+
+    @contextmanager
+    def serialize(self) -> Iterator[None]:
+        """Hold a single-writer critical section over this ledger, ACROSS
+        threads and processes, for the duration of the ``with`` block.
+
+        ``append`` already serializes each *physical* write through
+        ``self._lock`` — that prevents torn writes and index corruption but
+        says nothing about *business* atomicity: a caller that reads the
+        ledger, decides "under cap", and only then appends can be interleaved
+        by another caller doing the same, so both read the pre-write state and
+        both append (``guards/engine.py``'s ``check()`` caps/dedupe span). A
+        caller wraps that whole read→decide→append span in ``serialize()`` and
+        the second caller's read then sees the first caller's append.
+
+        Two layers, because ``self._lock`` (a ``threading.RLock``) is
+        per-process and an ``fcntl`` lock is per-open-file-description:
+
+        * the in-process ``RLock`` serializes threads sharing this one store;
+        * an exclusive ``fcntl.flock`` on ``<root>/write.lock`` serializes
+          separate processes sharing this directory (the ephemeral-mode shape:
+          a container per request against one ledger).
+
+        The file lock is advisory and released by the kernel if the holder
+        dies, so a crashed caller never wedges the ledger permanently. On a
+        platform without ``fcntl`` (Windows) only the in-process layer applies
+        — flagged, not silently degraded: the in-process binding targets POSIX.
+        """
+        with self._lock:
+            if fcntl is None:
+                yield
+                return
+            lock_fh = open(self._serialize_lock_path, "a+")
+            try:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+            finally:
+                lock_fh.close()
 
     def append(self, capsule: dict, *, consequential: bool = True) -> LedgerRecord:
         """Append a sealed capsule dict. Fsyncs the segment when ``consequential``.

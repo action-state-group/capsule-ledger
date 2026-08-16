@@ -18,6 +18,7 @@ API from being painted into an in-process-only corner.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -25,7 +26,7 @@ from agent_action_capsule import VerificationResult
 
 from .records import ChainGap, LedgerRecord
 
-__all__ = ["ScanQuery", "LedgerAPI"]
+__all__ = ["ScanQuery", "LedgerAPI", "serialize_writes"]
 
 
 @dataclass(frozen=True)
@@ -60,3 +61,32 @@ class LedgerAPI(Protocol):
     def verify(self, capsule_id: str) -> VerificationResult | None: ...
 
     def find_gaps(self) -> list[ChainGap]: ...
+
+    def serialize(self) -> AbstractContextManager[None]:
+        """Single-writer critical section over the ledger, across threads AND
+        processes, for the duration of the ``with`` block. A caller wraps a
+        read→decide→append span in it so a second caller's read cannot race
+        ahead of this one's append. See ``LedgerStore.serialize`` for the v0
+        in-process implementation; a remote binding implements the same
+        contract with whatever its backend provides (a row lock, a lease, a
+        sequencer). ``serialize_writes(ledger)`` is the safe accessor for
+        callers that must work against a binding predating this method.
+        """
+        ...
+
+
+def serialize_writes(ledger: LedgerAPI) -> AbstractContextManager[None]:
+    """Return ``ledger.serialize()`` if the binding provides it, else a no-op.
+
+    The cap/dedupe race fix (``guards/engine.py``) depends on holding a
+    read→decide→append span atomic across processes. A binding that predates
+    ``serialize`` (or a lightweight test double) is not itself cross-process
+    contended, so falling back to a ``nullcontext`` is correct for it — it is
+    NOT a silent weakening of the real ``LedgerStore``, which does implement
+    ``serialize``. Using this accessor rather than ``getattr`` at every call
+    site keeps that reasoning in one place.
+    """
+    serialize = getattr(ledger, "serialize", None)
+    if serialize is None:
+        return nullcontext()
+    return serialize()

@@ -7,19 +7,20 @@ docstring) would have caught before shipping -- a lock/cap/aggregate scope
 disagreement let concurrent submissions jointly admit what sequential
 execution would deny.
 
-This test is exploratory as much as it is a regression guard: it is the
-first time this pack's ``caps`` check has been run under genuine
-concurrency rather than one call at a time. Its purpose is to CONFIRM (or
-refute) that ``GuardEngine.check()``'s own read-then-decide-then-append
-span is safe under concurrent callers sharing one ledger -- not to assume
-it is."""
+History: this test confirmed the finding it now guards. From 2026-08-11 it
+ran ``xfail(strict=True)`` because ``GuardEngine.check()`` held no lock across
+its read→decide→append span (it measured 40/40 admitted concurrently vs 20/40
+sequentially). The [ldg-guardengine-caps-race] fix wraps that span in the
+ledger's cross-process ``serialize()`` critical section (``ledger/store.py``),
+so concurrent admits can no longer exceed sequential admits; the xfail is
+removed and this is a plain regression guard. The threaded shape here is the
+in-process half; ``test_engine_caps_race_multiprocess.py`` proves the same
+property across real processes, which an in-process lock could not."""
 from __future__ import annotations
 
 import tempfile
 import threading
 from pathlib import Path
-
-import pytest
 
 from capsule_ledger.guards import Action, LocalSigner
 from capsule_ledger.ledger import LedgerStore
@@ -40,19 +41,6 @@ def _make_engine(ledger, project_dir):
     return build_engine(installed, ledger=ledger, signer_provider=lambda: signer)
 
 
-@pytest.mark.xfail(
-    reason=(
-        "CONFIRMED FINDING (2026-08-11): GuardEngine.check() (capsule_ledger/guards/engine.py) holds no "
-        "lock across its own read (check_caps' ledger.scan()) -> decide -> append span. Two concurrent "
-        "check() calls for the same developer/action_class both read the pre-write ledger state, both "
-        "compute 'under cap', and both append -- the cap is not enforced under concurrency at all (this "
-        "test measured 40/40 admitted concurrently vs. 20/40 sequentially, for traffic designed so "
-        "sequential execution admits exactly half). Real, core-engine bug, not payments-safety-specific -- "
-        "reported live, not silently fixed here. xfail (not skip) so this stays visible and this test "
-        "starts passing the moment the engine gets a real fix, without needing this marker hand-removed."
-    ),
-    strict=True,
-)
 def test_sequential_and_concurrent_admission_agree_on_total_admitted():
     """Runs N independent rounds (fresh developer window each round via a
     distinct target/timestamp block) both sequentially and concurrently,
