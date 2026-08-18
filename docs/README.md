@@ -19,6 +19,7 @@ A guard checks each action your agent takes, appends the decision as a signed ca
 - **[Guard failure semantics](failure-semantics.md)** — what happens when the ledger, the view, or the signer isn't available: what fails closed, what's allowed to fail open, and what always gets recorded.
 - **[Signing key management](key-management.md)** — the actual current signer (HMAC-SHA256, self-attested), not a target design.
 - **[`guard-check` GitHub Action](ci-action.md)** — pre-merge policy lint + regression replay for your guard config; explicit about what it does *not* cover (your live traffic).
+- **[Tenant provisioning](tenant-provisioning.md)** — embedding this package for many customers: one engine instance per tenant (`capsule tenant init`/`upgrade`/`list`), physically separate ledger + manifest + key per tenant.
 
 ## Test data
 
