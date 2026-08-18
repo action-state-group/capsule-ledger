@@ -20,11 +20,9 @@ Every guard decision, every fold result, and every refusal is a record — check
 - `capsule_ledger/vectors/` — pinned test vectors: known-answer results, determinism probes, and MUST-FAIL cases.
 - `capsule_ledger/telemetry/` — opt-in-disclosed, aggregate-only usage instrumentation and the 6-metric funnel report generator (see below).
 
-This is a scaffold. The subpackages above are stubs; behavior lands incrementally.
+## Packaging
 
-## Two packaging arms
-
-One codebase, one wheel, two arms — selected at runtime with `$CAPSULE_LEDGER_ARM` (legacy `$ASG_LEDGER_ARM` still honored), never a separate build:
+One codebase, one wheel selected at runtime with `$CAPSULE_LEDGER_ARM`
 
 - `full` (default) — everything: the guard checks plus the evidence surfaces (`log`/`show`/`verify`/`bundle`, permalinks, the dry-run report's share/verify chrome).
 - `guards-only` (`CAPSULE_LEDGER_ARM=guards-only`) — the same guard checks (caps/dedupe/verify-before-dispatch + `dry_run`), but the evidence machinery underneath stays silent: no capsule vocabulary in CLI output, no permalinks or verify-link suggestions, and the evidence-surfacing commands (`log`/`show`/`verify`/`bundle`) aren't even registered.
@@ -33,7 +31,7 @@ See `capsule_ledger/packaging.py` for the mechanism and the reasoning behind pic
 
 ## Telemetry
 
-Off by default. If explicitly turned on (`CAPSULE_LEDGER_TELEMETRY=1`, legacy `ASG_LEDGER_TELEMETRY=1` still honored), this install reports a handful of yes/no or count-shaped facts about how the package gets used (e.g. "was a guard configured shortly after install") — never what was configured, blocked, or held, and never any ledger content. Run `capsule telemetry status` to see the full disclosure text and current state, and `capsule telemetry funnel --dry-run` to see the report shape rendered against synthetic data. See `capsule_ledger/telemetry/` for the implementation.
+Off by default. If explicitly turned on (`CAPSULE_LEDGER_TELEMETRY=1`), this install reports a handful of yes/no or count-shaped facts about how the package gets used (e.g. "was a guard configured shortly after install") — never what was configured, blocked, or held, and never any ledger content. Run `capsule telemetry status` to see the full disclosure text and current state, and `capsule telemetry funnel --dry-run` to see the report shape rendered against synthetic data. See `capsule_ledger/telemetry/` for the implementation.
 
 ## Onboarding
 
@@ -74,4 +72,4 @@ pytest -q
 
 ## Status
 
-Early scaffold. No stability guarantees yet.
+Open source, community supported, contributions welcome.
