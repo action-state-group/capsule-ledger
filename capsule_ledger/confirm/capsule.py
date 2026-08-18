@@ -14,10 +14,7 @@ fulfillment capsule, by construction.
 connector read is the gate/engine recording a THIRD SYSTEM's claim about its
 own state, not something the engine directly observed at its own effect
 boundary (that would be ``gate_executed``). It is therefore never graded
-above ``runtime_claimed`` here -- a stronger, counterparty-SIGNED grade is
-the later paid-tier upgrade (ledger-lane outbox
-``[ldg-confirm-ingester]``), not something a plain connector read can ever
-claim for itself.
+above ``runtime_claimed`` here.
 
 ``effect.response_digest`` commits the connector's raw evidence (the IdP's
 own flag record, a ticket's closure payload, a payment processor's receipt)
