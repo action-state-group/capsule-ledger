@@ -1,0 +1,169 @@
+name: 'capsule guard-check'
+description: >-
+  Pre-merge CI linter for capsule-ledger guard configs. Validates the
+  action-class taxonomy and fold catalog are well-formed (capsule
+  constraints list / capsule fold list), replays a snapshot ledger through
+  the real guard engine to catch policy regressions (capsule guard dry-run
+  --verify), and shows an epoch-diff of guard behavior across two ledger
+  checkpoints for PR review (capsule diff). Honesty line: this Action
+  catches policy errors PRE-MERGE; it does not enforce anything live -- the
+  runtime GuardEngine wired into your own integration is what enforces
+  limits on real traffic. This is a linter/regression-catcher, not a
+  replacement for the live guard.
+author: 'Action State Group'
+
+inputs:
+  python-version:
+    description: 'Python version to set up for running the capsule CLI'
+    required: false
+    default: '3.12'
+  fold-dir:
+    description: >-
+      Path to the fold catalog directory backing your guard config (e.g.
+      the directory holding the caps check's fold definitions). Linted
+      with `capsule fold list --dir`. Omit to skip catalog lint and only
+      run `capsule constraints list`.
+    required: false
+    default: ''
+  guard-ledger:
+    description: >-
+      Newline-separated snapshot ledger fixture path(s) (JSONL file or
+      LedgerStore directory) to replay through the guard engine via
+      `capsule guard dry-run --verify` (repeatable --ledger). Omit to skip
+      the dry-run step.
+    required: false
+    default: ''
+  since:
+    description: 'Rolling window passed to `capsule guard dry-run --since` (default: all)'
+    required: false
+    default: 'all'
+  cap:
+    description: >-
+      Newline-separated `ACTION_CLASS=MINOR_UNITS` caps passed to `capsule
+      guard dry-run --cap` (repeatable).
+    required: false
+    default: ''
+  diff-ledger:
+    description: >-
+      Ledger (JSONL file or LedgerStore directory) to run `capsule diff`
+      against for the epoch-diff step. Omit to skip epoch-diff.
+    required: false
+    default: ''
+  diff-from:
+    description: >-
+      From-ref for `capsule diff` (seq number, capsule_id, ISO-8601
+      timestamp, or HEAD). Required together with diff-ledger.
+    required: false
+    default: ''
+  diff-to:
+    description: 'To-ref for `capsule diff` (default: HEAD)'
+    required: false
+    default: 'HEAD'
+  diff-fold:
+    description: 'Newline-separated fold refs to include in the epoch-diff (repeatable --fold)'
+    required: false
+    default: ''
+  diff-key:
+    description: 'Fold group key value for --fold entries in the epoch-diff (passed as capsule diff --key)'
+    required: false
+    default: ''
+
+outputs:
+  dry-run-report:
+    description: 'Path to the self-contained HTML dry-run report (empty if the dry-run step was skipped)'
+    value: ${{ steps.guard-dry-run.outputs.report-path }}
+  diff-json:
+    description: 'Path to the JSON epoch-diff output (empty if the epoch-diff step was skipped)'
+    value: ${{ steps.epoch-diff.outputs.json-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install capsule-ledger (from this action's own pinned checkout)
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        # github.action_path is this action's own repo checkout (downloaded
+        # by the runner for the `uses:` ref) -- installing from it, rather
+        # than a separately-pinned PyPI spec, guarantees the CLI logic this
+        # step wires up is exactly the one shipped at the action's own ref.
+        pip install -e "$ACTION_PATH/../../.."
+
+    - name: 'Policy lint: capsule constraints list'
+      shell: bash
+      run: |
+        set -euo pipefail
+        capsule constraints list
+
+    - name: 'Policy lint: capsule fold list --dir (guard config well-formedness)'
+      if: inputs.fold-dir != ''
+      shell: bash
+      env:
+        FOLD_DIR: ${{ inputs.fold-dir }}
+      run: |
+        set -euo pipefail
+        capsule fold list --dir "$FOLD_DIR"
+
+    - name: 'Dry-run replay: capsule guard dry-run --verify (catches policy regressions)'
+      id: guard-dry-run
+      if: inputs.guard-ledger != ''
+      shell: bash
+      env:
+        GUARD_LEDGER: ${{ inputs.guard-ledger }}
+        SINCE: ${{ inputs.since }}
+        CAP: ${{ inputs.cap }}
+      run: |
+        set -euo pipefail
+        args=()
+        while IFS= read -r ledger; do
+          [ -n "$ledger" ] && args+=(--ledger "$ledger")
+        done <<< "$GUARD_LEDGER"
+        while IFS= read -r capline; do
+          [ -n "$capline" ] && args+=(--cap "$capline")
+        done <<< "$CAP"
+        report_path="$RUNNER_TEMP/guard-dry-run-report.html"
+        capsule guard dry-run "${args[@]}" --since "$SINCE" --verify --out "$report_path"
+        echo "report-path=$report_path" >> "$GITHUB_OUTPUT"
+
+    - name: 'Epoch-diff: capsule diff (guard behavior across the epoch boundary)'
+      id: epoch-diff
+      if: inputs.diff-ledger != ''
+      shell: bash
+      env:
+        DIFF_LEDGER: ${{ inputs.diff-ledger }}
+        DIFF_FROM: ${{ inputs.diff-from }}
+        DIFF_TO: ${{ inputs.diff-to }}
+        DIFF_FOLD: ${{ inputs.diff-fold }}
+        DIFF_KEY: ${{ inputs.diff-key }}
+      run: |
+        set -euo pipefail
+        if [ -z "$DIFF_FROM" ]; then
+          echo "guard-check: diff-ledger is set but diff-from is empty -- required together" >&2
+          exit 2
+        fi
+        args=(--ledger "$DIFF_LEDGER")
+        while IFS= read -r fold_ref; do
+          [ -n "$fold_ref" ] && args+=(--fold "$fold_ref")
+        done <<< "$DIFF_FOLD"
+        if [ -n "$DIFF_KEY" ]; then
+          args+=(--key "$DIFF_KEY")
+        fi
+        capsule diff "$DIFF_FROM" "$DIFF_TO" "${args[@]}"
+        json_path="$RUNNER_TEMP/epoch-diff.json"
+        capsule diff "$DIFF_FROM" "$DIFF_TO" "${args[@]}" --json > "$json_path"
+        echo "json-path=$json_path" >> "$GITHUB_OUTPUT"
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          {
+            echo '### capsule diff: epoch-boundary guard-behavior delta'
+            echo '```json'
+            cat "$json_path"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi

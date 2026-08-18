@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "capsule-ledger"
+version = "0.0.1"
+description = "Local control-plane ledger, verifiable folds, and enforcement guards for AI agent actions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Action State Group" }]
+keywords = ["agent", "ledger", "guard", "fold", "capsule"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Development Status :: 2 - Pre-Alpha",
+]
+# Capsule parsing goes through the public agent-action-capsule reference
+# library — never vendored into this repo.
+dependencies = [
+    "agent-action-capsule>=0.1.0",
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/action-state-group/capsule-ledger"
+Source = "https://github.com/action-state-group/capsule-ledger"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0", "capsule-ledger[examples]"]
+# Pinned below 2.0: the 2.0 release restructured the package (split out
+# mcp-types) and dropped the `mcp.server.fastmcp` import path this server
+# uses -- see capsule_ledger/mcp/server.py.
+mcp = ["mcp>=1.0,<2.0"]
+# capsule_ledger/examples/two_agents.py is the only thing in this package
+# that imports capsule-emit -- the rest of capsule-ledger never depends on
+# it. Floor matches the oldest published PyPI release whose emit() signature
+# this example relies on; the local capsule-emit checkout may be ahead.
+examples = ["capsule-emit>=0.3.0"]
+# capsule_ledger/judge/scorers/deepeval_scorer.py -- the judge harness's
+# default (BYOM) Scorer -- is the only thing that imports deepeval; the rest
+# of the judge harness (prompt digest-pinning, judgment/adjudication
+# capsules) has no hard dependency on it. deepeval_scorer.py imports it
+# lazily and raises a named, actionable JudgeError if this extra isn't
+# installed, so `capsule_ledger.judge` stays importable without it.
+judge = ["deepeval>=1.0"]
+
+[project.scripts]
+capsule = "capsule_ledger.cli:main"
+capsule-mcp = "capsule_ledger.mcp.server:main"
+# Hidden aliases, undocumented: kept working for one release post-rename to `capsule`.
+asg = "capsule_ledger.cli:main"
+asg-mcp = "capsule_ledger.mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["capsule_ledger*"]
+
+[tool.setuptools.package-data]
+capsule_ledger = [
+    "report/static/*.js",
+    "bundle_viewer/static/*.html",
+    "console/*.css",
+    "console/*.html",
+    "console/*.js",
+    "telemetry/fixtures/*.jsonl",
+    "folds/catalog_defs/*.yaml",
+    "guards/wickets/catalog_defs/*.yaml",
+    "policy/catalog_defs/*.yaml",
+    "vectors/fixtures/kat/*/*.yaml",
+    "vectors/fixtures/kat/*/*.jsonl",
+    "vectors/fixtures/kat/*/*.json",
+    "vectors/fixtures/determinism/*/*.yaml",
+    "vectors/fixtures/determinism/*/*.jsonl",
+    "vectors/fixtures/determinism/*/*.json",
+    "vectors/fixtures/must_fail/*/*.yaml",
+    "vectors/fixtures/must_fail/*/*.jsonl",
+    "vectors/fixtures/must_fail/*/*.txt",
+    "packs/catalog/*/pack.yaml",
+    "packs/catalog/*/AI-BOOTSTRAP.md",
+    "packs/catalog/*/folds/*.yaml",
+    "packs/catalog/*/wickets/*.yaml",
+    "packs/catalog/*/fixtures/*.jsonl",
+    "registry/*.json",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
