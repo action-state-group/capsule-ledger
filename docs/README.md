@@ -17,6 +17,7 @@ A guard checks each action your agent takes, appends the decision as a signed ca
 - **[Concepts in plain words](concepts.md)** — capsule, ledger, guard, verdict, fold, envelope, policy manifest, epoch, bundle — each one tied to a real field name or a real `capsule` command.
 - **[Onboarding: hooking an agent up to capsule-ledger](onboarding.md)** — the four ways to wire an agent (or framework) into a running ledger; says plainly which paths aren't implemented yet.
 - **[Guard failure semantics](failure-semantics.md)** — what happens when the ledger, the view, or the signer isn't available: what fails closed, what's allowed to fail open, and what always gets recorded.
+- **[Confirm-ingester connector interface](confirm-connector-interface.md)** — turning a third system's state change (an IdP flag, a closed ticket, a settled payment) into a fulfillment capsule chained to the commitment it confirms; the mock IdP reference implementation and how to wire a real connector.
 - **[Signing key management](key-management.md)** — the actual current signer (HMAC-SHA256, self-attested), not a target design.
 - **[`guard-check` GitHub Action](ci-action.md)** — pre-merge policy lint + regression replay for your guard config; explicit about what it does *not* cover (your live traffic).
 - **[Tenant provisioning](tenant-provisioning.md)** — embedding this package for many customers: one engine instance per tenant (`capsule tenant init`/`upgrade`/`list`), physically separate ledger + manifest + key per tenant.
