@@ -39,7 +39,14 @@ from agent_action_capsule import (
 from ..guards.signing import Signer
 from .errors import CONFIRM_INVALID_STATUS, ConfirmError
 
-__all__ = ["CONFIRMS", "EFFECT_ATTESTATION_CONNECTOR_READ", "build_confirm_capsule"]
+__all__ = [
+    "CONFIRMS",
+    "EFFECT_ATTESTATION_CONNECTOR_READ",
+    "COMMITMENT_TYPE_ORIGIN",
+    "COMMITMENT_TYPE_CONFIRMATION",
+    "commitment_type_label",
+    "build_confirm_capsule",
+]
 
 _SPEC_VERSION = "draft-mih-scitt-agent-action-capsule-02"
 _FORMAT_VERSION = "2"
@@ -56,14 +63,68 @@ EFFECT_ATTESTATION_CONNECTOR_READ = "runtime_claimed"
 
 _VALID_STATUSES = ("confirmed", "failed")
 
+# Finding C (delta-adversarial-report SCOPE 2, 2026-08-18): the engine
+# accepts ANY existing capsule_id as the commitment anchor -- by design,
+# docs/confirm-connector-interface.md's "any capsule with a capsule_id" --
+# so a fulfillment chained to a PRIOR fulfillment (rather than a fresh
+# commitment) is not rejected. It is labeled instead: never silently
+# indistinguishable from a normal origin-commitment chain, readable
+# directly off the new capsule's own asg_payload without a second ledger
+# scan.
+COMMITMENT_TYPE_ORIGIN = "origin"
+COMMITMENT_TYPE_CONFIRMATION = "confirmation"
+
+
+def commitment_type_label(commitment_capsule: dict) -> str:
+    """Classify the commitment anchor's own chain state (Finding C).
+
+    ``COMMITMENT_TYPE_CONFIRMATION`` when the capsule being cited as a
+    commitment is itself a prior *fulfillment* capsule produced by this
+    module -- the laundering shape the adversarial pass found accepted
+    without complaint. ``COMMITMENT_TYPE_ORIGIN`` otherwise.
+
+    ``chain.relation == CONFIRMS`` alone is NOT a reliable fulfillment
+    marker: it's shared, registry-level vocabulary ("the most common chain
+    link: attempted -> confirmed") that other modules use for their own,
+    unrelated parent links (e.g. ``judge/capsules.py`` chains a judgment
+    capsule to its session-close capsule with the same relation). The
+    reliable signal, already established by
+    ``examples/conversation_outcome_demo.py``'s own fulfillment lookup, is
+    the combination: ``chain.relation == CONFIRMS`` *and*
+    ``asg_payload.connector_type`` present -- only ``build_confirm_capsule``
+    ever sets that field. This does not change what the engine accepts; it
+    changes what the record says about what it accepted.
+    """
+    anchor_chain = commitment_capsule.get("chain") or {}
+    anchor_payload = commitment_capsule.get("asg_payload") or {}
+    if anchor_chain.get("relation") == CONFIRMS and anchor_payload.get("connector_type"):
+        return COMMITMENT_TYPE_CONFIRMATION
+    return COMMITMENT_TYPE_ORIGIN
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _resolve_timestamp(observed_at: str | None) -> str:
+    """The capsule's own ``timestamp`` is the connector's ``observed_at``
+    verbatim when given -- recorded honestly, never clamped to "now" and
+    never reordered for being stale (Finding D, delta-adversarial-report
+    SCOPE 2: freshness/ordering is deliberately not this layer's gate; the
+    ``runtime_claimed`` grade is the signal an operator reads, and silently
+    "fixing" a stale timestamp would hide that signal instead of surfacing
+    it). An operator who needs a freshness requirement enforces it at the
+    connector or CLI layer, upstream of this function -- see
+    docs/confirm-connector-interface.md. Falls back to the current time
+    only when the connector reports no ``observed_at`` at all.
+    """
+    return observed_at or _utc_now()
+
+
 def build_confirm_capsule(
     *,
     commitment_capsule_id: str,
+    commitment_type: str,
     operator: str,
     developer: str,
     connector_type: str,
@@ -86,6 +147,11 @@ def build_confirm_capsule(
     yet settled is a connector returning ``None``, not a call to this
     function (``ConfirmIngestEngine.ingest``, ``engine.py``).
 
+    ``commitment_type`` is required, not defaulted -- ``commitment_type_label``
+    computes it from the anchor capsule the caller already fetched, so
+    there is no code path that silently records ``"origin"`` for an anchor
+    nobody checked (Finding C).
+
     Requires a live ``signer`` -- callers MUST NOT call this when the
     signing key is unavailable (gating doc §1: "an unsigned record is not a
     record"); that fail-closed gate lives in ``ConfirmIngestEngine``, one
@@ -106,7 +172,7 @@ def build_confirm_capsule(
 
     verb = f"confirm.{predicate}"
     resolved_action_id = action_id or f"{verb}/{uuid.uuid4()}"
-    timestamp = observed_at or _utc_now()
+    timestamp = _resolve_timestamp(observed_at)
 
     chain = Chain(parent_capsule_id=commitment_capsule_id, relation=CONFIRMS)
     capsule_obj = Capsule(
@@ -122,7 +188,12 @@ def build_confirm_capsule(
         chain=chain,
     )
     body = capsule_obj.to_dict()
-    asg_payload: dict = {"connector_type": connector_type, "subject": subject, "predicate": predicate}
+    asg_payload: dict = {
+        "connector_type": connector_type,
+        "subject": subject,
+        "predicate": predicate,
+        "commitment_type": commitment_type,
+    }
     if manifest_digest is not None:
         asg_payload["manifest_digest"] = manifest_digest
     body["asg_payload"] = asg_payload

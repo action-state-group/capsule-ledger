@@ -17,7 +17,7 @@ from enum import Enum
 
 from ..guards.signing import Signer, SigningKeyUnavailable
 from ..ledger.api import LedgerAPI
-from .capsule import CONFIRMS, build_confirm_capsule
+from .capsule import CONFIRMS, build_confirm_capsule, commitment_type_label
 from .connector import ConfirmConnector
 from .errors import CONFIRM_COMMITMENT_NOT_FOUND, CONFIRM_SIGNER_UNAVAILABLE
 
@@ -115,6 +115,7 @@ class ConfirmIngestEngine:
 
         capsule = build_confirm_capsule(
             commitment_capsule_id=commitment_capsule_id,
+            commitment_type=commitment_type_label(commitment.capsule),
             operator=commitment.capsule.get("operator", ""),
             developer=commitment.capsule.get("developer", ""),
             connector_type=self._connector.connector_type,
