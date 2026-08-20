@@ -38,6 +38,12 @@ different command than the one that wrote it — a write path that only checks
 itself isn't verification. Full walkthrough, with every command's exact
 output: [`docs/tutorials/01-your-first-ledger.md`](docs/tutorials/01-your-first-ledger.md).
 
+Want to see the guard deny something real, not a scripted fixture? Run
+`python -m capsule_ledger.examples.tau2_airline_reference --all` — it
+replays real agent tool-call trajectories (one live run, four tau2-bench
+committed multi-model transcripts) through the guard, offline, no API key.
+See [`docs/reference/tau2-airline-reference.md`](docs/reference/tau2-airline-reference.md).
+
 ## Onboarding your own agent
 
 Four ways to hook a real agent up to a capsule-ledger instance (Claude Code,
@@ -55,6 +61,13 @@ inventing them** — Goose and Dapr have no integration code in this repo yet.
   self-contained HTML report. The report's cited records travel only in the shared link's URL
   fragment (after `#`), never server-side or fetched — the page re-derives its own numbers and
   re-verifies every cited capsule's digest from that fragment when opened.
+- `capsule_ledger/audit_report/` — `capsule report --period <range> --audience <internal|counterparty|auditor>`:
+  a period, audience-scoped record in three blocks — what was promised (accepted declarations, scope
+  census), what happened (per-outcome coverage as N of M with the Enforced-by/Evidenced-by pair, a
+  not-claimable register, deferral aging), and can I check it (every cited row resolves to a capsule id
+  and an offline `capsule verify --bundle` command — no network, no permission from anyone, required).
+  Hand-running this against your own ledger is the whole capability, open source and free
+  forever — nothing about it is a preview or a subset of anything larger.
 - `capsule_ledger/cli/` — the `capsule` command line (git-verb shaped: `log`, `show`, `verify`, `bundle`, `fold`, ...).
 - `capsule_ledger/mcp/` — an MCP advisory server exposing the same ledger, folds, and guards to agent harnesses (nine read-only tools, plus `intent_declare` — the only tool that writes).
 - `capsule_ledger/vectors/` — pinned test vectors: known-answer results, determinism probes, and MUST-FAIL cases.

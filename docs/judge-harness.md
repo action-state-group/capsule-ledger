@@ -1,7 +1,8 @@
 # The judge harness
 
 **Status: Scorer shell + prompt
-digest-pinning + judgment capsules + MANUAL spot-check adjudication.
+digest-pinning + full-pinned judgment capsules + MANUAL spot-check
+adjudication + judge drift check + calibration harness seam.
 
 The judge is a generic model-assisted recorded-claims engine: it reads
 evidence (a conversation session's turns, per the [conversation-capsule
@@ -20,19 +21,70 @@ the harness's job is everything those frameworks don't do: pinning exactly
 which prompt+label-set produced a claim, recording the evidence range as a
 verifiable capsule, and chaining a human's spot-check disposition to it.
 
-## The three record types
+## The four record types
 
 | Event | Built by | Shape |
 |---|---|---|
-| `judge_judgment` | `judge.build_judgment_capsule` | model id, prompt id + `prompt_digest`, evidence range (session id + turn capsule ids, + session digest once closed), label (from the prompt's closed `label_set`), `confidence_micros` (integer, 0–1,000,000 — floats are not digest-safe), optional `target_speaker_role` |
+| `judge_judgment` | `judge.build_judgment_capsule` | model id, prompt id + `prompt_digest`, evidence range (session id + turn capsule ids, + session digest once closed), label (from the prompt's closed `label_set`), `confidence_micros` (integer, 0–1,000,000 — floats are not digest-safe), optional `target_speaker_role`, and the full **judge pin** (below) |
 | `judge_adjudication` | `judge.build_adjudication_capsule` | a real `disposition` block (`human_disposed=True`, `approver="human"`), chained to the judgment it disposes of |
 | `judge_prompt_activated` | `judge.build_judge_prompt_activation_capsule` | a judge prompt/label-set change — same `epoch_opens` chain-of-epochs shape as `policy/activation.py`'s manifest activation |
+| `judge_drift_check` | `judge.build_judge_drift_check_capsule` | a pinned judge re-run over its own cited evidence, sealed match-or-delta — chained `confirms` to the judgment it checks |
 
 Every judgment answers "who judged the judge, with what prompt, on what
 evidence" directly from the capsule — no side lookup. Evidence content is
 never on a capsule (H2 invariant): only the evidence *range* (turn capsule
 ids + session digest) is recorded; a `Scorer` reads the actual text wherever
 it already lives (the caller's own payload store).
+
+## The judge pin
+
+A `judge_judgment` capsule's `detail.judge_pin` block is the full pin —
+sealed once, never retrofittable, so it carries everything a later drift
+check or calibration pass needs:
+
+| Field | Meaning |
+|---|---|
+| `judge_pin_digest` | the pin's own identity — a digest over exactly the reproducible call shape (model id, model version, sampling params, prompt digest). Two judgments with the same digest are, by definition, the same pinned judge. |
+| `model_id` / `model_version` | the model identity (`model_version` optional — a `Scorer` that can't report a version still produces a valid, just less specific, pin) |
+| `sampling_params` | the call's sampling shape, digest-safe values only (int/str/bool — a float param like temperature must be pre-scaled by the caller, e.g. `{"temperature_micros": 700_000}`, same discipline `confidence` → `confidence_micros` uses) |
+| `prompt_digest` | the digest-pinned prompt (also present at `detail.prompt_digest`) |
+| `adjudication_sampling_rate_micros` | the harness's own declared policy — what fraction of judgments get a human spot-check (optional) |
+| `measured_agreement_rate_micros` | the point-in-time measured agreement rate for this exact pin (`judge.compute_judge_calibration_stats`, re-derivable from the ledger — omitted, never a fabricated 0%, when this pin has no adjudicated judgments yet) |
+| `external_proof` | an optional typed reference (`judge.ExternalProofRef`) to an external cryptographic proof artifact (e.g. zkML) backing the model computation — never the artifact itself, only a pointer. Absent today; the slot exists so attaching one later needs no format change. |
+
+`judge_pin_digest`, `model_id`, and `prompt_digest` are always present;
+everything else is omitted (not `null`) when not given.
+
+## The judge drift check
+
+`JudgeHarness.check_drift(judgment=..., evidence=...)` re-runs the harness's
+own scorer/prompt over the SAME evidence a sealed judgment already cited,
+and always seals a `judge_drift_check` capsule — match or delta, never a
+silent disagreement. `drifted` is true when either the re-run's own
+`judge_pin_digest` differs from the original (this isn't even the same judge
+anymore — e.g. a silent model upgrade) or the pin matches but the label
+differs (the same judge disagreed with itself). Both the original and
+re-run label are recorded on the sealed capsule either way, so "what
+drifted" is answerable from the ledger alone, not just a boolean.
+
+Checking drift against a judgment sealed before this pin landed raises
+`JUDGE_PIN_MISSING` — there is no reproducible identity to check against.
+
+## The calibration harness seam
+
+`judge.compute_judge_calibration_stats(ledger, judge_pin_digest)` folds a
+ledger's own judgment/adjudication/drift-check history into plain measured
+stats (`JudgeCalibrationStats`: judgment/adjudication/drift counts,
+`agreement_rate`, `drift_rate`) for one judge pin — every field re-derivable
+by re-scanning the ledger, never a stored/asserted value.
+`JudgeHarness.run()` calls this automatically to populate
+`measured_agreement_rate_micros` on each new judgment.
+
+This module computes only plain descriptive stats — no calibration
+*weighting* scheme lives here or anywhere in this repo. It is the consumer
+seam the flagship record-grounding benchmark (τ²-bench, landing with the
+public demo) will feed once it exists; until then it operates over whatever
+judgments/adjudications a ledger already has.
 
 ## The `Scorer` seam
 
