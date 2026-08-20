@@ -107,9 +107,10 @@ class NotClaimableRow:
 @dataclass(frozen=True)
 class DeferralRow:
     """One entry in the deferral/shadow-queue aging list (design §3.6 item
-    2: "the kelly lesson: a deferral rotting invisibly is the failure mode;
-    the report is where it becomes visible"). ``age_label`` is rendered
-    ("14d"), never a bare timestamp -- aging is the whole point of the row."""
+    2: a deferral rotting invisibly is the failure mode this row exists to
+    catch -- the report is where it becomes visible). ``age_label`` is
+    rendered ("14d"), never a bare timestamp -- aging is the whole point of
+    the row."""
 
     offer_id: str
     response_capsule_id: str
