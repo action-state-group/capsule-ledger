@@ -41,6 +41,7 @@ from . import (
     log_cmd,
     manifest_cmds,
     payload_cmd,
+    report_cmd,
     show_cmd,
     telemetry_cmd,
     tenant_cmds,
@@ -87,6 +88,7 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
         console_cmd.add_parser(sub)
         payload_cmd.add_parser(sub)
         confirm_cmds.add_parser(sub)
+        report_cmd.add_parser(sub)
 
     return parser
 
