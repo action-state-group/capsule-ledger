@@ -103,6 +103,54 @@ proves independently of vendor trust, and a plain API read proves only that
 the connector claims this, not that anyone can verify it without trusting
 the connector.
 
+## Commitment-type labeling — read this before choosing a commitment anchor
+
+Any capsule with a `capsule_id` may anchor a confirmation (see "The shape"
+above) — the engine does not require the anchor to be a fresh intent/hold
+capsule. It also does not reject an anchor that is itself a *prior
+fulfillment capsule* (`chain.relation == "confirms"`): chaining a
+confirmation to another confirmation is accepted, because rejecting it would
+require a type check the MVP scope does not need (an operator who can call
+this interface already has ledger write access; nothing crosses a security
+boundary by doing this).
+
+What the engine does instead is **label it, honestly, on the record**: every
+fulfillment capsule's `asg_payload.commitment_type` is `"confirmation"` when
+its own commitment anchor is itself a prior fulfillment, and `"origin"`
+otherwise (`capsule_ledger.confirm.commitment_type_label`). A chain built by
+repeatedly reusing the newest fulfillment as the next "commitment" is
+readable directly off each record — no second ledger scan needed to notice
+it — rather than being silently indistinguishable from a normal
+commitment-anchored chain.
+
+`chain.relation == "confirms"` alone does **not** mean the anchor is a
+fulfillment capsule — it's shared registry vocabulary other modules use for
+their own unrelated parent links (e.g. a judgment capsule chained to its
+session-close capsule). `commitment_type_label` also requires
+`asg_payload.connector_type` to be present, since only this module's own
+`build_confirm_capsule` ever sets it.
+
+## Freshness is not this layer's job
+
+`observed_at` is recorded exactly as the connector reports it. The engine
+does not check it against the commitment's own timestamp, against wall
+clock time, or against any other confirmation already recorded for the same
+commitment — a stale or out-of-order timestamp is sealed onto the
+fulfillment capsule verbatim, same as a fresh one.
+
+This is deliberate, not an oversight: the ingester's job is to record what
+the third system claims, honestly, at its `runtime_claimed` grade (see
+above) — not to second-guess or silently correct the claim's timing. The
+grade is the signal an operator reads; clamping a stale `observed_at` to
+"now," or rejecting it, would hide that signal instead of surfacing it, and
+would make the record say something the third system didn't actually say.
+
+**If you need a freshness requirement, enforce it upstream of this
+interface** — in the connector (reject/flag reads older than some bound
+before returning a `ConfirmObservation`) or at the CLI/caller layer — never
+by asking `ConfirmIngestEngine` or `build_confirm_capsule` to reorder or
+filter what it records.
+
 ## The reference implementation: `MockIdPConnector`
 
 `capsule_ledger.confirm.connectors.MockIdPConnector` is a deterministic,

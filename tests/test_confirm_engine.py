@@ -117,6 +117,38 @@ def test_signer_unavailable_fails_closed_without_appending(store, signer):
     assert after == before  # fail closed: nothing recorded, not even a partial capsule
 
 
+def test_commitment_type_labeled_on_the_ingested_capsule(store, signer):
+    """Finding C (delta-adversarial-report SCOPE 2): the engine still
+    accepts a prior fulfillment capsule as the "commitment" for a new
+    ingestion (any capsule_id may anchor a confirmation -- see
+    docs/confirm-connector-interface.md) but never silently records it the
+    same way as a fresh origin commitment."""
+    origin = _commitment(store, signer)
+    connector = MockIdPConnector()
+    connector.set_state(
+        subject="user-42", predicate="mfa_enabled", status="confirmed",
+        external_ref="idp-evt-origin", observed_at="2026-08-12T00:00:00Z",
+    )
+    engine = ConfirmIngestEngine(ledger=store, connector=connector, signer_provider=lambda: signer)
+    first = engine.ingest(origin["capsule_id"], subject="user-42", predicate="mfa_enabled")
+    assert first.capsule["asg_payload"]["commitment_type"] == "origin"
+
+    fulfillment_id = first.capsule["capsule_id"]
+    connector2 = MockIdPConnector()
+    connector2.set_state(
+        subject="user-42", predicate="mfa_enabled", status="confirmed",
+        external_ref="idp-evt-reuse", observed_at="2026-08-12T00:05:00Z",
+    )
+    engine2 = ConfirmIngestEngine(ledger=store, connector=connector2, signer_provider=lambda: signer)
+    second = engine2.ingest(fulfillment_id, subject="user-42", predicate="mfa_enabled")
+
+    # Still accepted -- MVP does not reject this shape -- but labeled, not
+    # silently indistinguishable from a normal origin-anchored chain:
+    assert second.status == ConfirmStatus.RECORDED
+    assert second.capsule["chain"]["parent_capsule_id"] == fulfillment_id
+    assert second.capsule["asg_payload"]["commitment_type"] == "confirmation"
+
+
 def test_failed_confirmation_is_recorded_honestly(store, signer):
     commitment = _commitment(store, signer)
     connector = MockIdPConnector()

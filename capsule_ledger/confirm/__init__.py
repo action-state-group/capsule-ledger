@@ -9,7 +9,14 @@ Reference implementation ships against a mock IdP
 real integration (Okta, Entra, a payments processor) implements instead --
 see ``docs/confirm-connector-interface.md``.
 """
-from .capsule import CONFIRMS, EFFECT_ATTESTATION_CONNECTOR_READ, build_confirm_capsule
+from .capsule import (
+    COMMITMENT_TYPE_CONFIRMATION,
+    COMMITMENT_TYPE_ORIGIN,
+    CONFIRMS,
+    EFFECT_ATTESTATION_CONNECTOR_READ,
+    build_confirm_capsule,
+    commitment_type_label,
+)
 from .connector import ConfirmConnector, ConfirmObservation
 from .engine import ConfirmDecision, ConfirmIngestEngine, ConfirmStatus
 from .errors import (
@@ -22,6 +29,9 @@ from .errors import (
 __all__ = [
     "CONFIRMS",
     "EFFECT_ATTESTATION_CONNECTOR_READ",
+    "COMMITMENT_TYPE_ORIGIN",
+    "COMMITMENT_TYPE_CONFIRMATION",
+    "commitment_type_label",
     "build_confirm_capsule",
     "ConfirmConnector",
     "ConfirmObservation",

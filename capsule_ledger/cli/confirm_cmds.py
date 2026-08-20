@@ -30,10 +30,26 @@ __all__ = ["add_parser"]
 _KNOWN_CONNECTORS = ("mock-idp",)
 
 
-def _build_mock_connector(args: argparse.Namespace) -> MockIdPConnector:
+def _parse_evidence_json(raw: str | None) -> tuple[dict | None, str | None]:
+    """Parse ``--evidence-json``, returning ``(value, error)`` instead of
+    letting a malformed payload raise ``json.JSONDecodeError`` straight
+    through ``main()`` as a Python traceback (Finding G,
+    delta-adversarial-report SCOPE 2). No capsule is built either way --
+    the crash always happened before the engine was called -- this only
+    changes whether the caller sees a clean, actionable message or a
+    traceback.
+    """
+    if not raw:
+        return None, None
+    try:
+        return json.loads(raw), None
+    except json.JSONDecodeError as exc:
+        return None, f"--evidence-json is not valid JSON: {exc}"
+
+
+def _build_mock_connector(args: argparse.Namespace, evidence: dict | None) -> MockIdPConnector:
     connector = MockIdPConnector()
     if args.status is not None:
-        evidence = json.loads(args.evidence_json) if args.evidence_json else None
         connector.set_state(
             subject=args.subject,
             predicate=args.predicate,
@@ -65,6 +81,11 @@ def _cmd_confirm_ingest(args: argparse.Namespace) -> int:
         print("capsule confirm ingest: --observed-at is required together with --status", file=sys.stderr)
         return 2
 
+    evidence, evidence_error = _parse_evidence_json(args.evidence_json)
+    if evidence_error is not None:
+        print(f"capsule confirm ingest: {evidence_error}", file=sys.stderr)
+        return 2
+
     key_id = args.key_id or env_get(_KEY_ID_ENV)
     secret_text = args.secret or env_get(_SECRET_ENV)
     if not key_id or not secret_text:
@@ -75,7 +96,7 @@ def _cmd_confirm_ingest(args: argparse.Namespace) -> int:
         return 2
     signer = LocalSigner(key_id=key_id, secret=secret_text.encode("utf-8"))
 
-    connector = _build_mock_connector(args)
+    connector = _build_mock_connector(args, evidence)
 
     with open_ledger(ledger_path) as store:
         engine = ConfirmIngestEngine(ledger=store, connector=connector, signer_provider=lambda: signer)
