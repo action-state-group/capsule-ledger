@@ -7,11 +7,11 @@ record a GRC member opens monthly and an auditor opens annually.
     capsule report --pack <dir> --ledger <path> --period <since>/<until> \\
         --audience {internal,counterparty,auditor} [--out report.txt]
 
-Hand-running this against your own ledger is the OSS engine, free forever
+Hand-running this against your own ledger is open source, free forever
 (build plan Phase 4 item 4, ``docs/oss-project-scope.md``'s operator-
 independence test): this command is the whole verify-it-yourself surface,
-not a stripped preview of a fuller operated one. **v1 only**: the "can I
-check it" block lists every cited row for a human (or a script) to
+the full capability, not a subset of anything larger. **v1 only**: the
+"can I check it" block lists every cited row for a human (or a script) to
 spot-check by hand; the canonical-id-seeded sampler (v2) is deliberately
 not built here -- it sits behind G-IP2 (build plan gate table).
 """

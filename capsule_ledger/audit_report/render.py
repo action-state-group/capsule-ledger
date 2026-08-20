@@ -5,15 +5,12 @@ what happened / can I check it. No table-widget dependency -- this is
 meant to be readable pasted into an email or a ticket, same reasoning
 ``cli/format.py``'s helpers already follow.
 
-**Tier line (build plan Phase 4 item 4).** The footer states plainly that
-hand-running this command is OSS, free forever, and describes -- generically,
-never by product/brand name (see ``docs/oss-project-scope.md``'s own
-convention) -- what an *operated* service on top of the same records would
-add: a scheduled/always-on run, a cross-window track record, and a
-countersigned report record (a second signature from a non-producer after
-independent recomputation, which a hand run cannot produce by
-construction). "Same engine, same records, same offline check either way"
--- never "OSS has fewer features" (design's honest-sentence rule).
+**Footer line (build plan Phase 4 item 4).** States plainly that
+hand-running this command is open source, free forever, and that every
+block above and the offline check below are already the full capability
+-- nothing in this report is a preview or a subset of something larger.
+"Same engine, same records, same offline check" -- never "OSS has fewer
+features" (design's honest-sentence rule).
 """
 from __future__ import annotations
 
@@ -22,13 +19,10 @@ from .model import PeriodReport
 __all__ = ["render_text"]
 
 _TIER_LINE = (
-    "capsule report, hand-run on your own files, is OSS -- free forever, and this "
-    "command is the whole verify-it-yourself surface: every block above and the "
-    "offline check below are already the full capability. A scheduled/always-on run, "
-    "a cross-window track record, or a countersigned report record (a second "
-    "signature from someone other than the producer, after independent "
-    "recomputation) would need an operated service on top of these same records -- "
-    "not a different, more-featured report."
+    "capsule report, hand-run on your own files, is open source -- free forever. "
+    "This command is the whole verify-it-yourself surface: every block above and "
+    "the offline check below are already the full capability, not a preview or a "
+    "subset of anything larger. Nothing here is held back."
 )
 
 
