@@ -53,6 +53,8 @@ def build_refusal_capsule(
     labelled_item_label: str | None = None,
     timestamp: str | None = None,
     action_id: str | None = None,
+    chain_parent: str | None = None,
+    chain_relation: str | None = None,
 ) -> dict:
     if "REFUSED" not in (verdict.forward, verdict.backward):
         raise ValueError("a refusal capsule requires at least one side of the verdict pair to be REFUSED")
@@ -86,4 +88,6 @@ def build_refusal_capsule(
         detail=detail,
         timestamp=timestamp,
         action_id=action_id or f"compiler.refusal/{statement_digest}",
+        chain_parent=chain_parent,
+        chain_relation=chain_relation,
     )

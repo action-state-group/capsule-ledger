@@ -13,13 +13,16 @@ cold and have verify -- checked with the same network-blocked Node harness
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+from agent_action_capsule.contracts import is_hex64
 
 from capsule_ledger.cli.main import main
+from capsule_ledger.compiler.vocabulary import REFUSAL_REASON_CODES
 from capsule_ledger.examples.plan_containment_demo.demo import (
     DEFAULT_SEED,
     load_plan,
@@ -82,6 +85,108 @@ def test_run_a_attained_with_full_coverage(tmp_path):
     assert fold["coverage_judged"] == "1 of 1 sessions judged"
     assert fold["coverage_agreement"] == "1 of 1 judged sessions reached agreement"
     assert fold["coverage_confirmed"] == "1 of 1 agreements confirmed"
+
+
+# -- Run A: the compiler-vocabulary showcase (P6a) -----------------------------
+# `[ldg-cs-p6a-refusal-and-instrument-cases]`: the demo shipped exactly one
+# refusal (Run B's forward `deny`) and P6 requires at least two, of the more
+# interesting kind -- a COMPILER refusal ("this statement cannot be mapped",
+# no dispatch, no user, never simulated) plus a MAPPABLE-WITH-INSTRUMENTATION
+# case that names a genuinely missing instrument. These tests are the RED
+# side of RED-before-green: on `main` before this task, `run_a().compiler_showcase`
+# does not exist at all and every assertion below fails or errors.
+
+
+def test_run_a_ships_a_compiler_refusal_with_zero_free_prose_and_a_named_reason(tmp_path):
+    result = run_a(str(tmp_path / "store"))
+    by_id = {r.capsule_id: r for r in result.records}
+    refusal = by_id[result.capsule_ids["compiler_refusal"]]
+
+    assert refusal.capsule["action_type"] == "fyi"
+    detail = refusal.capsule["asg_payload"]["detail"]
+    # Zero free prose: exactly the refusal capsule's fixed shape, nothing
+    # else -- no sentence-shaped field could sneak in unnoticed.
+    assert set(detail.keys()) == {"verdict_class", "statement_digest", "reason_code", "labelled_item"}
+    assert detail["verdict_class"] == {"forward": "REFUSED", "backward": "REFUSED"}
+    assert is_hex64(detail["statement_digest"])
+    assert detail["reason_code"] in REFUSAL_REASON_CODES
+    # The labelled item is a short slug (a name), never a sentence.
+    assert detail["labelled_item"]["kind"] in {"proxy", "instrumentation"}
+    assert re.fullmatch(r"[a-z][a-z0-9_]*", detail["labelled_item"]["label"])
+
+    # No prose anywhere on the sealed capsule -- the human-readable
+    # rendering lives only in the terminal/proposal layer, never on-capsule.
+    blob = json.dumps(refusal.capsule)
+    for prose in ("recommendation was made", "a person acted", "made them act"):
+        assert prose not in blob
+
+
+def test_run_a_compiler_refusal_is_never_dispatched_and_never_a_decision_capsule(tmp_path):
+    """The compiler refusal is a declare-time event -- distinguishable from
+    Run B's forward refusal by structure alone, without narration: it never
+    carries `constraints`/`disposition` (those are act-time-only fields on a
+    `decide`-typed capsule) and cites no dispatched action."""
+    result = run_a(str(tmp_path / "store"))
+    by_id = {r.capsule_id: r for r in result.records}
+    refusal = by_id[result.capsule_ids["compiler_refusal"]]
+    assert "constraints" not in refusal.capsule
+    assert "disposition" not in refusal.capsule
+
+
+def test_run_a_with_instrumentation_case_names_an_instrument_genuinely_absent_from_this_run(tmp_path):
+    result = run_a(str(tmp_path / "store"))
+    with_instrumentation = next(p for p in result.compiler_showcase if p.needs_instrumentation)
+    assert with_instrumentation.missing_instrument == "employee_decline_event"
+    assert with_instrumentation.backward_verdict == "WITH-INSTRUMENTATION"
+    assert "MISSING INSTRUMENT" in with_instrumentation.rationale
+
+    # Mechanically confirm the instrument really is absent from this run's
+    # own sealed records, rather than trusting the proposal's own claim.
+    responses = [
+        (r.capsule["asg_payload"]["detail"])
+        for r in result.records
+        if r.capsule.get("asg_payload", {}).get("event") == "compiler.response"
+    ]
+    assert responses, "expected at least one compiler.response capsule in Run A"
+    assert all(d["response_class"] == "accepted" for d in responses)
+    assert not any(d["response_class"] in ("declined", "deferred") for d in responses)
+
+
+def test_run_a_compiler_showcase_rows_are_visibly_distinguishable(tmp_path):
+    """A reader can tell which row blocked/refused a claim and which named a
+    gap, from the glyph and verdict alone -- without being told."""
+    result = run_a(str(tmp_path / "store"))
+    assert len(result.compiler_showcase) == 2
+    refused = next(p for p in result.compiler_showcase if p.is_refused)
+    with_instrumentation = next(p for p in result.compiler_showcase if p.needs_instrumentation)
+    assert refused is not with_instrumentation
+    assert refused.status_glyph() == "✗"
+    assert with_instrumentation.status_glyph() == "⚠"
+    assert refused.backward_verdict == "REFUSED"
+    assert with_instrumentation.backward_verdict == "WITH-INSTRUMENTATION"
+
+
+def test_demo_now_ships_two_distinguishable_refusal_vocabularies_in_one_run(tmp_path):
+    """The P6 acceptance line itself: Run B's forward refusal (`the guard
+    declined to dispatch`) and Run A's compiler refusal (`this statement
+    cannot be mapped`) both exist, both render, and are structurally
+    distinct -- one is a `decide`-typed capsule with `disposition.decision
+    == "reject"`, the other an `fyi`-typed `compiler.refusal` event."""
+    run_a_result = run_a(str(tmp_path / "store-a"))
+    run_b_result = run_b(str(tmp_path / "store-b"))
+
+    forward_refusal = next(
+        r for r in run_b_result.records if r.capsule_id == run_b_result.capsule_ids["write_export_user_list"]
+    )
+    assert forward_refusal.capsule["disposition"]["decision"] == "reject"
+    assert forward_refusal.capsule["action_type"] == "decide"
+
+    compiler_refusal = next(
+        r for r in run_a_result.records if r.capsule_id == run_a_result.capsule_ids["compiler_refusal"]
+    )
+    assert compiler_refusal.capsule["action_type"] == "fyi"
+    assert "disposition" not in compiler_refusal.capsule
+    assert compiler_refusal.capsule["asg_payload"]["detail"]["verdict_class"]["backward"] == "REFUSED"
 
 
 # -- Run B: the departure ------------------------------------------------------
@@ -165,7 +270,7 @@ def test_reproducible_byte_identical_and_matches_committed_fixture(tmp_path, run
 # -- acceptance: `capsule bundle --with-viewer` per run, cold-openable --------
 
 
-@pytest.mark.parametrize("fixture_path,expected_records", [(FIXTURE_A, 9), (FIXTURE_B, 8), (FIXTURE_C, 7)])
+@pytest.mark.parametrize("fixture_path,expected_records", [(FIXTURE_A, 12), (FIXTURE_B, 8), (FIXTURE_C, 7)])
 def test_capsule_bundle_verifies_clean(tmp_path, fixture_path, expected_records):
     out_path = tmp_path / "bundle.json"
     rc = main(["bundle", "--ledger", str(fixture_path), "--out", str(out_path)])
@@ -193,7 +298,7 @@ def test_capsule_bundle_with_viewer_produces_a_permalink_and_offline_html(tmp_pa
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
-@pytest.mark.parametrize("fixture_path,expected_records", [(FIXTURE_A, 9), (FIXTURE_B, 8), (FIXTURE_C, 7)])
+@pytest.mark.parametrize("fixture_path,expected_records", [(FIXTURE_A, 12), (FIXTURE_B, 8), (FIXTURE_C, 7)])
 def test_offline_viewer_opens_cold_and_verifies_with_networking_disabled(tmp_path, fixture_path, expected_records):
     """The literal "stranger opens cold" acceptance bar for EACH run, in
     CI, not just by hand (task text: "each run must produce a capsule
