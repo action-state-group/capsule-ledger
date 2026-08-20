@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Builders for the judge harness's three record types: ``judge_judgment``
-(one per judge run, the model-assisted recorded claim), ``judge_adjudication``
-(a human-disposed spot-check chained to the judgment it disposes of), and
-``judge_prompt_activated`` (a judge prompt/label-set change, capsuled the same
-way a policy-manifest activation is -- ``policy/activation.py``).
+"""Builders for the judge harness's record types: ``judge_judgment`` (one per
+judge run, the model-assisted recorded claim, full-pinned -- see below),
+``judge_adjudication`` (a human-disposed spot-check chained to the judgment
+it disposes of), ``judge_prompt_activated`` (a judge prompt/label-set change,
+capsuled the same way a policy-manifest activation is --
+``policy/activation.py``), and ``judge_drift_check`` (a pinned judge re-run
+over its own cited evidence, sealed match-or-delta).
 
 Every builder here answers the B3 task's own framing: "who judged the judge,
 with what prompt, on what evidence" must be answerable from the ledger alone.
@@ -12,6 +14,28 @@ prompt text -- that lives in the pack/catalog the digest cites), and the
 evidence RANGE (session id + evidence-ranged turn capsule ids, + the session
 digest once the session has closed) -- never the evidence content itself
 (H2 invariant, same as ``conversation/capsules.py``).
+
+**The judge pin (design §6c, item 1).** A judgment capsule's ``detail`` used
+to carry only ``model_id`` + ``prompt_digest`` -- a schema gap with a sealed-
+history cost, since capsules never change once sealed. Every judgment now
+carries a ``judge_pin`` block: a stable ``judge_pin_digest`` identity (over
+model id, model version, sampling params, and prompt digest -- i.e. exactly
+the reproducible call shape, never the point-in-time measured/policy fields
+below), plus ``model_id``, ``model_version``, ``sampling_params``,
+``prompt_digest``, the declared ``adjudication_sampling_rate_micros`` (the
+harness's own policy for how often a judgment gets a human spot-check), and
+the ``measured_agreement_rate_micros`` computed as of this judgment
+(``calibration.py``'s ``compute_judge_calibration_stats``, re-derivable by
+re-scanning the ledger's adjudications for the same ``judge_pin_digest`` --
+never just asserted). ``judge_pin`` also carries an optional typed
+``external_proof`` reference slot (``ExternalProofRef``) so a future
+cryptographic proof of the model computation (zkML) can attach to a judgment
+without a later format change -- absent today, but the field already exists.
+
+No calibration WEIGHTING scheme lives here -- this module (and
+``calibration.py``) only computes and pins plain measured stats (agreement
+rate, drift rate). Any correction or weighting method built on top of these
+numbers is out of scope for this repo.
 
 Judgment capsules are passive ``fyi`` records built via ``guards.capsule``'s
 ``build_event_capsule`` (same mechanism every other administrative record in
@@ -27,6 +51,9 @@ disposed capsules chained to judgments" is literally
 rather than routing through ``build_event_capsule``, which never sets one.
 """
 from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
 
 from agent_action_capsule import (
     AssuranceBlock,
@@ -48,9 +75,13 @@ from .errors import (
     ADJUDICATION_LABEL_MISMATCH,
     CONFIDENCE_OUT_OF_RANGE,
     EMPTY_EVIDENCE_RANGE,
+    EXTERNAL_PROOF_REF_MALFORMED,
     INVALID_SPEAKER_ROLE_TARGET,
+    JUDGE_PIN_MISSING,
     JUDGMENT_NOT_FOUND,
     LABEL_NOT_IN_LABEL_SET,
+    RATE_OUT_OF_RANGE,
+    SAMPLING_PARAM_NOT_DIGEST_SAFE,
     JudgeError,
 )
 from .prompt import JudgePromptDefinition
@@ -60,17 +91,23 @@ __all__ = [
     "EVENT_JUDGMENT",
     "EVENT_ADJUDICATION",
     "EVENT_PROMPT_ACTIVATED",
+    "EVENT_DRIFT_CHECK",
+    "ExternalProofRef",
     "build_judgment_capsule",
     "build_adjudication_capsule",
     "build_judge_prompt_activation_capsule",
+    "build_judge_drift_check_capsule",
     "find_judgments_for_session",
     "find_adjudications_for_judgment",
     "find_latest_prompt_activation",
+    "find_drift_checks_for_judgment",
+    "judge_pin_digest",
 ]
 
 EVENT_JUDGMENT = "judge_judgment"
 EVENT_ADJUDICATION = "judge_adjudication"
 EVENT_PROMPT_ACTIVATED = "judge_prompt_activated"
+EVENT_DRIFT_CHECK = "judge_drift_check"
 
 _SPEC_VERSION = "draft-mih-scitt-agent-action-capsule-02"
 _FORMAT_VERSION = "2"
@@ -102,6 +139,85 @@ def _confidence_micros(confidence: float) -> int:
     return round(confidence * 1_000_000)
 
 
+def _rate_micros(rate: float, *, field: str) -> int:
+    # Same integer-micros discipline as _confidence_micros, generalized for
+    # the pin's two other [0.0, 1.0] rates (adjudication sampling rate,
+    # measured agreement rate).
+    if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not (0.0 <= rate <= 1.0):
+        raise JudgeError(RATE_OUT_OF_RANGE, f"{field} must be a number in [0.0, 1.0]; got {rate!r}")
+    return round(rate * 1_000_000)
+
+
+def _validate_sampling_params(sampling_params: Mapping[str, object] | None) -> dict:
+    if not sampling_params:
+        return {}
+    out: dict = {}
+    for key, value in sampling_params.items():
+        if isinstance(value, float) or not isinstance(value, (int, str, bool)):
+            raise JudgeError(
+                SAMPLING_PARAM_NOT_DIGEST_SAFE,
+                f"sampling_params[{key!r}] = {value!r} is not digest-safe -- only int/str/bool are allowed "
+                "(a float param, e.g. temperature, must be pre-scaled to an integer by the caller, "
+                "same discipline as confidence -> confidence_micros)",
+            )
+        out[key] = value
+    return out
+
+
+@dataclass(frozen=True)
+class ExternalProofRef:
+    """A typed reference to an external cryptographic proof artifact backing
+    a judgment's model computation (e.g. a zkML proof) -- never the artifact
+    itself, only a pointer to it, same "digest the evidence, never carry it"
+    discipline as everywhere else in this module.
+
+    This slot exists so that when proving judge computations becomes
+    practical, a judgment capsule can carry the reference with no format
+    change -- ``proof_system`` names the scheme (e.g. ``"zkml"``),
+    ``artifact_digest`` is a digest of the proof artifact, and
+    ``artifact_locator`` is an optional pointer (URI or similar) to where the
+    artifact itself can be fetched -- never embedded here.
+    """
+
+    proof_system: str
+    artifact_digest: str
+    artifact_locator: str | None = None
+
+    def to_detail(self) -> dict:
+        if not self.proof_system or not isinstance(self.proof_system, str):
+            raise JudgeError(EXTERNAL_PROOF_REF_MALFORMED, "ExternalProofRef.proof_system must be a non-empty string")
+        if not self.artifact_digest or not isinstance(self.artifact_digest, str):
+            raise JudgeError(EXTERNAL_PROOF_REF_MALFORMED, "ExternalProofRef.artifact_digest must be a non-empty string")
+        out = {"proof_system": self.proof_system, "artifact_digest": self.artifact_digest}
+        if self.artifact_locator is not None:
+            out["artifact_locator"] = self.artifact_locator
+        return out
+
+
+def judge_pin_digest(
+    *,
+    model_id: str,
+    model_version: str | None,
+    sampling_params: Mapping[str, object] | None,
+    prompt_digest: str,
+) -> str:
+    """The judge pin's own identity: a digest over exactly the reproducible
+    call shape (model id + version, sampling params, prompt digest) -- never
+    the point-in-time measured/policy fields (adjudication sampling rate,
+    measured agreement rate), which change across runs of the SAME judge.
+    Two judgments with identical inputs here are, by definition, the same
+    pinned judge; this is what ``build_judge_drift_check_capsule`` compares
+    to tell "the judge disagreed" from "this isn't even the same judge
+    anymore" (e.g. a silent model upgrade)."""
+    canonical = {
+        "model_id": model_id,
+        "model_version": model_version,
+        "sampling_params": dict(sampling_params) if sampling_params else {},
+        "prompt_digest": prompt_digest,
+    }
+    return json_digest(canonical)
+
+
 def build_judgment_capsule(
     *,
     prompt: JudgePromptDefinition,
@@ -114,6 +230,9 @@ def build_judgment_capsule(
     chain_parent: str | None = None,
     timestamp: str | None = None,
     action_id: str | None = None,
+    adjudication_sampling_rate: float | None = None,
+    measured_agreement_rate: float | None = None,
+    external_proof: ExternalProofRef | None = None,
 ) -> dict:
     """Seal one judge run as a passive ``fyi`` capsule.
 
@@ -122,6 +241,14 @@ def build_judgment_capsule(
     ``"confirms"`` -- a convenience link, never a substitute for the
     evidence range recorded in ``detail`` (the chain alone can't carry a
     multi-turn evidence range; ``detail.evidence`` is the source of truth).
+
+    ``adjudication_sampling_rate`` is the harness's own declared policy (what
+    fraction of judgments get a human spot-check); ``measured_agreement_rate``
+    is the point-in-time measured stat for this exact judge pin (see
+    ``calibration.compute_judge_calibration_stats`` -- re-derivable from the
+    ledger, never just asserted). Both are optional and, when given, scaled
+    to integer micros (same discipline as ``confidence_micros``) -- see the
+    module docstring's "judge pin" section for the full shape.
     """
     if not evidence.turn_capsule_ids:
         raise JudgeError(EMPTY_EVIDENCE_RANGE, "evidence.turn_capsule_ids must be non-empty -- a judgment needs an evidence range")
@@ -136,6 +263,11 @@ def build_judgment_capsule(
             INVALID_SPEAKER_ROLE_TARGET,
             f"evidence.target_speaker_role must be one of {sorted(SPEAKER_ROLES)} or None; got {evidence.target_speaker_role!r}",
         )
+    sampling_params = _validate_sampling_params(result.sampling_params)
+    prompt_digest = prompt.prompt_digest()
+    pin_digest = judge_pin_digest(
+        model_id=result.model_id, model_version=result.model_version, sampling_params=sampling_params, prompt_digest=prompt_digest
+    )
 
     evidence_detail: dict = {
         "session_id": evidence.session_id,
@@ -144,13 +276,30 @@ def build_judgment_capsule(
     if session_digest is not None:
         evidence_detail["session_digest"] = session_digest
 
+    judge_pin: dict = {
+        "judge_pin_digest": pin_digest,
+        "model_id": result.model_id,
+        "prompt_digest": prompt_digest,
+    }
+    if result.model_version is not None:
+        judge_pin["model_version"] = result.model_version
+    if sampling_params:
+        judge_pin["sampling_params"] = sampling_params
+    if adjudication_sampling_rate is not None:
+        judge_pin["adjudication_sampling_rate_micros"] = _rate_micros(adjudication_sampling_rate, field="adjudication_sampling_rate")
+    if measured_agreement_rate is not None:
+        judge_pin["measured_agreement_rate_micros"] = _rate_micros(measured_agreement_rate, field="measured_agreement_rate")
+    if external_proof is not None:
+        judge_pin["external_proof"] = external_proof.to_detail()
+
     detail: dict = {
         "prompt_id": prompt.prompt_id,
-        "prompt_digest": prompt.prompt_digest(),
+        "prompt_digest": prompt_digest,
         "model_id": result.model_id,
         "label": result.label,
         "confidence_micros": confidence_micros,
         "evidence": evidence_detail,
+        "judge_pin": judge_pin,
     }
     if evidence.target_speaker_role is not None:
         detail["target_speaker_role"] = evidence.target_speaker_role
@@ -196,8 +345,8 @@ def build_adjudication_capsule(
     here either.
 
     Cross-family automated second-opinion judging ("different-family
-    option") and judge-quality folds (kappa/calibration/drift) are the full
-    B3 shape, explicitly Wave 2 -- this is MANUAL adjudication only.
+    option") is the full B3 shape, explicitly Wave 2 -- this is MANUAL
+    adjudication only.
     """
     payload = judgment.get("asg_payload") or {}
     if payload.get("event") != EVENT_JUDGMENT:
@@ -301,6 +450,95 @@ def build_judge_prompt_activation_capsule(
     )
 
 
+def build_judge_drift_check_capsule(
+    *,
+    judgment: dict,
+    rerun_prompt: JudgePromptDefinition,
+    rerun_result: ScoreResult,
+    operator: str,
+    developer: str,
+    signer: Signer,
+    timestamp: str | None = None,
+    action_id: str | None = None,
+) -> dict:
+    """Re-run the pinned judge over the SAME evidence a sealed judgment
+    already cited, and seal the outcome -- match or delta, always sealed,
+    never a silent disagreement (design §6c item 2: "judge drift check").
+
+    ``judgment`` must already carry a full ``judge_pin`` (``JUDGE_PIN_MISSING``
+    otherwise -- a pre-full-pin judgment has no reproducible identity to
+    check drift against). ``drifted`` is true when either the re-run judge's
+    own pin digest differs (this literally isn't the same judge anymore --
+    e.g. a silent model upgrade) or the pin digest matches but the re-run
+    label differs (the SAME judge produced a different answer). Both the
+    original and re-run label/pin are recorded either way -- the delta, not
+    just a boolean, is what "show the drifted case and what it sealed"
+    means.
+    """
+    payload = judgment.get("asg_payload") or {}
+    if payload.get("event") != EVENT_JUDGMENT:
+        raise JudgeError(
+            JUDGMENT_NOT_FOUND,
+            f"capsule {judgment.get('capsule_id')!r} is not a {EVENT_JUDGMENT!r} capsule",
+        )
+    original_detail = payload.get("detail") or {}
+    original_pin = original_detail.get("judge_pin")
+    if not original_pin or not original_pin.get("judge_pin_digest"):
+        raise JudgeError(
+            JUDGE_PIN_MISSING,
+            f"judgment {judgment.get('capsule_id')!r} carries no judge_pin -- drift can only be checked "
+            "against a full-pinned judgment",
+        )
+
+    if rerun_result.label not in rerun_prompt.label_set:
+        raise JudgeError(
+            LABEL_NOT_IN_LABEL_SET,
+            f"rerun_result.label {rerun_result.label!r} is not in prompt {rerun_prompt.prompt_id!r}'s "
+            f"label_set {sorted(rerun_prompt.label_set)}",
+        )
+    rerun_confidence_micros = _confidence_micros(rerun_result.confidence)
+    rerun_sampling_params = _validate_sampling_params(rerun_result.sampling_params)
+    rerun_prompt_digest = rerun_prompt.prompt_digest()
+    rerun_pin_digest = judge_pin_digest(
+        model_id=rerun_result.model_id,
+        model_version=rerun_result.model_version,
+        sampling_params=rerun_sampling_params,
+        prompt_digest=rerun_prompt_digest,
+    )
+
+    original_pin_digest = original_pin["judge_pin_digest"]
+    original_label = original_detail.get("label")
+    pin_matches = rerun_pin_digest == original_pin_digest
+    label_matches = rerun_result.label == original_label
+    drifted = not (pin_matches and label_matches)
+
+    judgment_capsule_id = judgment["capsule_id"]
+    detail: dict = {
+        "judgment_capsule_id": judgment_capsule_id,
+        "original_judge_pin_digest": original_pin_digest,
+        "rerun_judge_pin_digest": rerun_pin_digest,
+        "pin_matches": pin_matches,
+        "original_label": original_label,
+        "rerun_label": rerun_result.label,
+        "label_matches": label_matches,
+        "original_confidence_micros": original_detail.get("confidence_micros"),
+        "rerun_confidence_micros": rerun_confidence_micros,
+        "drifted": drifted,
+    }
+
+    return build_event_capsule(
+        operator=operator,
+        developer=developer,
+        signer=signer,
+        event=EVENT_DRIFT_CHECK,
+        detail=detail,
+        timestamp=timestamp,
+        action_id=action_id or f"judge.drift_check/{judgment_capsule_id}",
+        chain_parent=judgment_capsule_id,
+        chain_relation=CONFIRMS,
+    )
+
+
 def find_judgments_for_session(ledger: LedgerAPI, session_id: str) -> list[LedgerRecord]:
     matches = []
     for record in ledger.scan(ScanQuery(action_type="fyi")):
@@ -317,6 +555,17 @@ def find_adjudications_for_judgment(ledger: LedgerAPI, judgment_capsule_id: str)
     for record in ledger.scan(ScanQuery(action_type="fyi")):
         payload = record.capsule.get("asg_payload") or {}
         if payload.get("event") != EVENT_ADJUDICATION:
+            continue
+        if (payload.get("detail") or {}).get("judgment_capsule_id") == judgment_capsule_id:
+            matches.append(record)
+    return matches
+
+
+def find_drift_checks_for_judgment(ledger: LedgerAPI, judgment_capsule_id: str) -> list[LedgerRecord]:
+    matches = []
+    for record in ledger.scan(ScanQuery(action_type="fyi")):
+        payload = record.capsule.get("asg_payload") or {}
+        if payload.get("event") != EVENT_DRIFT_CHECK:
             continue
         if (payload.get("detail") or {}).get("judgment_capsule_id") == judgment_capsule_id:
             matches.append(record)

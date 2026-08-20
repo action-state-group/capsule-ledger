@@ -23,6 +23,7 @@ what result.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -56,11 +57,24 @@ class ScoreResult:
     """One scorer call's result. ``rationale`` is free text (never placed
     raw on a capsule -- ``capsules.py.build_judgment_capsule`` digests it,
     mirroring ``guards/capsule.py``'s ``ConstraintOutcome.evidence`` ->
-    ``evidence_digest`` pattern)."""
+    ``evidence_digest`` pattern).
+
+    ``model_version`` and ``sampling_params`` feed the judgment capsule's
+    full judge pin (``capsules.py``'s ``judge_pin`` block) -- the exact
+    model identity and call shape that produced ``label``, so a later re-run
+    can be checked against the SAME judge, not just the same ``model_id``
+    family. Both are optional (a ``Scorer`` that can't report them, e.g. a
+    hosted API with no version string, still produces a valid judgment --
+    just a less specific pin). ``sampling_params`` values must be digest-safe
+    (int/str/bool only, never a raw float -- same rule ``confidence`` is
+    scaled to micros for; a caller with a float param like temperature
+    pre-scales it, e.g. ``{"temperature_micros": 700_000}``)."""
 
     label: str
     confidence: float
     model_id: str
+    model_version: str | None = None
+    sampling_params: Mapping[str, int | str | bool] | None = None
     rationale: str | None = None
 
 
