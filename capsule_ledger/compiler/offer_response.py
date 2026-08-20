@@ -62,11 +62,18 @@ def build_offer_capsule(
     signer: Signer,
     timestamp: str | None = None,
     action_id: str | None = None,
+    chain_parent: str | None = None,
+    chain_relation: str | None = None,
 ) -> dict:
     """Seal the offer itself: ``offer_digest`` commits to the offer's own
     content (the recommendation text, the proposed change) without carrying
     that content on-capsule -- same disclose-by-digest discipline as every
-    other payload this codebase digests rather than embeds."""
+    other payload this codebase digests rather than embeds.
+
+    ``chain_parent``/``chain_relation`` are optional, same shape as
+    ``build_event_capsule``'s own -- an offer raised mid-session (as
+    opposed to a standalone declare-time one) can cite the record before it
+    so a reader walking the chain never hits an unexplained gap."""
     _require_offer_digest(offer_digest)
     detail = {"offer_id": offer_id, "offer_digest": offer_digest}
     return build_event_capsule(
@@ -77,6 +84,8 @@ def build_offer_capsule(
         detail=detail,
         timestamp=timestamp,
         action_id=action_id or f"compiler.offer/{offer_id}",
+        chain_parent=chain_parent,
+        chain_relation=chain_relation,
     )
 
 
