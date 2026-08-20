@@ -44,6 +44,44 @@ jobs:
           grep -q '"blocked"' "$DIFF_JSON_PATH" || { echo "expected the epoch-diff to show a verdict delta"; exit 1; }
           echo "guard-check dogfood: both outputs present and non-trivial"
 
+      - name: Set up Python for provisioning a setup instance
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 'Provision a setup instance and accept+promote one outcome (ldg-cs-p3-setup-verbs fixture)'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pip install -e .
+          export CAPSULE_SETUP_SIGNING_KEY_ID=selftest-key
+          export CAPSULE_SETUP_SIGNING_SECRET=selftest-secret-0123456789
+          rm -rf "$RUNNER_TEMP/setup-selftest"
+          mkdir -p "$RUNNER_TEMP/setup-selftest"
+          capsule setup init --project-dir "$RUNNER_TEMP/setup-selftest" --key-id selftest-key --secret selftest-secret-0123456789
+          capsule setup observe --project-dir "$RUNNER_TEMP/setup-selftest" --input tests/fixtures/setup/deployment_positive_control.jsonl --heartbeat-every 0
+          capsule setup propose --project-dir "$RUNNER_TEMP/setup-selftest"
+          capsule setup confirm accept --project-dir "$RUNNER_TEMP/setup-selftest" --outcome-id outcome.remediation_confirmed
+
+      - name: Run guard-check's replay-before-merge step against the provisioned instance
+        id: guard-check-setup-shadow
+        uses: ./.github/actions/guard-check
+        with:
+          setup-project-dir: ${{ runner.temp }}/setup-selftest
+          setup-outcome-id: outcome.remediation_confirmed
+
+      - name: Assert the setup-shadow-json output was actually produced and shaped right
+        shell: bash
+        env:
+          SHADOW_JSON_PATH: ${{ steps.guard-check-setup-shadow.outputs.setup-shadow-json }}
+        run: |
+          set -euo pipefail
+          [ -n "$SHADOW_JSON_PATH" ] || { echo "expected a non-empty setup-shadow-json output"; exit 1; }
+          [ -f "$SHADOW_JSON_PATH" ] || { echo "setup-shadow-json output path does not exist: $SHADOW_JSON_PATH"; exit 1; }
+          grep -q '"outcome_id": "outcome.remediation_confirmed"' "$SHADOW_JSON_PATH" || { echo "expected the shadow report to name the outcome_id"; exit 1; }
+          grep -q '"total": 10' "$SHADOW_JSON_PATH" || { echo "expected 10 historical dispatches replayed (fixture has 10)"; exit 1; }
+          echo "guard-check setup-shadow dogfood: output present and shaped right"
+
   guard-check-catches-regressions:
     runs-on: ubuntu-latest
     steps:
@@ -65,14 +103,33 @@ jobs:
           diff-from: not-a-real-ref
           diff-to: HEAD
 
-      - name: Assert both negative cases actually failed (mutant check)
+      - name: 'Set up an EMPTY setup instance (no accepted outcome) for the setup-shadow negative case'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/setup-selftest-empty/.capsule-setup"
+
+      - name: 'Negative case: setup enforce shadow on an unknown outcome_id must fail'
+        id: bad-setup-shadow
+        continue-on-error: true
+        uses: ./.github/actions/guard-check
+        with:
+          setup-project-dir: ${{ runner.temp }}/setup-selftest-empty
+          setup-outcome-id: outcome.does_not_exist
+
+      - name: Assert all three negative cases actually failed (mutant check)
         shell: bash
         env:
           LINT_OUTCOME: ${{ steps.bad-lint.outcome }}
           DIFF_OUTCOME: ${{ steps.bad-diff.outcome }}
+          SETUP_SHADOW_OUTCOME: ${{ steps.bad-setup-shadow.outcome }}
         run: |
           set -euo pipefail
           ok=1
+          if [ "$SETUP_SHADOW_OUTCOME" != "failure" ]; then
+            echo "REGRESSION: an unknown outcome_id did not fail guard-check's setup-shadow step (outcome: $SETUP_SHADOW_OUTCOME)"
+            ok=0
+          fi
           if [ "$LINT_OUTCOME" != "failure" ]; then
             echo "REGRESSION: malformed fold catalog did not fail guard-check (outcome: $LINT_OUTCOME)"
             ok=0
