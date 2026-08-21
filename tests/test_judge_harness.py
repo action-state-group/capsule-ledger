@@ -100,6 +100,57 @@ def test_adjudicate_appends_a_real_verifiable_adjudication(store, signer):
     assert adjudication_record.capsule["chain"]["parent_capsule_id"] == judgment_record.capsule_id
 
 
+def test_run_pins_the_harness_declared_adjudication_sampling_rate(store, signer):
+    harness = JudgeHarness(
+        ledger=store, prompt=PROMPT, scorer=StaticScorer(default=("agreement_reached", 0.9)),
+        operator=OPERATOR, developer=DEVELOPER, signer_provider=lambda: signer, adjudication_sampling_rate=0.25,
+    )
+    evidence = JudgeEvidence(session_id="sess-1", turn_capsule_ids=("a" * 64,), evidence_text="ev")
+    record = harness.run(evidence=evidence)
+    assert record.capsule["asg_payload"]["detail"]["judge_pin"]["adjudication_sampling_rate_micros"] == 250_000
+
+
+def test_run_measured_agreement_rate_is_unmeasured_then_reflects_real_adjudications(store, signer):
+    harness = _harness(store, signer)
+    evidence = JudgeEvidence(session_id="sess-1", turn_capsule_ids=("a" * 64,), evidence_text="ev")
+
+    first = harness.run(evidence=evidence)
+    # Nothing adjudicated yet under this pin -- unmeasured, not a fabricated 0%.
+    assert "measured_agreement_rate_micros" not in first.capsule["asg_payload"]["detail"]["judge_pin"]
+
+    harness.adjudicate(judgment=first.capsule, label="agreement_reached", agrees_with_judge=True)
+    second = harness.run(evidence=JudgeEvidence(session_id="sess-2", turn_capsule_ids=("b" * 64,), evidence_text="ev2"))
+    # Same judge pin (same scorer/prompt) -- now measured at 100% agreement.
+    assert second.capsule["asg_payload"]["detail"]["judge_pin"]["measured_agreement_rate_micros"] == 1_000_000
+
+
+def test_check_drift_appends_a_real_verifiable_drift_check(store, signer):
+    harness = _harness(store, signer)
+    evidence = JudgeEvidence(session_id="sess-1", turn_capsule_ids=("a" * 64,), evidence_text="ev")
+    judgment_record = harness.run(evidence=evidence)
+
+    drift_record = harness.check_drift(judgment=judgment_record.capsule, evidence=evidence)
+    assert store.verify(drift_record.capsule_id).ok
+    assert drift_record.capsule["asg_payload"]["event"] == "judge_drift_check"
+    assert drift_record.capsule["asg_payload"]["detail"]["drifted"] is False
+    assert drift_record.capsule["chain"]["parent_capsule_id"] == judgment_record.capsule_id
+
+
+def test_check_drift_seals_a_real_delta_when_the_scorer_disagrees_with_itself(store, signer):
+    scorer = StaticScorer(responses={"first-pass": ("agreement_reached", 0.9), "second-pass": ("no_agreement", 0.9)})
+    harness = _harness(store, signer, scorer=scorer)
+    judgment_record = harness.run(evidence=JudgeEvidence(session_id="sess-1", turn_capsule_ids=("a" * 64,), evidence_text="first-pass"))
+
+    drift_record = harness.check_drift(
+        judgment=judgment_record.capsule,
+        evidence=JudgeEvidence(session_id="sess-1", turn_capsule_ids=("a" * 64,), evidence_text="second-pass"),
+    )
+    detail = drift_record.capsule["asg_payload"]["detail"]
+    assert detail["drifted"] is True
+    assert detail["original_label"] == "agreement_reached"
+    assert detail["rerun_label"] == "no_agreement"
+
+
 def test_adjudicate_no_unsigned_window(store, signer):
     harness = _harness(store, signer)
     evidence = JudgeEvidence(session_id="sess-1", turn_capsule_ids=("a" * 64,), evidence_text="ev")
