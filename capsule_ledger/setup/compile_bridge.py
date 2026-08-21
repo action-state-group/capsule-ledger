@@ -28,8 +28,22 @@ def attainment_declaration_for(c: AttainmentCandidate) -> Declaration:
     ``Declaration`` and, via ``compile_declaration``, the identical
     ``PlanDefinition``: the re-derivability property design §2.3 asks for,
     made literal. This is what ``enforce`` calls fresh on every shadow run
-    and every reproduction -- the plan is never itself persisted, only D."""
-    return Declaration(outcome_id=c.outcome_id, statement=c.statement, allowed_actions=(c.action_class,))
+    and every reproduction -- the plan is never itself persisted, only D.
+
+    ``binding={"action_class": c.action_class}`` closes a real gap: without
+    it, ``compile.compile_declaration``'s own fold (``_fold_for_declaration``)
+    never sees an ``action_class`` to filter on, so two attainment
+    candidates that differ only in ``action_class`` compiled to the
+    identical F -- only P moved, never both, which is exactly the drift the
+    compilation record C exists to make visible. Carrying it here is the
+    one-line fix, not a new field: ``Declaration.binding`` and the fold's
+    own read of it already existed."""
+    return Declaration(
+        outcome_id=c.outcome_id,
+        statement=c.statement,
+        allowed_actions=(c.action_class,),
+        binding={"action_class": c.action_class},
+    )
 
 
 def compiled_declaration_for(stored: StoredCandidate) -> CompiledDeclaration:
