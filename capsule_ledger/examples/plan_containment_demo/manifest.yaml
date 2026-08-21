@@ -4,9 +4,28 @@
 # `asg_payload.manifest_digest` (guards/engine.py:75, comment :87), the same
 # existing mechanism `default.yaml` uses, cited at just this one wicket.
 #
+# `packs` below records that this scenario runs under the SAME
+# `asg/payments-safety/1.0.0` pack the demo's onboarding step installs
+# (`ldg-cs-p6c-partner-demo-hardening`) -- its non-money obligations
+# (dedupe, verify-before-dispatch) already run unconditionally inside
+# `GuardEngine.check()` regardless of pack, and `demo.py` now threads this
+# SAME pack's `caps_minor` config into every run's engine (see
+# `load_governing_pack()`), so "which pack governed this" is checkable off
+# the manifest, not just asserted in prose. The pack's cap stays `n/a` on
+# every write here -- none of `enable_mfa`/`verify_mfa_state`/
+# `send_enrollment_link`/`export_user_list` carries a money amount -- which
+# is the honest, correct answer for a cap keyed on `money.transfer`, not a
+# gap.
+#
 # wicket digest: `capsule_ledger/examples/plan_containment_demo/wickets/plan_containment.yaml`
+# pack digest: `capsule_ledger/packs/catalog/payments-safety/pack.yaml`
 manifest_id: plan_containment_demo/1.0.0
 wickets:
   - wicket_id: plan_containment/1.0.0
     engine: wicket/1
     digest: e7293ad59cc82a709c425e13834d50e977dc1080b75e220123acda5f86a189f9
+packs:
+  - pack_id: asg/payments-safety/1.0.0
+    engine: pack/1
+    digest: 81278051db5ca3755956b7adeaea727d333d12a0c14c51c7e030f15ea8b9666f
+    mode: observe
