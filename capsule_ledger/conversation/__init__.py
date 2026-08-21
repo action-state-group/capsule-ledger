@@ -22,8 +22,11 @@ complete, closed vocabulary a judge may target.
 Public surface:
 - ``build_turn_capsule`` / ``build_session_close_capsule`` -- pure capsule
   builders (no ledger I/O), same layering as ``guards.capsule``.
-- ``find_session_turns`` / ``find_session_close`` -- read a session back off
-  any ``LedgerAPI``.
+- ``build_turn_reference_capsule`` -- a typed cross-reference from a turn to
+  capsule(s) it gave rise to (e.g. a caller's own tool-call capsules),
+  resolved back via ``find_turn_reference``.
+- ``find_session_turns`` / ``find_session_close`` / ``find_turn_reference``
+  -- read a session (or a cross-reference) back off any ``LedgerAPI``.
 - ``session_root`` / ``turn_inclusion_proof`` / ``verify_turn_inclusion`` --
   the Merkle session-digest primitives (``.merkle``).
 - ``ConversationSession`` -- the stateful recorder: seals and appends each
@@ -34,12 +37,15 @@ from __future__ import annotations
 from .capsules import (
     EVENT_CONVERSATION_TURN,
     EVENT_SESSION_CLOSE,
+    EVENT_TURN_REFERENCE,
     SPEAKER_ROLES,
     InvalidSpeakerRole,
     build_session_close_capsule,
     build_turn_capsule,
+    build_turn_reference_capsule,
     find_session_close,
     find_session_turns,
+    find_turn_reference,
 )
 from .merkle import session_root, turn_inclusion_proof, verify_turn_inclusion
 from .session import ConversationSession, SessionAlreadyClosedError
@@ -48,11 +54,14 @@ __all__ = [
     "SPEAKER_ROLES",
     "EVENT_CONVERSATION_TURN",
     "EVENT_SESSION_CLOSE",
+    "EVENT_TURN_REFERENCE",
     "InvalidSpeakerRole",
     "build_turn_capsule",
     "build_session_close_capsule",
+    "build_turn_reference_capsule",
     "find_session_turns",
     "find_session_close",
+    "find_turn_reference",
     "session_root",
     "turn_inclusion_proof",
     "verify_turn_inclusion",
