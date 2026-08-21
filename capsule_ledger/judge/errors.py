@@ -16,9 +16,17 @@ CONFIDENCE_OUT_OF_RANGE = "confidence_out_of_range"
 INVALID_SPEAKER_ROLE_TARGET = "invalid_speaker_role_target"
 EMPTY_EVIDENCE_RANGE = "empty_evidence_range"
 
+# Judge-pin (full-pin) build-time reasons.
+RATE_OUT_OF_RANGE = "rate_out_of_range"
+SAMPLING_PARAM_NOT_DIGEST_SAFE = "sampling_param_not_digest_safe"
+EXTERNAL_PROOF_REF_MALFORMED = "external_proof_ref_malformed"
+
 # Adjudication-build-time reasons.
 JUDGMENT_NOT_FOUND = "judgment_not_found"
 ADJUDICATION_LABEL_MISMATCH = "adjudication_label_mismatch"
+
+# Drift-check build-time reasons.
+JUDGE_PIN_MISSING = "judge_pin_missing"
 
 # Scorer reasons.
 SCORER_LABEL_NOT_IN_LABEL_SET = "scorer_label_not_in_label_set"

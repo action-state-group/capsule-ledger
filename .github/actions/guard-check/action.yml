@@ -67,6 +67,22 @@ inputs:
     description: 'Fold group key value for --fold entries in the epoch-diff (passed as capsule diff --key)'
     required: false
     default: ''
+  setup-project-dir:
+    description: >-
+      A `capsule setup init`-provisioned project directory (holding
+      `.capsule-setup/`) to replay-before-merge. Omit to skip the
+      `capsule setup enforce shadow` step entirely.
+    required: false
+    default: ''
+  setup-outcome-id:
+    description: >-
+      Newline-separated accepted outcome_id(s) to shadow-replay (repeatable
+      `--outcome-id`). Required together with setup-project-dir -- each one
+      gets its own `capsule setup enforce shadow` run, replaying every
+      historical dispatch through the outcome's compiled plan and reporting
+      what it would have refused (design §3.5's replay-before-merge).
+    required: false
+    default: ''
 
 outputs:
   dry-run-report:
@@ -75,6 +91,9 @@ outputs:
   diff-json:
     description: 'Path to the JSON epoch-diff output (empty if the epoch-diff step was skipped)'
     value: ${{ steps.epoch-diff.outputs.json-path }}
+  setup-shadow-json:
+    description: 'Path to a combined JSON array of every setup-outcome-id shadow report (empty if the step was skipped)'
+    value: ${{ steps.setup-shadow.outputs.json-path }}
 
 runs:
   using: 'composite'
@@ -162,6 +181,43 @@ runs:
         if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
           {
             echo '### capsule diff: epoch-boundary guard-behavior delta'
+            echo '```json'
+            cat "$json_path"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: 'Replay-before-merge: capsule setup enforce shadow (design §3.5)'
+      id: setup-shadow
+      if: inputs.setup-project-dir != '' && inputs.setup-outcome-id != ''
+      shell: bash
+      env:
+        SETUP_PROJECT_DIR: ${{ inputs.setup-project-dir }}
+        SETUP_OUTCOME_ID: ${{ inputs.setup-outcome-id }}
+      run: |
+        set -euo pipefail
+        reports=()
+        while IFS= read -r outcome_id; do
+          [ -z "$outcome_id" ] && continue
+          out_path="$RUNNER_TEMP/setup-shadow-$(echo "$outcome_id" | tr '/.' '__').json"
+          capsule setup enforce shadow --project-dir "$SETUP_PROJECT_DIR" --outcome-id "$outcome_id" --out "$out_path"
+          reports+=("$out_path")
+        done <<< "$SETUP_OUTCOME_ID"
+        json_path="$RUNNER_TEMP/setup-shadow.json"
+        {
+          echo "["
+          first=1
+          for report in "${reports[@]}"; do
+            if [ "$first" = "1" ]; then first=0; else echo ","; fi
+            cat "$report"
+          done
+          echo "]"
+        } > "$json_path"
+        echo "json-path=$json_path" >> "$GITHUB_OUTPUT"
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          {
+            echo '### capsule setup enforce shadow: replay-before-merge'
+            echo 'What every accepted outcome above would have refused, replayed against observed history.'
             echo '```json'
             cat "$json_path"
             echo '```'
