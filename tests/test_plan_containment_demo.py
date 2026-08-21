@@ -25,16 +25,21 @@ from capsule_ledger.cli.main import main
 from capsule_ledger.compiler.vocabulary import REFUSAL_REASON_CODES
 from capsule_ledger.examples.plan_containment_demo.demo import (
     DEFAULT_SEED,
+    MANIFEST_PATH,
+    load_governing_pack,
     load_plan,
     run_a,
     run_b,
     run_c,
+    run_combined,
 )
+from capsule_ledger.policy import load_manifest_file
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 FIXTURE_A = FIXTURE_DIR / "plan_containment_run_a.jsonl"
 FIXTURE_B = FIXTURE_DIR / "plan_containment_run_b.jsonl"
 FIXTURE_C = FIXTURE_DIR / "plan_containment_run_c.jsonl"
+FIXTURE_COMBINED = FIXTURE_DIR / "plan_containment_combined.jsonl"
 HARNESS = Path(__file__).parent / "js_harness_offline_viewer.mjs"
 
 
@@ -57,6 +62,64 @@ def test_the_same_plan_and_manifest_digest_govern_all_three_runs():
         "read_user_directory", "send_enrollment_link", "enable_mfa", "verify_mfa_state",
     )
     assert manifest_digest
+
+
+# -- the payments-safety pack genuinely governs this scenario -----------------
+# `[ldg-cs-p6c-partner-demo-hardening]`: the doc's onboarding step installs
+# `asg/payments-safety/1.0.0` but the scenario governed a totally unrelated
+# outcome, with no checkable link between the two. These assert the link is
+# now real: the SAME pack's digest is cited on the manifest, and its
+# `caps_minor` config (not a re-typed copy) is what every write's `caps`
+# constraint is evaluated against.
+
+
+def test_the_manifest_cites_the_same_pack_the_doc_installs():
+    manifest = load_manifest_file(MANIFEST_PATH)
+    assert len(manifest.packs) == 1
+    pack_ref = manifest.packs[0]
+    assert pack_ref.pack_id == "asg/payments-safety/1.0.0"
+    assert pack_ref.mode == "observe"
+
+    pack = load_governing_pack()
+    assert pack.pack_id == pack_ref.pack_id
+    # The cited digest is real and independently recomputable from the
+    # actual catalog file, never hand-typed -- if the pack ever changes,
+    # this drifts and fails loudly rather than silently going stale.
+    assert pack_ref.digest == pack.definition_digest()
+
+
+def test_every_write_is_evaluated_against_the_real_pack_caps_config(tmp_path):
+    """Every write's `caps` constraint reports `n/a` because none of these
+    actions carry a money amount -- the honest answer for a cap keyed on
+    `money.transfer`, not evidence the pack is disconnected. `dedupe` and
+    `verify_before_dispatch` (the pack's non-money obligations) already run
+    unconditionally and are asserted as `pass`/`n/a` (never absent)."""
+    result = run_a(str(tmp_path / "store"))
+    decision_records = [r for r in result.records if r.capsule.get("action_type") == "decide"]
+    assert decision_records, "Run A must attempt at least one write"
+    for record in decision_records:
+        constraints = {c["id"]: c["result"] for c in record.capsule["constraints"]}
+        assert constraints.keys() == {"dedupe", "caps", "verify_before_dispatch", "plan_containment"}
+        assert constraints["caps"] == "n/a"
+        assert constraints["dedupe"] in ("pass", "fail")
+        assert constraints["verify_before_dispatch"] in ("pass", "n/a", "fail")
+
+
+def test_caps_minor_threaded_into_the_engine_is_the_packs_own_value(tmp_path):
+    """Mechanically confirm the `n/a` above is because the action's class
+    (``tool.call``) never matches the pack's own configured key
+    (``money.transfer``) -- not because ``caps_minor`` was never threaded
+    into the engine at all. Same real pack config ``manifest.yaml``'s
+    digest cites, not a value re-declared in this test."""
+    pack = load_governing_pack()
+    caps_wicket = next(w for w in pack.constraints if w.check == "caps")
+    assert caps_wicket.config["caps_minor"] == {"money.transfer": 1000000}
+
+    result = run_a(str(tmp_path / "store"))
+    write = next(r for r in result.records if r.capsule.get("action_type") == "decide")
+    assert write.capsule["asg_payload"]["action_class"] == "tool.call"
+    caps_constraint = next(c for c in write.capsule["constraints"] if c["id"] == "caps")
+    assert caps_constraint["result"] == "n/a"
 
 
 # -- Run A: contained and attained --------------------------------------------
@@ -252,10 +315,77 @@ def test_run_c_not_attained_despite_full_containment(tmp_path):
     assert fold["coverage_agreement"] == "0 of 1 judged sessions reached agreement"
 
 
+# -- Combined: the coverage denominator carries weight -------------------------
+# `[ldg-cs-p6c-partner-demo-hardening]`: standalone Run A/B/C each report a
+# trivial "1 of 1 sessions judged", which does not demonstrate why a
+# denominator matters. `run_combined` puts all three seeded sessions on ONE
+# ledger -- no new or fabricated data, the same three deterministic chains --
+# so the fold's own coverage line reflects a real batch.
+
+
+def test_run_combined_coverage_denominator_is_three_not_one(tmp_path):
+    result = run_combined(str(tmp_path / "store"))
+    fold = result.fold
+    assert fold["coverage_judged"] == "3 of 3 sessions judged"
+    assert fold["coverage_agreement"] == "1 of 3 judged sessions reached agreement"
+    assert fold["coverage_confirmed"] == "1 of 1 agreements confirmed"
+    assert fold["attained"] is True
+    assert len(fold["sessions"]) == 3
+
+
+def test_run_combined_contains_exactly_run_a_plus_run_b_plus_run_c(tmp_path):
+    """The combined ledger is the same three deterministic chains, not a
+    re-simulation: same action ids, same count, same per-run ordering. Not
+    byte-identical capsule-for-capsule against the standalone runs, though
+    -- a write's sealed ``checkpoint.tree_size`` honestly reflects how many
+    records are in ITS ledger at that moment, which is larger once Run A's
+    (and, for Run C's write, Run A's + Run B's) records already sit in the
+    SHARED store; that is a real, correct difference, not a bug."""
+    combined = run_combined(str(tmp_path / "store-combined"))
+    solo_a = run_a(str(tmp_path / "store-a"))
+    solo_b = run_b(str(tmp_path / "store-b"))
+    solo_c = run_c(str(tmp_path / "store-c"))
+
+    assert len(combined.records) == len(solo_a.records) + len(solo_b.records) + len(solo_c.records)
+
+    combined_action_ids = {r.capsule.get("action_id") for r in combined.records if r.capsule.get("action_id")}
+    solo_action_ids = {
+        r.capsule.get("action_id")
+        for r in (*solo_a.records, *solo_b.records, *solo_c.records)
+        if r.capsule.get("action_id")
+    }
+    assert combined_action_ids == solo_action_ids
+
+    # Every record but tree_size-bearing decision capsules IS byte-identical
+    # across the shared vs. separate stores (same seed, same timestamps).
+    # A decision capsule's own `capsule_id`/`asg_signature` are themselves
+    # downstream of `tree_size` (both are computed over the full sealed
+    # content), so those two are stripped alongside it for this comparison.
+    def _sans_tree_size(capsule: dict) -> dict:
+        payload = capsule.get("asg_payload") or {}
+        if "checkpoint" not in payload:
+            return capsule
+        stripped = dict(capsule)
+        stripped["asg_payload"] = {**payload, "checkpoint": {**payload["checkpoint"], "tree_size": None}}
+        stripped.pop("capsule_id", None)
+        stripped.pop("asg_signature", None)
+        return stripped
+
+    combined_by_action = {r.capsule.get("action_id"): _sans_tree_size(r.capsule) for r in combined.records}
+    for solo_result in (solo_a, solo_b, solo_c):
+        for r in solo_result.records:
+            action_id = r.capsule.get("action_id")
+            if action_id is None:
+                continue
+            assert combined_by_action[action_id] == _sans_tree_size(r.capsule)
+
+
 # -- reproducibility ------------------------------------------------------------
 
 
-@pytest.mark.parametrize("run_fn,fixture_path", [(run_a, FIXTURE_A), (run_b, FIXTURE_B), (run_c, FIXTURE_C)])
+@pytest.mark.parametrize(
+    "run_fn,fixture_path", [(run_a, FIXTURE_A), (run_b, FIXTURE_B), (run_c, FIXTURE_C), (run_combined, FIXTURE_COMBINED)]
+)
 def test_reproducible_byte_identical_and_matches_committed_fixture(tmp_path, run_fn, fixture_path):
     assert fixture_path.exists(), f"missing committed fixture: {fixture_path}"
     result_1 = run_fn(str(tmp_path / "store1"), seed=DEFAULT_SEED)
@@ -270,7 +400,9 @@ def test_reproducible_byte_identical_and_matches_committed_fixture(tmp_path, run
 # -- acceptance: `capsule bundle --with-viewer` per run, cold-openable --------
 
 
-@pytest.mark.parametrize("fixture_path,expected_records", [(FIXTURE_A, 12), (FIXTURE_B, 8), (FIXTURE_C, 7)])
+@pytest.mark.parametrize(
+    "fixture_path,expected_records", [(FIXTURE_A, 12), (FIXTURE_B, 8), (FIXTURE_C, 7), (FIXTURE_COMBINED, 27)]
+)
 def test_capsule_bundle_verifies_clean(tmp_path, fixture_path, expected_records):
     out_path = tmp_path / "bundle.json"
     rc = main(["bundle", "--ledger", str(fixture_path), "--out", str(out_path)])
@@ -281,7 +413,7 @@ def test_capsule_bundle_verifies_clean(tmp_path, fixture_path, expected_records)
     assert all(v["ok"] for v in bundle["verification"].values())
 
 
-@pytest.mark.parametrize("fixture_path", [FIXTURE_A, FIXTURE_B, FIXTURE_C])
+@pytest.mark.parametrize("fixture_path", [FIXTURE_A, FIXTURE_B, FIXTURE_C, FIXTURE_COMBINED])
 def test_capsule_bundle_with_viewer_produces_a_permalink_and_offline_html(tmp_path, fixture_path, capsys):
     out_path = tmp_path / "bundle.json"
     rc = main(["bundle", "--ledger", str(fixture_path), "--out", str(out_path), "--with-viewer"])
@@ -302,7 +434,11 @@ def test_capsule_bundle_with_viewer_produces_a_permalink_and_offline_html(tmp_pa
 def test_offline_viewer_opens_cold_and_verifies_with_networking_disabled(tmp_path, fixture_path, expected_records):
     """The literal "stranger opens cold" acceptance bar for EACH run, in
     CI, not just by hand (task text: "each run must produce a capsule
-    bundle --with-viewer cold-openable permalink")."""
+    bundle --with-viewer cold-openable permalink"). Not parametrized over
+    ``FIXTURE_COMBINED`` -- it is a UNION of three independent session
+    chains, not one walkable sequence, so its own "Sequence" ritual stage
+    honestly reports ``skip`` rather than ``pass``; see
+    ``test_offline_viewer_opens_cold_for_the_combined_ledger`` below."""
     out_path = tmp_path / "bundle.json"
     rc = main(["bundle", "--ledger", str(fixture_path), "--out", str(out_path), "--with-viewer"])
     assert rc == 0
@@ -320,4 +456,29 @@ def test_offline_viewer_opens_cold_and_verifies_with_networking_disabled(tmp_pat
     stages = {s["name"]: s["status"] for s in parsed["ritual"]["stages"]}
     assert stages["Integrity"] == "pass"
     assert stages["Sequence"] == "pass"
+    assert stages["Cross-check"] == "pass"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+def test_offline_viewer_opens_cold_for_the_combined_ledger(tmp_path):
+    """Same cold-open acceptance bar, for the 27-record combined ledger --
+    Integrity and Cross-check still pass; Sequence honestly reports `skip`
+    because three independent session chains, each starting its own first
+    record with no parent, is not one walkable sequence."""
+    out_path = tmp_path / "bundle.json"
+    rc = main(["bundle", "--ledger", str(FIXTURE_COMBINED), "--out", str(out_path), "--with-viewer"])
+    assert rc == 0
+    viewer_path = tmp_path / "bundle.html"
+
+    result = subprocess.run(["node", str(HARNESS), str(viewer_path)], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    parsed = json.loads(result.stdout)
+
+    assert parsed["loadError"] is None
+    assert parsed["networkAttempts"] == []
+    assert parsed["fragmentEmbedded"] is True
+    assert parsed["recordCount"] == 27
+
+    stages = {s["name"]: s["status"] for s in parsed["ritual"]["stages"]}
+    assert stages["Integrity"] == "pass"
     assert stages["Cross-check"] == "pass"
