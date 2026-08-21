@@ -34,11 +34,14 @@ __all__ = [
     "SPEAKER_ROLES",
     "EVENT_CONVERSATION_TURN",
     "EVENT_SESSION_CLOSE",
+    "EVENT_TURN_REFERENCE",
     "InvalidSpeakerRole",
     "build_turn_capsule",
     "build_session_close_capsule",
+    "build_turn_reference_capsule",
     "find_session_turns",
     "find_session_close",
+    "find_turn_reference",
 ]
 
 # Interim speaker-role vocabulary (pre-VAC; migrates when the Birkholz VAC
@@ -51,6 +54,7 @@ SPEAKER_ROLES = frozenset({"user", "assistant", "human-agent"})
 
 EVENT_CONVERSATION_TURN = "conversation_turn"
 EVENT_SESSION_CLOSE = "conversation_session_close"
+EVENT_TURN_REFERENCE = "conversation_turn_reference"
 
 
 class InvalidSpeakerRole(ValueError):
@@ -171,6 +175,52 @@ def build_session_close_capsule(
     )
 
 
+def build_turn_reference_capsule(
+    *,
+    turn_capsule_id: str,
+    referenced_capsule_ids: Sequence[str],
+    operator: str,
+    developer: str,
+    signer: Signer,
+    timestamp: str | None = None,
+    action_id: str | None = None,
+) -> dict:
+    """A typed cross-reference from one turn to the capsule(s) it gave rise
+    to (e.g. tool-call capsules a caller's own pipeline recorded for that
+    turn) -- built via the same ``build_event_capsule`` every other passive
+    record in this module uses, not a new mechanism.
+
+    Chains to the turn with relation ``"confirms"`` (the reference only
+    makes sense once the turn it names already exists), so a caller that
+    already has ``turn_capsule_id`` from ``ConversationSession.record_turn``
+    can call this once per turn that produced one or more referenced
+    capsules -- letting a caller resolve any of those capsules back to the
+    turn that prompted it via ``find_turn_reference``, without requiring the
+    referenced capsule itself to carry the link (which is often built and
+    appended before the turn is even known -- e.g. a tool call dispatched
+    live, while the turn is only reconstructable after the fact from a full
+    trajectory).
+    """
+    if not referenced_capsule_ids:
+        raise ValueError("referenced_capsule_ids must be non-empty")
+
+    detail = {
+        "turn_capsule_id": turn_capsule_id,
+        "referenced_capsule_ids": list(referenced_capsule_ids),
+    }
+    return build_event_capsule(
+        operator=operator,
+        developer=developer,
+        signer=signer,
+        event=EVENT_TURN_REFERENCE,
+        detail=detail,
+        timestamp=timestamp,
+        action_id=action_id or f"conversation.turn_reference/{turn_capsule_id}",
+        chain_parent=turn_capsule_id,
+        chain_relation="confirms",
+    )
+
+
 def _matches(record: LedgerRecord, event: str, session_id: str) -> bool:
     payload = record.capsule.get("asg_payload") or {}
     if payload.get("event") != event:
@@ -199,3 +249,20 @@ def find_session_close(ledger: LedgerAPI, session_id: str) -> LedgerRecord | Non
         if _matches(record, EVENT_SESSION_CLOSE, session_id):
             latest = record
     return latest
+
+
+def find_turn_reference(ledger: LedgerAPI, capsule_id: str) -> LedgerRecord | None:
+    """The turn-reference capsule (if any) that names ``capsule_id`` among
+    its ``referenced_capsule_ids`` -- lets a caller resolve any capsule
+    (e.g. a tool-call capsule from an unrelated pipeline) back to the
+    conversation turn that gave rise to it. ``None`` if no such reference
+    was ever recorded.
+    """
+    for record in ledger.scan(ScanQuery(action_type="fyi")):
+        payload = record.capsule.get("asg_payload") or {}
+        if payload.get("event") != EVENT_TURN_REFERENCE:
+            continue
+        detail = payload.get("detail") or {}
+        if capsule_id in (detail.get("referenced_capsule_ids") or []):
+            return record
+    return None
