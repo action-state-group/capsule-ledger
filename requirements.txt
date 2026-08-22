@@ -11,10 +11,11 @@
 #   pip install -e .[dev]
 #
 # LOAD-BEARING PINS (do not loosen without regenerating the committed fixture):
-#   capsule-emit==0.3.2        — tests/fixtures/two_agents_sim_ledger.jsonl was
-#                                generated with this exact release; a different
-#                                version WILL change capsule bytes and break the
-#                                byte-match test in test_two_agents_example.py.
+#   capsule-emit==0.4.0        — tests/fixtures/two_agents_sim_ledger.jsonl was
+#                                regenerated against this exact release; a
+#                                different version WILL change capsule bytes
+#                                and break the byte-match test in
+#                                test_two_agents_example.py.
 #   agent-action-capsule==0.1.0 — the verification path runs through this library;
 #                                any version change requires a full re-vector-run.
 #   PyYAML==6.0.3              — YAML parsing on the verification path.
@@ -26,27 +27,25 @@
 #   3. Confirm: pytest tests/test_two_agents_example.py -v
 #   4. Commit fixture + this file together.
 #
-# PIN OUT OF SYNC WITH pyproject.toml, DELIBERATELY, PENDING A RELEASE
-# (2026-08-21, [ldg-mmr-consume-neutral-core]): pyproject.toml's
-# `dependencies` now requires capsule-emit[checkpoint]>=0.4.0 (the neutral
-# CLL/MMR core capsule_ledger.cli.bundle_cmd and capsule_ledger.conversation.
-# merkle both import directly, not just the examples/fixture path below).
-# 0.4.0 is not released to PyPI yet -- confirmed empirically that bumping to
-# it changes tests/fixtures/two_agents_sim_ledger.jsonl bytes (0.3.2 -> 0.4.0
-# candidate breaks test_committed_fixture_matches_freshly_regenerated_output)
-# -- so this pin is held at 0.3.2 until a decision is made on regenerating
-# that fixture. This file does NOT currently produce an installable
-# environment for pyproject.toml's `dependencies` as a whole; it still
-# documents the exact-pin verification path for everything except
-# capsule-emit. See ledger/outbox.md [ldg-mmr-consume-neutral-core].
+# PIN BUMP + FIXTURE REGEN (2026-08-22, [ldg-release-train-cll], absorbing
+# [ldg-mmr-consume-neutral-core]): bumped 0.3.2 -> 0.4.0 and regenerated the
+# fixture. Verified the byte diff is confined to the two capsule-emit-minted
+# capsules (intent_declare/intent_fulfill) and is caused solely by the new
+# `canonicalization_id` field landing in capsule-emit's compute_attestation
+# between 0.3.2 and main -- spec-driven (RFC 8785 canonicalization), not
+# drift; capsule_id/signature/parent_capsule_id differences are downstream
+# digest consequences of that one field. Per Steven's DECISION, 2026-08-22:
+# regenerate and accept. Tested against capsule-emit's `main` (514e0d3) +
+# scitt-cose's `main` (9cebba4) via editable install, since neither 0.4.0 nor
+# 0.2.1 is on PyPI yet -- this pin resolves the moment capsule-emit cuts that
+# release. See ledger/outbox.md [ldg-release-train-cll].
 
 # --- verification path (§7a-5 mandatory exact pins) -------------------------
 agent-action-capsule==0.1.0
 PyYAML==6.0.3
 
-# --- fixture generation path (LOAD-BEARING — see header; version held at
-# 0.3.2 pending the capsule-emit 0.4.0 release + fixture-regen decision) ----
-capsule-emit==0.3.2
+# --- fixture generation path (LOAD-BEARING — see header) --------------------
+capsule-emit==0.4.0
 
 # --- transitive dependencies (full freeze for complete reproducibility) ------
 annotated-types==0.8.0

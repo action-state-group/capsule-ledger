@@ -23,14 +23,14 @@ classifiers = [
 # root computation, checkpoint format) this package consumes from
 # capsule_emit.checkpoint rather than forking (Amendment E, 2026-08-21; see
 # docs/oss-project-scope.md). Required, not optional: capsule_ledger.cli.
-# bundle_cmd's completeness certificate and capsule_ledger.conversation.
-# merkle's session digest both depend on it directly, not just the examples
-# path. PENDING: 0.4.0 is not yet released to PyPI (as of 2026-08-21 this
-# only exists on capsule-emit's unmerged `cll-extract-mmr-to-capsule-emit`
-# branch, which itself depends on an unreleased scitt-cose>=0.2.0) -- this
-# floor will not resolve via `pip install` until capsule-emit cuts that
-# release. See ledger/outbox.md [ldg-mmr-consume-neutral-core] for the
-# tracking decision.
+# bundle_cmd's completeness certificate, capsule_ledger.conversation.merkle's
+# session digest, and capsule_ledger.mmr.checkpoint's sign/register/verify
+# path all depend on it directly, not just the examples path. PENDING:
+# 0.4.0 is on capsule-emit's `main` (version bumped, checkpoint subpackage
+# present, requires scitt-cose>=0.2.0 which is on scitt-cose's `main` at
+# 0.2.1) but neither is released to PyPI yet -- this floor will not resolve
+# via `pip install` until those releases are cut. See
+# ledger/outbox.md [ldg-release-train-cll] for the tracking decision.
 dependencies = [
     "agent-action-capsule>=0.1.0",
     "capsule-emit[checkpoint]>=0.4.0",
