@@ -60,6 +60,16 @@ __all__ = [
 COMPILER_ID = "capsule_ledger.compiler"
 COMPILER_VERSION = "0.1.0"
 
+# The disposition value an attainment fold's filter actually matches. NOT
+# ``verdict_class == "executed"`` -- per the -02 disposition spec
+# (``guards/capsule.py``'s own docstring, D1 2026-08-05), ``verdict_class``
+# is legitimately ABSENT for a clean allow, so nothing in this codebase ever
+# writes "executed" there (``guards/capsule.py``'s ``_DISPOSITION_BY_OUTCOME``
+# maps ALLOW to ``verdict_class=None``). ``decision="accept"`` is what ALLOW
+# actually writes, and is what a fold must filter on to ever match a real
+# sealed capsule.
+_ATTAINED_DECISION = "accept"
+
 
 class CompilerError(ValueError):
     """A declaration cannot be compiled -- malformed input, not a refusal.
@@ -114,6 +124,23 @@ class Declaration:
                     f"precondition gates action {gated.action!r}, which is not in allowed_actions "
                     f"{self.allowed_actions}"
                 )
+        # The P/F correspondence guarantee, enforced at the one place both
+        # halves are still visible together: binding["action_class"] is what
+        # _fold_for_declaration used to key its filter on (now folded into
+        # deriving from allowed_actions directly -- see that function), and
+        # allowed_actions is what the forward plan admits. A binding that
+        # names an action_class outside allowed_actions is exactly the
+        # disjoint-declaration defect class ([ldg-compiler-pf-
+        # noncorrespondence]): the guard would admit an action the fold
+        # could never count, and vice versa, and both halves would still
+        # compile clean.
+        bound_action_class = self.binding.get("action_class")
+        if bound_action_class is not None and bound_action_class not in self.allowed_actions:
+            raise CompilerError(
+                f"binding[\"action_class\"]={bound_action_class!r} is not in allowed_actions "
+                f"{self.allowed_actions} -- the forward guard and the backward fold would disagree "
+                "about which action this declaration governs"
+            )
 
 
 @dataclass(frozen=True)
@@ -188,12 +215,12 @@ def _fold_for_declaration(d: Declaration) -> FoldDefinition:
     partitions as finely as what a stranger reading the ledger can actually
     see.
     """
-    action_classes = sorted({b for b in (d.binding.get("action_class"),) if b is not None})
+    action_classes = sorted(d.allowed_actions)
     reads = (
         ReadField(path="developer", erasure_class="commitment-ok"),
-        ReadField(path="disposition.verdict_class", erasure_class="commitment-ok"),
+        ReadField(path="disposition.decision", erasure_class="commitment-ok"),
     )
-    filters = [FilterClause(field="disposition.verdict_class", op="eq", value="executed")]
+    filters = [FilterClause(field="disposition.decision", op="eq", value=_ATTAINED_DECISION)]
     if action_classes:
         reads = reads + (ReadField(path="asg_payload.action_class", erasure_class="commitment-ok"),)
         filters.append(FilterClause(field="asg_payload.action_class", op="in", value=action_classes))
@@ -320,14 +347,59 @@ def seal_compilation_record(
 class DriftResult:
     """The C check (design/build-plan Phase 2 acceptance line: "mutate the
     compiler so P and F derive from different declarations and show the C
-    check goes RED. If that mutant passes, C is decoration.")."""
+    check goes RED. If that mutant passes, C is decoration.").
+
+    ``pf_incoherent`` is a DIFFERENT property from ``p_drifted``/
+    ``f_drifted``, checked against ``recompiled`` alone, with no sealed
+    record involved at all: digest equality only ever proves the sealed P
+    and F were co-derived from THIS compile run, never that they mean the
+    same thing ([ldg-compiler-pf-noncorrespondence] -- a guard admitting
+    ``remediation`` and a fold counting ``escalation`` can be honestly
+    co-derived, sealed, and digest-match themselves on every future
+    recompile, forever, while never once agreeing about which action this
+    declaration governs). ``drifted`` is True if EITHER a sealed digest no
+    longer matches the fresh recompile OR the fresh recompile is itself
+    incoherent -- a compilation record is not trustworthy just because it
+    reproduces byte-for-byte."""
 
     drifted: bool
     p_drifted: bool
     f_drifted: bool
     d_drifted: bool
+    pf_incoherent: bool
     recomputed_d_digest: str
     sealed_d_digest: str
+
+
+def _pf_incoherent(recompiled: CompiledDeclaration) -> bool:
+    """True when the recompile's own forward plan and backward fold do not
+    agree on which action classes this declaration governs. A compiler
+    regression that reintroduces [ldg-compiler-pf-noncorrespondence] (e.g. a
+    future ``_fold_for_declaration`` edit that goes back to keying off a
+    single ``binding`` entry instead of the full ``allowed_actions`` set)
+    would still produce P and F that are internally well-formed and
+    self-consistent across recompiles -- ``p_drifted``/``f_drifted`` alone
+    would never catch it, because there is nothing external to disagree
+    with. This check looks INSIDE the recompile instead of only comparing
+    its digest to a sealed one."""
+    plan = recompiled.forward.plan
+    fold = recompiled.backward.fold
+    if plan is None or fold is None:
+        return False
+    fold_action_classes: set[str] = set()
+    for clause in fold.filter:
+        if clause.field != "asg_payload.action_class":
+            continue
+        values = clause.value if isinstance(clause.value, (list, tuple, set)) else [clause.value]
+        fold_action_classes.update(values)
+    if not fold_action_classes:
+        # The fold declares no action_class filter at all -- nothing to
+        # disagree with the plan about (e.g. a model-assisted judgment
+        # fold, which never has a plan to begin with -- see the `plan is
+        # None` guard above -- but kept explicit for any future fold shape
+        # that legitimately omits the filter).
+        return False
+    return not fold_action_classes.issubset(set(plan.allowed_actions))
 
 
 def verify_compilation_record(sealed_detail: dict, *, recompiled: CompiledDeclaration, d_digest: str) -> DriftResult:
@@ -339,15 +411,20 @@ def verify_compilation_record(sealed_detail: dict, *, recompiled: CompiledDeclar
     SAME declaration -- not merely that each half is internally
     well-formed. That includes the d-leg itself: a record sealed against a
     different declaration's digest must be flagged even when P and F happen
-    to match, or C only proves internal consistency, not binding to D."""
+    to match, or C only proves internal consistency, not binding to D.
+
+    Digest equality alone proves co-derivation, not correspondence -- see
+    ``_pf_incoherent``'s docstring and ``DriftResult.pf_incoherent``."""
     p_drifted = sealed_detail["p_digest"] != recompiled.forward.digest()
     f_drifted = sealed_detail["f_digest"] != recompiled.backward.digest()
     d_drifted = d_digest != sealed_detail["d_digest"]
+    pf_incoherent = _pf_incoherent(recompiled)
     return DriftResult(
-        drifted=p_drifted or f_drifted or d_drifted,
+        drifted=p_drifted or f_drifted or d_drifted or pf_incoherent,
         p_drifted=p_drifted,
         f_drifted=f_drifted,
         d_drifted=d_drifted,
+        pf_incoherent=pf_incoherent,
         recomputed_d_digest=d_digest,
         sealed_d_digest=sealed_detail["d_digest"],
     )

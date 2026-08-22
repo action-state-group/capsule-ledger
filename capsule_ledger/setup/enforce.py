@@ -234,12 +234,25 @@ def dispatch(
     signer: Signer,
     setup_dir: str | Path,
 ) -> DispatchResult:
-    """The live forward check, once promoted. ``action.action_class`` is
-    overwritten to ``outcome_id`` before checking and before sealing --
-    disclosed on the decision capsule (``guards/capsule.py``'s
-    ``_payload_extension``), which is what lets a later reproduction
-    identify which accepted candidate governed this decision from the
-    sealed capsule alone, with no side-channel state to keep in sync."""
+    """The live forward check, once promoted.
+
+    ``action.action_class`` -- if the caller hasn't already set it -- is
+    defaulted to ``action.verb`` before checking and before sealing. This
+    used to be overwritten to ``outcome_id`` instead; that was
+    [ldg-compiler-pf-noncorrespondence]: ``asg_payload.action_class`` is the
+    read path the compiled fold's filter matches against
+    (``compiler/compile.py``'s ``_fold_for_declaration``, deriving from the
+    plan's own ``allowed_actions``), and ``outcome_id`` is never a member of
+    that set -- a capsule that passed this exact guard could then never be
+    counted by its own fold. ``action.verb`` is: it's what ``compile_bridge.
+    attainment_declaration_for`` binds both ``allowed_actions`` and the
+    fold's filter to, per ``candidates.AttainmentCandidate``'s own documented
+    invariant that ``action_class`` is the same identifier in both roles.
+
+    Which accepted candidate governed this decision is disclosed separately,
+    at ``asg_payload.checkpoint.outcome_id`` (set below) -- that's what
+    ``reproduce_refusal`` reads; it was never load-bearing on
+    ``action_class``, only historically coupled to it."""
     if enforce_state.mode(outcome_id) != "enforced":
         raise EnforceError(
             f"{outcome_id!r} is still in shadow mode -- promote it first (`capsule setup enforce promote`) "
@@ -247,7 +260,8 @@ def dispatch(
         )
     stored = store.load(outcome_id)
     plan = _plan_for(stored)
-    action = replace(action, action_class=outcome_id)
+    if action.action_class is None:
+        action = replace(action, action_class=action.verb)
     check = check_plan_containment(action, plan)
     passed = check.constraint.result == "pass"
     capsule = build_decision_capsule(
@@ -281,21 +295,27 @@ def reproduce_refusal(capsule_id: str, *, ledger: LedgerAPI, store: DeclarationS
     already this codebase's own dry-run-report replay path), and re-run
     ``check_plan_containment``. Containment's purity (design §2.3) is what
     makes this an EXACT reproduction rather than a re-assertion: the same
-    plan, the same action, the same pure function, every time."""
+    plan, the same action, the same pure function, every time.
+
+    The governing candidate is identified from ``asg_payload.checkpoint.
+    outcome_id`` (set by ``dispatch``), not ``asg_payload.action_class`` --
+    ``action_class`` is the fold's read path (``dispatch``'s own docstring)
+    and is never guaranteed to equal an outcome_id; ``checkpoint`` is the
+    field ``dispatch`` sets specifically for this lookup."""
     record = ledger.fetch(capsule_id)
     if record is None:
         raise EnforceError(f"no such capsule {capsule_id!r} in this ledger")
     capsule = record.capsule
     payload = capsule.get("asg_payload") or {}
-    outcome_id = payload.get("action_class")
+    outcome_id = (payload.get("checkpoint") or {}).get("outcome_id")
     if not outcome_id or not store.exists(outcome_id):
         raise EnforceError(
-            f"capsule {capsule_id!r} does not disclose a known outcome_id in asg_payload.action_class "
-            "-- it was not produced by `capsule setup enforce dispatch`"
+            f"capsule {capsule_id!r} does not disclose a known outcome_id in "
+            "asg_payload.checkpoint.outcome_id -- it was not produced by `capsule setup enforce dispatch`"
         )
     stored = store.load(outcome_id)
     plan = _plan_for(stored)
-    action = Action.from_capsule(capsule, action_class=outcome_id)
+    action = Action.from_capsule(capsule)
     check = check_plan_containment(action, plan)
     reproduced_result = check.constraint.result
     original_decision = (capsule.get("disposition") or {}).get("decision", "")

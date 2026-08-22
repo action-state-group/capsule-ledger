@@ -3,7 +3,9 @@ import io
 
 import pytest
 
+from capsule_ledger.folds.engine import evaluate_one
 from capsule_ledger.guards.action import Action
+from capsule_ledger.setup.compile_bridge import compiled_declaration_for
 from capsule_ledger.setup.confirm import confirm_accept
 from capsule_ledger.setup.declarations import DeclarationStore
 from capsule_ledger.setup.enforce import (
@@ -134,6 +136,39 @@ def test_reproduction_command_does_not_double_nest_the_declarations_path(tmp_pat
     cmd = reproduction_command("cap-123", setup_dir=tmp_path)
     assert cmd == f"capsule verify cap-123 --refusal --declarations {tmp_path}"
     assert str(tmp_path / "declarations") not in cmd
+
+
+def test_dispatch_end_to_end_capsule_is_actually_counted_by_its_own_compiled_fold(store, signer, tmp_path):
+    """[ldg-compiler-pf-noncorrespondence]'s acceptance line, verbatim: a
+    capsule that PASSES the guard through the real `capsule setup enforce
+    dispatch` path must be COUNTED by the fold compiled from the same
+    declaration -- asserting a non-zero count, not merely that no
+    exception was raised.
+
+    Before this fix, `dispatch` overwrote `asg_payload.action_class` to
+    the outcome_id (`"outcome.remediation_confirmed"`), which the compiled
+    fold's filter (`["remediation"]`) never matched -- the guard passed
+    and the fold silently counted 0, forever."""
+    decl_store, enforce_state = _promoted(store, signer, tmp_path)
+    action = Action(verb="remediation", operator="op", developer="dev")
+    result = dispatch(
+        "outcome.remediation_confirmed",
+        action,
+        store=decl_store,
+        enforce_state=enforce_state,
+        ledger=store,
+        signer=signer,
+        setup_dir=tmp_path,
+    )
+    assert result.passed is True
+    assert result.capsule["asg_payload"]["action_class"] == "remediation"
+
+    compiled = compiled_declaration_for(decl_store.load("outcome.remediation_confirmed"))
+    fold = compiled.backward.fold
+    records = [r.capsule for r in store.scan()]
+    trace = evaluate_one(fold, records, key_value="dev")
+    assert trace.result > 0
+    assert trace.result == 1
 
 
 def test_reproduce_refusal_matches_a_denied_dispatch(store, signer, tmp_path):

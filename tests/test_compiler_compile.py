@@ -16,9 +16,11 @@ import hashlib
 import pytest
 
 from capsule_ledger.compiler.compile import (
+    BackwardCompilation,
     CompiledDeclaration,
     CompilerError,
     Declaration,
+    ForwardCompilation,
     GatedPrecondition,
     compile_declaration,
     seal_compilation_record,
@@ -129,6 +131,116 @@ def test_precondition_naming_an_action_outside_allowed_actions_is_rejected():
             allowed_actions=("remediate",),
             preconditions=(GatedPrecondition(action="escalate", primitive=_cite_primitive()),),
         )
+
+
+def test_disjoint_binding_action_class_is_rejected_at_declare_time():
+    """THE required falsification target ([ldg-compiler-pf-noncorrespondence]):
+    a declaration whose forward guard admits ``remediation`` but whose
+    backward-fold binding names ``escalation`` used to compile cleanly on
+    both halves (``VerdictPair(forward=DETERMINISTIC,
+    backward=DETERMINISTIC)``) and report ``drifted=False`` -- fully
+    disjoint, never caught. It must now be refused at declare time,
+    before either half is ever compiled."""
+    with pytest.raises(CompilerError, match="binding"):
+        Declaration(
+            outcome_id="workforce.remediation_confirmed/1.0.0",
+            statement="s",
+            allowed_actions=("remediation",),
+            binding={"action_class": "escalation"},
+        )
+
+
+def test_binding_action_class_within_allowed_actions_is_accepted():
+    # Not a vacuous check: the identical binding shape, action_class
+    # actually a member of allowed_actions, must construct cleanly.
+    d = Declaration(
+        outcome_id="workforce.remediation_confirmed/1.0.0",
+        statement="s",
+        allowed_actions=("remediation", "escalation"),
+        binding={"action_class": "escalation"},
+    )
+    assert d.binding == {"action_class": "escalation"}
+
+
+def test_fold_filters_on_disposition_decision_not_verdict_class():
+    """[ldg-compiler-pf-noncorrespondence] finding 2: ALLOW leaves
+    ``disposition.verdict_class`` absent (guards/capsule.py's -02
+    disposition mapping, D1 2026-08-05) -- nothing in this codebase ever
+    writes ``verdict_class == "executed"``. The compiled fold must filter
+    on a value real capsules actually write."""
+    compiled = _compile_remediation()
+    fold = compiled.backward.fold
+    assert any(c.field == "disposition.decision" and c.op == "eq" and c.value == "accept" for c in fold.filter)
+    assert not any(c.field == "disposition.verdict_class" for c in fold.filter)
+
+
+def test_fold_filter_covers_every_allowed_action_not_just_one():
+    """Before this fix, ``_fold_for_declaration`` built its filter from a
+    single ``binding["action_class"]`` key, so a fold could never filter
+    on more than one action class even when the plan allowed several."""
+    compiled = _compile_remediation(allowed_actions=("remediate", "escalate_to_manager"))
+    fold = compiled.backward.fold
+    action_class_clause = next(c for c in fold.filter if c.field == "asg_payload.action_class")
+    assert action_class_clause.value == ["escalate_to_manager", "remediate"]
+
+
+def test_verify_compilation_record_catches_a_disjoint_plan_and_fold(signer):
+    """Even a hand-built ``CompiledDeclaration`` that never went through
+    ``Declaration``'s own guard (e.g. a different or future compiler path)
+    must not be vouched for by ``verify_compilation_record`` when its plan
+    and fold reference disjoint action classes. This is the original bug,
+    reproduced directly: two artifacts honestly co-derived from the SAME
+    compile, sealed together, digest-matching themselves on every future
+    recompile -- p_drifted/f_drifted alone would report clean forever."""
+    from capsule_ledger.folds.definition import FilterClause, FoldDefinition, ReadField, Reduce
+    from capsule_ledger.guards.plan import PlanDefinition
+
+    plan = PlanDefinition(outcome_id="workforce.remediation_confirmed/1.0.0", allowed_actions=("remediation",))
+    fold = FoldDefinition(
+        fold_id="compiler.workforce_remediation_confirmed.attainment/1.0.0",
+        reads=(
+            ReadField(path="developer", erasure_class="commitment-ok"),
+            ReadField(path="disposition.decision", erasure_class="commitment-ok"),
+            ReadField(path="asg_payload.action_class", erasure_class="commitment-ok"),
+        ),
+        filter=(
+            FilterClause(field="disposition.decision", op="eq", value="accept"),
+            FilterClause(field="asg_payload.action_class", op="in", value=["escalation"]),
+        ),
+        key="developer",
+        reduce=Reduce(reducer="count"),
+        emit="workforce.remediation_confirmed.count",
+    )
+    disjoint = CompiledDeclaration(
+        outcome_id="workforce.remediation_confirmed/1.0.0",
+        forward=ForwardCompilation(verdict="DETERMINISTIC", plan=plan),
+        backward=BackwardCompilation(verdict="DETERMINISTIC", fold=fold),
+    )
+    d_digest = _digest("D")
+    cap = seal_compilation_record(disjoint, d_digest=d_digest, operator=OPERATOR, developer=DEVELOPER, signer=signer)
+    detail = cap["asg_payload"]["detail"]
+
+    # Sealed against ITSELF -- p_digest/f_digest match perfectly; only the
+    # coherence check can catch this.
+    result = verify_compilation_record(detail, recompiled=disjoint, d_digest=d_digest)
+    assert result.p_drifted is False
+    assert result.f_drifted is False
+    assert result.pf_incoherent is True
+    assert result.drifted is True
+
+
+def test_verify_compilation_record_mutant_proof_a_coherent_pair_is_not_flagged(signer):
+    # The mutant proof for the check above: the identical structure, with
+    # action classes actually agreeing, must NOT be flagged -- otherwise
+    # pf_incoherent=True above could just be a check that always returns
+    # True.
+    compiled = _compile_remediation()
+    d_digest = _digest("D")
+    cap = seal_compilation_record(compiled, d_digest=d_digest, operator=OPERATOR, developer=DEVELOPER, signer=signer)
+    detail = cap["asg_payload"]["detail"]
+    result = verify_compilation_record(detail, recompiled=compiled, d_digest=d_digest)
+    assert result.pf_incoherent is False
+    assert result.drifted is False
 
 
 def test_declaration_with_no_action_space_and_no_model_flag_cannot_compile():
