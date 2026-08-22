@@ -8,7 +8,7 @@
 #
 # Usage:
 #   pip install -r requirements.txt
-#   pip install -e .[dev,examples]
+#   pip install -e .[dev]
 #
 # LOAD-BEARING PINS (do not loosen without regenerating the committed fixture):
 #   capsule-emit==0.3.2        — tests/fixtures/two_agents_sim_ledger.jsonl was
@@ -25,12 +25,27 @@
 #              --out tests/fixtures/two_agents_sim_ledger.jsonl
 #   3. Confirm: pytest tests/test_two_agents_example.py -v
 #   4. Commit fixture + this file together.
+#
+# PIN OUT OF SYNC WITH pyproject.toml, DELIBERATELY, PENDING A RELEASE
+# (2026-08-21, [ldg-mmr-consume-neutral-core]): pyproject.toml's
+# `dependencies` now requires capsule-emit[checkpoint]>=0.4.0 (the neutral
+# CLL/MMR core capsule_ledger.cli.bundle_cmd and capsule_ledger.conversation.
+# merkle both import directly, not just the examples/fixture path below).
+# 0.4.0 is not released to PyPI yet -- confirmed empirically that bumping to
+# it changes tests/fixtures/two_agents_sim_ledger.jsonl bytes (0.3.2 -> 0.4.0
+# candidate breaks test_committed_fixture_matches_freshly_regenerated_output)
+# -- so this pin is held at 0.3.2 until a decision is made on regenerating
+# that fixture. This file does NOT currently produce an installable
+# environment for pyproject.toml's `dependencies` as a whole; it still
+# documents the exact-pin verification path for everything except
+# capsule-emit. See ledger/outbox.md [ldg-mmr-consume-neutral-core].
 
 # --- verification path (§7a-5 mandatory exact pins) -------------------------
 agent-action-capsule==0.1.0
 PyYAML==6.0.3
 
-# --- fixture generation path (LOAD-BEARING — see header) --------------------
+# --- fixture generation path (LOAD-BEARING — see header; version held at
+# 0.3.2 pending the capsule-emit 0.4.0 release + fixture-regen decision) ----
 capsule-emit==0.3.2
 
 # --- transitive dependencies (full freeze for complete reproducibility) ------

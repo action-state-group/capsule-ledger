@@ -18,8 +18,22 @@ classifiers = [
 ]
 # Capsule parsing goes through the public agent-action-capsule reference
 # library — never vendored into this repo.
+#
+# capsule-emit[checkpoint] -- the neutral CLL/MMR core (append, peak hash,
+# root computation, checkpoint format) this package consumes from
+# capsule_emit.checkpoint rather than forking (Amendment E, 2026-08-21; see
+# docs/oss-project-scope.md). Required, not optional: capsule_ledger.cli.
+# bundle_cmd's completeness certificate and capsule_ledger.conversation.
+# merkle's session digest both depend on it directly, not just the examples
+# path. PENDING: 0.4.0 is not yet released to PyPI (as of 2026-08-21 this
+# only exists on capsule-emit's unmerged `cll-extract-mmr-to-capsule-emit`
+# branch, which itself depends on an unreleased scitt-cose>=0.2.0) -- this
+# floor will not resolve via `pip install` until capsule-emit cuts that
+# release. See ledger/outbox.md [ldg-mmr-consume-neutral-core] for the
+# tracking decision.
 dependencies = [
     "agent-action-capsule>=0.1.0",
+    "capsule-emit[checkpoint]>=0.4.0",
     "pyyaml>=6.0",
 ]
 
@@ -28,16 +42,11 @@ Homepage = "https://github.com/action-state-group/capsule-ledger"
 Source = "https://github.com/action-state-group/capsule-ledger"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0", "capsule-ledger[examples]"]
+dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0"]
 # Pinned below 2.0: the 2.0 release restructured the package (split out
 # mcp-types) and dropped the `mcp.server.fastmcp` import path this server
 # uses -- see capsule_ledger/mcp/server.py.
 mcp = ["mcp>=1.0,<2.0"]
-# capsule_ledger/examples/two_agents.py is the only thing in this package
-# that imports capsule-emit -- the rest of capsule-ledger never depends on
-# it. Floor matches the oldest published PyPI release whose emit() signature
-# this example relies on; the local capsule-emit checkout may be ahead.
-examples = ["capsule-emit>=0.3.0"]
 # capsule_ledger/judge/scorers/deepeval_scorer.py -- the judge harness's
 # default (BYOM) Scorer -- is the only thing that imports deepeval; the rest
 # of the judge harness (prompt digest-pinning, judgment/adjudication

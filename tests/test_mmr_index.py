@@ -11,10 +11,9 @@ import json
 from pathlib import Path
 
 import pytest
+from capsule_emit.checkpoint import MmrLedger, core, verify_range
 
 from capsule_ledger.ledger import LedgerStore
-from capsule_ledger.mmr import core
-from capsule_ledger.mmr.index import MmrLedger, verify_range
 
 FIXTURES = Path(__file__).parent / "fixtures"
 AMAURY = FIXTURES / "amaury_sample_ledger.jsonl"

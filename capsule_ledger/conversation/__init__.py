@@ -6,8 +6,9 @@ TIME (speaker role, turn-content digest -- never the content itself),
 chained turn-to-turn so there is no unsigned window between a turn
 happening and the ledger holding a signed record of it, plus one
 session-close capsule binding every turn's digest into a single session
-digest (Merkle-style, via ``capsule_ledger.mmr``) for selective disclosure
-at TURN granularity.
+digest (Merkle-style, via ``capsule_emit.checkpoint`` -- the neutral CLL/MMR
+core capsule-ledger consumes rather than forks) for selective disclosure at
+TURN granularity.
 
 This is the interim, ledger-native shape -- it migrates to Verifiable
 Agent Conversations (Birkholz et al., COSE_Sign1 session records) once that
