@@ -31,7 +31,7 @@ signing key, act against **one** ledger. In a single run this exercises:
    deny" half, and the integrity-failure row of the same table).
 4. **A declared-intent -> action chain** -- Alpha first emits a plain,
    non-gated ``intent.declare`` capsule *through capsule-emit itself*
-   (``capsule_emit.emit()``), then submits the actual fulfilling action
+   (``capsule_emit.seal()``), then submits the actual fulfilling action
    through the guard, explicitly chained to the intent capsule's
    ``capsule_id`` via ``chain_parent``/``chain_relation="confirms"``
    (the same "did -> confirmed" relation capsule-emit's own ``confirms``
@@ -42,7 +42,7 @@ builds and signs its own decision capsule -- that capsule asserts a *gate*
 decision, not that anything downstream executed
 (``guards/capsule.py``'s module docstring). The intent-declare capsule is a
 passive, non-gated observation with no decision to gate, so it goes through
-capsule-emit's own one-call ``emit()`` instead, and its returned capsule
+capsule-emit's own one-call ``seal()`` instead, and its returned capsule
 dict is appended into the *same* ``LedgerAPI`` -- one ledger either way,
 just two different callers producing capsules against it, matching how a
 real deployment would split "an agent observes/declares something" from
@@ -50,7 +50,7 @@ real deployment would split "an agent observes/declares something" from
 
 **Determinism.** Every ``Action`` gets an explicit ``action_id`` and
 ``timestamp`` (both otherwise default to wall-clock/``uuid4()``, see
-``guards/action.py``). capsule-emit's own ``emit()`` has no such override --
+``guards/action.py``). capsule-emit's own ``seal()`` has no such override --
 it always calls the base ``agent_action_capsule.emit()`` with
 ``action_id=None`` and no ``timestamp``, so both get generated from
 wall-clock time and ``uuid.uuid4()`` deep inside that library
@@ -152,7 +152,7 @@ def _seeded_uuid(seed: int, label: str) -> uuid.UUID:
 @contextmanager
 def _pinned_capsule_emit_clock(timestamp: str, fixed_uuid: uuid.UUID) -> Iterator[None]:
     """Pin the clock/uuid source ``agent_action_capsule.emit()`` reads for the
-    duration of one ``capsule_emit.emit()`` call. See the module docstring's
+    duration of one ``capsule_emit.seal()`` call. See the module docstring's
     "Determinism" section for why this is necessary rather than a style
     choice."""
     real_utc_now = _aac_emit_module._utc_now
@@ -289,15 +289,15 @@ def _run_scenarios(ledger: LedgerAPI, *, seed: int) -> SimulationResult:
     # -- Scenario 4: declared-intent -> action chain --
     intent_ts = clock.next()
     with _pinned_capsule_emit_clock(intent_ts, _seeded_uuid(seed, "intent-declare-alpha")):
-        intent_result = capsule_emit.emit(
-            action="intent.declare",
-            operator=OPERATOR,
-            developer=ALPHA_DEVELOPER,
-            agent_input={
+        intent_result = capsule_emit.seal(
+            {
                 "intent": "renew annual vendor contract with Forge Supplies",
                 "planned_amount_minor": 2_500_00,
                 "planned_currency": "EUR",
             },
+            action="intent.declare",
+            operator=OPERATOR,
+            developer=ALPHA_DEVELOPER,
             model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
             verdict="confirmed",
             effect={"type": "intent.declare", "status": "planned"},

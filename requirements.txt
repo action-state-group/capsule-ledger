@@ -20,8 +20,24 @@
 #                                any version change requires a full re-vector-run.
 #   PyYAML==6.0.3              — YAML parsing on the verification path.
 #
-# To regenerate after a planned version bump:
-#   1. Update the pin here.
+# KNOWN DELIBERATE MISMATCH (2026-08-22, [airline-demo-emit-to-seal-migration]):
+# examples/two_agents.py now calls capsule_emit.seal() (capsule-emit's emit()
+# was renamed in PR #70 / emit-clean-break-stub, itself unreleased) but this
+# pin stays at 0.3.2 -- seal() does not exist there, so the example will not
+# actually run against this lockfile until the pin below moves past 0.4.0.
+# Left deliberately out of sync rather than bumped ahead of the PyPI release,
+# same pattern as [ldg-mmr-consume-neutral-core]'s capsule-emit[checkpoint]
+# floor. Confirmed by direct byte comparison (not assumed): seal() and emit()
+# produce byte-identical capsules within the same capsule-emit version, so the
+# rename itself is not what will break the fixture match. What WILL: an
+# unrelated capsule-emit format change already landed between 0.3.2 and main
+# (a new `canonicalization_id` field in compute_attestation) that changes the
+# two emit-minted capsules' bytes regardless of emit()-vs-seal(). So the next
+# pin bump past 0.3.2 requires fixture regeneration either way -- expected,
+# not a regression introduced by this rename.
+#
+# To regenerate after the planned 0.4.0 bump:
+#   1. Update the pin here (and pyproject.toml's `examples` extra floor).
 #   2. Run: python -m capsule_ledger.examples.two_agents \
 #              --out tests/fixtures/two_agents_sim_ledger.jsonl
 #   3. Confirm: pytest tests/test_two_agents_example.py -v

@@ -152,7 +152,7 @@ def _pinned_uuid4(fixed_uuid: uuid.UUID) -> Iterator[None]:
     has no ``action_id`` override in its public API) -- without pinning it,
     the same ``--seed`` would still produce a different confirmation capsule
     id on every run, same non-determinism ``examples/two_agents.py`` pins
-    around its own ``capsule_emit.emit()`` call."""
+    around its own ``capsule_emit.seal()`` call."""
     real_uuid4 = uuid.uuid4
     uuid.uuid4 = lambda: fixed_uuid
     try:
