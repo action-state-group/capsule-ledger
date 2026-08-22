@@ -28,8 +28,8 @@ third system state  ──(read)──▶  ConfirmConnector.read_confirmation()
                               ConfirmIngestEngine.ingest()
                                           │
                                           ▼
-                        fulfillment capsule, chained (relation="confirms")
-                        to the commitment capsule, appended to the ledger
+                        fulfillment capsule, chained to the commitment
+                        capsule it observes, appended to the ledger
 ```
 
 - **No observation yet** (`read_confirmation` returns `None`): nothing is
@@ -40,6 +40,19 @@ third system state  ──(read)──▶  ConfirmConnector.read_confirmation()
   the same event (same `external_ref`) against the same commitment never
   appends a second capsule — idempotent by construction
   (`ConfirmIngestEngine._existing`).
+
+## Chain relation (under revision)
+
+The current code chains the fulfillment capsule with `chain.relation="confirms"`
+(`capsule_ledger/confirm/capsule.py`). That value was registered
+(agent-action-capsule `REGISTRY.md` #6) for same-stream links — "attempted →
+confirmed" within one agent's own action stream. A third system's state
+change (an IdP, a ticketing system, a payments processor) is by definition a
+*different* stream, and reusing `"confirms"` for a cross-stream observation
+is a structural misuse a pending spec revision is expected to correct. Don't
+take `"confirms"` here as a settled public contract: the capsule shape, the
+chaining guarantee, and the CLI on this page are stable; the literal relation
+value is not, pending that revision.
 
 ## `ConfirmConnector` — the interface a real integration implements
 
