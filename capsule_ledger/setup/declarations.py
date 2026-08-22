@@ -59,6 +59,12 @@ class StoredCandidate:
     backward_verdict: str | None = None
     refusal_reason_code: str | None = None
     missing_instrument: str | None = None
+    # Drafter provenance ([ldg-english-to-declaration-drafter]) -- carried
+    # alongside D, never inside it: `d_digest` above is `candidate_digest`
+    # over `candidate_to_canonical_dict` only, which these two fields never
+    # touch, so they cannot move D's digest or anything compiled from it.
+    drafted_by_model_id: str | None = None
+    drafted_by_prompt_digest: str | None = None
 
 
 class DeclarationStore:
@@ -90,6 +96,8 @@ class DeclarationStore:
         backward_verdict: str | None = None,
         refusal_reason_code: str | None = None,
         missing_instrument: str | None = None,
+        drafted_by_model_id: str | None = None,
+        drafted_by_prompt_digest: str | None = None,
     ) -> Path:
         if acceptance_state not in ACCEPTANCE_STATES:
             raise ValueError(f"acceptance_state must be one of {sorted(ACCEPTANCE_STATES)}; got {acceptance_state!r}")
@@ -103,6 +111,8 @@ class DeclarationStore:
             "backward_verdict": backward_verdict,
             "refusal_reason_code": refusal_reason_code,
             "missing_instrument": missing_instrument,
+            "drafted_by_model_id": drafted_by_model_id,
+            "drafted_by_prompt_digest": drafted_by_prompt_digest,
         }
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return path
@@ -118,6 +128,8 @@ class DeclarationStore:
             backward_verdict=stored.backward_verdict,
             refusal_reason_code=stored.refusal_reason_code,
             missing_instrument=stored.missing_instrument,
+            drafted_by_model_id=stored.drafted_by_model_id,
+            drafted_by_prompt_digest=stored.drafted_by_prompt_digest,
         )
         return self.load(outcome_id)
 
@@ -135,6 +147,8 @@ class DeclarationStore:
             backward_verdict=data.get("backward_verdict"),
             refusal_reason_code=data.get("refusal_reason_code"),
             missing_instrument=data.get("missing_instrument"),
+            drafted_by_model_id=data.get("drafted_by_model_id"),
+            drafted_by_prompt_digest=data.get("drafted_by_prompt_digest"),
         )
 
     def exists(self, outcome_id: str) -> bool:
