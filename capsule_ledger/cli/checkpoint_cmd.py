@@ -114,7 +114,6 @@ def _cmd_emit(args: argparse.Namespace) -> int:
         p = save_checkpoint(ledger_root, cp)
         print(f"checkpoint: mmr_size={cp.mmr_size} at {cp.timestamp}")
         print(f"  root={cp.root}")
-        print(f"  peaks_digest={cp.peaks_digest}")
         print(f"  key_id={cp.key_id}")
         print(f"  digest={cp.digest()}")
         print(f"  saved → {p}")

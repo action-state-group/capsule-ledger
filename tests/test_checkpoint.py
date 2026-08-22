@@ -100,7 +100,6 @@ class TestEmitCheckpoint:
         assert cp.key_id == signer.key_id
         assert cp.timestamp == "2026-08-18T00:00:00Z"
         assert len(cp.root) == 64
-        assert len(cp.peaks_digest) == 64
         assert cp.prev_size == 0
         assert cp.prev_root == ""
         assert len(cp.signature) == 64
@@ -143,7 +142,7 @@ class TestEmitCheckpoint:
         fake_prev = CheckpointRecord(
             v=1, kind="mmr_checkpoint",
             mmr_size=mmr.size() + 10,
-            root="a" * 64, peaks_digest="b" * 64,
+            root="a" * 64,
             prev_size=0, prev_root="",
             key_id=signer.key_id, timestamp="2026-08-18T00:00:00Z",
             signature="c" * 64,
@@ -219,7 +218,7 @@ class TestVerifyCheckpointConsistency:
         tampered_cp2 = CheckpointRecord(
             v=1, kind="mmr_checkpoint",
             mmr_size=cp1.mmr_size + 1,
-            root="a" * 64, peaks_digest="b" * 64,
+            root="a" * 64,
             prev_size=cp1.mmr_size,
             prev_root="dead" * 16,  # wrong root
             key_id=signer.key_id,
@@ -416,7 +415,6 @@ class TestStorage:
         assert loaded is not None
         assert loaded.mmr_size == cp.mmr_size
         assert loaded.root == cp.root
-        assert loaded.peaks_digest == cp.peaks_digest
         assert loaded.signature == cp.signature
         assert len(loaded.witnesses) == 1
         assert loaded.witnesses[0].ts_url == DEFAULT_TS_URL
@@ -572,7 +570,7 @@ class TestCheckpointCLI:
         tampered = CheckpointRecord(
             v=cp2.v, kind=cp2.kind,
             mmr_size=cp2.mmr_size,
-            root=cp2.root, peaks_digest=cp2.peaks_digest,
+            root=cp2.root,
             prev_size=cp2.prev_size,
             prev_root="dead" * 16,  # WRONG — rollback
             key_id=cp2.key_id, timestamp=cp2.timestamp,

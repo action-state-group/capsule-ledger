@@ -2,7 +2,7 @@
 """MMR peaks checkpoint: sign, register with a Transparency Service, verify.
 
 A *checkpoint* is a signed, tamper-evident snapshot of the MMR's current peak
-set: ``{mmr_size, root, peaks_digest, prev_size, prev_root, key_id, timestamp}``.
+set: ``{mmr_size, root, prev_size, prev_root, key_id, timestamp}``.
 Registering its digest with a SCITT Transparency Service (TS) yields a COSE
 Receipt that provides third-party freshness evidence up to that checkpoint.
 
@@ -143,7 +143,6 @@ class CheckpointRecord:
     kind: str
     mmr_size: int
     root: str           # hex: root_from_peaks at mmr_size
-    peaks_digest: str   # hex: sha256 of concatenated peak hashes (left to right)
     prev_size: int      # 0 for the first checkpoint
     prev_root: str      # hex root at prev_size; empty string for the first checkpoint
     key_id: str
@@ -158,7 +157,6 @@ class CheckpointRecord:
             "kind": self.kind,
             "mmr_size": self.mmr_size,
             "root": self.root,
-            "peaks_digest": self.peaks_digest,
             "prev_size": self.prev_size,
             "prev_root": self.prev_root,
             "key_id": self.key_id,
@@ -179,7 +177,6 @@ class CheckpointRecord:
             "kind": self.kind,
             "mmr_size": self.mmr_size,
             "root": self.root,
-            "peaks_digest": self.peaks_digest,
             "prev_size": self.prev_size,
             "prev_root": self.prev_root,
             "key_id": self.key_id,
@@ -198,7 +195,6 @@ class CheckpointRecord:
             kind=d["kind"],
             mmr_size=int(d["mmr_size"]),
             root=d["root"],
-            peaks_digest=d["peaks_digest"],
             prev_size=int(d["prev_size"]),
             prev_root=d.get("prev_root", ""),
             key_id=d["key_id"],
@@ -209,13 +205,6 @@ class CheckpointRecord:
 
 
 # -- signing / verification --------------------------------------------------
-
-
-def _peaks_digest(mmr: MmrLedger, size: int) -> str:
-    """sha256 of the concatenated peak hashes at ``size``, left to right."""
-    peak_positions = core.peaks(size)
-    peak_hashes = b"".join(mmr._nodes.node(p) for p in peak_positions)
-    return hashlib.sha256(peak_hashes).hexdigest()
 
 
 def _root_hex(mmr: MmrLedger, size: int) -> str:
@@ -267,7 +256,6 @@ def emit_checkpoint(
         prev_root = prev.root
 
     root_hex = _root_hex(mmr, current_size)
-    peaks_dig = _peaks_digest(mmr, current_size)
 
     # Build unsigned record so we can compute the signing body.
     cp = CheckpointRecord(
@@ -275,7 +263,6 @@ def emit_checkpoint(
         kind="mmr_checkpoint",
         mmr_size=current_size,
         root=root_hex,
-        peaks_digest=peaks_dig,
         prev_size=prev_size,
         prev_root=prev_root,
         key_id=signer.key_id,

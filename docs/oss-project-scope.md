@@ -70,7 +70,7 @@ hardware, and shipping a non-functional stub is worse than not shipping at all.
 | Feature | Tests | Verdict |
 |---------|-------|---------|
 | MMR append, peak hash, root computation | 1, 2, 3 | OSS |
-| Signed checkpoint format (mmr_size, peaks_digest, key_id, timestamp) | 1, 3 | OSS |
+| Signed checkpoint format (mmr_size, root, key_id, timestamp) | 1, 3 | OSS |
 | Register checkpoint at a SCITT TS, store COSE receipt | 2 | OSS |
 | Verify inclusion-to-peak + checkpoint + receipt chain | 1, 2 | OSS |
 | Fixed-cadence checkpoint trigger (operator's own cron) | 2 | OSS |
