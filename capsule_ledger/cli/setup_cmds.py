@@ -16,6 +16,7 @@ import json
 import sys
 from pathlib import Path
 
+from ..compiler import vocabulary as setup_vocabulary
 from ..envcompat import env_get
 from ..guards.action import Action
 from ..guards.signing import LocalSigner
@@ -28,7 +29,7 @@ from ..setup import init as setup_init_mod
 from ..setup import observe as setup_observe
 from ..setup import propose as setup_propose
 from ..setup import prose_drafter as setup_prose_drafter
-from ..setup.declarations import DeclarationStore
+from ..setup.declarations import DeclarationCorrupt, DeclarationStore
 
 __all__ = ["add_parser"]
 
@@ -55,6 +56,21 @@ def _signer(args: argparse.Namespace) -> LocalSigner:
         )
         raise SystemExit(2)
     return LocalSigner(key_id=key_id, secret=secret_text.encode("utf-8"))
+
+
+def _require_initialized(args: argparse.Namespace, command_name: str) -> int | None:
+    """Refuse rather than silently standing up a fresh, empty instance in
+    the current directory -- ``capsule setup propose`` run before
+    ``init`` used to do exactly that (exit 0, two REFUSED lines, and a
+    freshly-created ``.capsule-setup/`` nobody asked for). Returns an exit
+    code if the command should stop, ``None`` if it's safe to proceed."""
+    if not _ledger_path(args).exists():
+        print(
+            f"capsule setup {command_name}: no instance at {_setup_dir(args)} -- run `capsule setup init` first",
+            file=sys.stderr,
+        )
+        return 2
+    return None
 
 
 def _add_common_args(p: argparse.ArgumentParser, *, needs_signer: bool = False) -> None:
@@ -94,7 +110,13 @@ def _cmd_init(args: argparse.Namespace) -> int:
         print(f"    export {_KEY_ID_ENV}={result.key_id}")
         print(f"    export {_SECRET_ENV}={result.secret.decode('utf-8')}")
     print()
-    print("next: `capsule setup observe --input <trace.jsonl>` to start recording (zero enforcement, zero declarations yet).")
+    print("next -- author your first outcome declaration from a plain-English statement, no trace file needed")
+    print("(run the two export lines above first, if you haven't already):")
+    print("  capsule setup propose --statement '<what should always/never happen>' "
+          "--outcome-id <your.outcome_id> --drafter static")
+    print()
+    print("(or, to draft from real traffic instead: `capsule setup observe --input <trace.jsonl>`, "
+          "then `capsule setup propose` with no --statement -- see docs/outcome-compiler.md)")
     return 0
 
 
@@ -146,6 +168,9 @@ def _cmd_observe(args: argparse.Namespace) -> int:
 
 
 def _cmd_propose(args: argparse.Namespace) -> int:
+    early_exit = _require_initialized(args, "propose")
+    if early_exit is not None:
+        return early_exit
     store = DeclarationStore(_setup_dir(args))
 
     # English statement -> draft declaration ([ldg-english-to-declaration-
@@ -238,7 +263,7 @@ def _cmd_confirm_accept(args: argparse.Namespace) -> int:
                 d_prev_digest=args.d_prev_digest,
                 replay_report_digest=args.replay_report_digest,
             )
-        except (setup_confirm.ConfirmError, KeyError) as exc:
+        except (setup_confirm.ConfirmError, KeyError, DeclarationCorrupt) as exc:
             print(f"capsule setup confirm accept: {exc}", file=sys.stderr)
             return 1
     print(f"T1 accepted {args.outcome_id}: {capsule['capsule_id']}")
@@ -281,7 +306,7 @@ def _cmd_confirm_acknowledge_refusal(args: argparse.Namespace) -> int:
                 developer=args.developer,
                 acknowledged_by=args.acknowledged_by,
             )
-        except (setup_confirm.ConfirmError, KeyError) as exc:
+        except (setup_confirm.ConfirmError, KeyError, DeclarationCorrupt) as exc:
             print(f"capsule setup confirm acknowledge-refusal: {exc}", file=sys.stderr)
             return 1
     print(f"T4 refusal acknowledged for {args.outcome_id}: refusal={refusal_capsule['capsule_id']} ack={ack_capsule['capsule_id']}")
@@ -296,6 +321,9 @@ def _cmd_enforce_shadow(args: argparse.Namespace) -> int:
     with LedgerStore(_ledger_path(args)) as ledger:
         try:
             stored = store.load(args.outcome_id)
+        except DeclarationCorrupt as exc:
+            print(f"capsule setup enforce shadow: {exc.path}: {exc.reason}", file=sys.stderr)
+            return 1
         except KeyError:
             print(f"capsule setup enforce shadow: no such outcome {args.outcome_id!r}", file=sys.stderr)
             return 1
@@ -343,7 +371,7 @@ def _cmd_enforce_promote(args: argparse.Namespace) -> int:
                 operator=args.operator,
                 developer=args.developer,
             )
-        except (setup_enforce.EnforceError, KeyError) as exc:
+        except (setup_enforce.EnforceError, KeyError, DeclarationCorrupt) as exc:
             print(f"capsule setup enforce promote: {exc}", file=sys.stderr)
             return 1
     print(f"promoted {args.outcome_id} to enforce (shadow: {report.total} total, {report.would_fail_count} would-fail): {capsule['capsule_id']}")
@@ -366,7 +394,7 @@ def _cmd_enforce_dispatch(args: argparse.Namespace) -> int:
                 signer=signer,
                 setup_dir=_setup_dir(args),
             )
-        except (setup_enforce.EnforceError, KeyError) as exc:
+        except (setup_enforce.EnforceError, KeyError, DeclarationCorrupt) as exc:
             print(f"capsule setup enforce dispatch: {exc}", file=sys.stderr)
             return 1
     if result.passed:
@@ -397,10 +425,23 @@ def _cmd_status(args: argparse.Namespace) -> int:
         print("  no declarations proposed yet")
         return 0
     print("  declarations:")
+    any_corrupt = False
     for outcome_id in outcome_ids:
-        stored = store.load(outcome_id)
+        try:
+            stored = store.load(outcome_id)
+        except DeclarationCorrupt as exc:
+            any_corrupt = True
+            print(f"    {outcome_id}: UNREADABLE -- {exc.reason} ({exc.path})", file=sys.stderr)
+            continue
         mode = enforce_state.mode(outcome_id) if stored.acceptance_state == "accepted" else "-"
-        print(f"    {outcome_id}: {stored.acceptance_state} (forward={stored.forward_verdict}, backward={stored.backward_verdict}, enforce={mode})")
+        forward = setup_vocabulary.display_string("forward_verdict", stored.forward_verdict)
+        backward = setup_vocabulary.display_string("backward_verdict", stored.backward_verdict)
+        print(f"    {outcome_id}: {stored.acceptance_state} (enforce={mode})")
+        print(f"        forward:  {forward}")
+        print(f"        backward: {backward}")
+    if any_corrupt:
+        print("  one or more declaration files could not be read -- see above", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -432,7 +473,10 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     p_observe.add_argument("--heartbeat-every", type=int, default=10, help="print a progress line every N events (0 disables)")
     p_observe.set_defaults(func=_cmd_observe)
 
-    p_propose = setup_sub.add_parser("propose", help="draft candidate declarations from observed traces")
+    p_propose = setup_sub.add_parser(
+        "propose",
+        help="author a declaration from --statement, or draft candidates by grading a fixed template catalog against observed traces",
+    )
     _add_common_args(p_propose)
     p_propose.add_argument("--out", default=None, help="write the diffable proposals.yaml artifact here")
     p_propose.add_argument("--diff", action="store_true", help="also diff every accepted outcome_id against a fresh recompile (drift check)")
@@ -461,7 +505,7 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
 
     p_accept = confirm_sub.add_parser("accept", help="T1: freeze a proposed declaration's compilation record")
     _add_common_args(p_accept, needs_signer=True)
-    p_accept.add_argument("--outcome-id", required=True)
+    p_accept.add_argument("--outcome-id", required=True, help="the outcome_id to accept, as proposed by `capsule setup propose`")
     p_accept.add_argument("--d-prev-digest", default=None, help="the declaration this one replaces, if any (design lineage)")
     p_accept.add_argument("--replay-report-digest", default=None, help="the replay-before-merge report that justified this change, if any")
     p_accept.set_defaults(func=_cmd_confirm_accept)
@@ -477,7 +521,7 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
 
     p_ack = confirm_sub.add_parser("acknowledge-refusal", help="T4: a human sees and accepts a REFUSED verdict")
     _add_common_args(p_ack, needs_signer=True)
-    p_ack.add_argument("--outcome-id", required=True)
+    p_ack.add_argument("--outcome-id", required=True, help="the outcome_id whose REFUSED verdict is being acknowledged")
     p_ack.add_argument("--acknowledged-by", required=True, help="the human's own identity")
     p_ack.set_defaults(func=_cmd_confirm_acknowledge_refusal)
 
@@ -487,18 +531,18 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
 
     p_shadow = enforce_sub.add_parser("shadow", help="replay-before-merge: what would this outcome's plan have refused")
     _add_common_args(p_shadow)
-    p_shadow.add_argument("--outcome-id", required=True)
+    p_shadow.add_argument("--outcome-id", required=True, help="the accepted outcome_id to replay against ledger history")
     p_shadow.add_argument("--out", default=None, help="write a JSON summary here (consumed by the guard-check composite action)")
     p_shadow.set_defaults(func=_cmd_enforce_shadow)
 
     p_promote = enforce_sub.add_parser("promote", help="T3: promote one accepted outcome from shadow to enforce, after a shadow report")
     _add_common_args(p_promote, needs_signer=True)
-    p_promote.add_argument("--outcome-id", required=True)
+    p_promote.add_argument("--outcome-id", required=True, help="the accepted outcome_id to promote to enforce, after `enforce shadow`")
     p_promote.set_defaults(func=_cmd_enforce_promote)
 
     p_dispatch = enforce_sub.add_parser("dispatch", help="check one live action against a promoted outcome's plan")
     _add_common_args(p_dispatch, needs_signer=True)
-    p_dispatch.add_argument("--outcome-id", required=True)
+    p_dispatch.add_argument("--outcome-id", required=True, help="the promoted outcome_id to check this action against")
     p_dispatch.add_argument("--verb", required=True)
     p_dispatch.add_argument("--target", default=None)
     p_dispatch.set_defaults(func=_cmd_enforce_dispatch)

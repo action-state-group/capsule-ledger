@@ -95,6 +95,39 @@ def test_render_terminal_uses_status_glyphs_for_all_three_kinds(store, signer):
     assert "✗ outcome.trust_increased" in text
 
 
+def test_render_terminal_uses_plain_english_verdicts_not_raw_tokens(store, signer):
+    """The terminal preview must speak the same plain English the closed
+    vocabulary already ships (``compiler/vocabulary.py``'s display
+    strings) -- not the raw ``DETERMINISTIC``/``REFUSED`` enum tokens, which
+    are undefined anywhere a stranger reading the output would see."""
+    events = [
+        {"kind": "dispatch", "dispatch_id": "d1", "action_class": "remediation", "tool": "remediate"},
+        {"kind": "confirmation", "commitment_ref": "d1", "status": "confirmed"},
+    ]
+    _observe(store, signer, events)
+    proposal_set = propose_from_ledger(store)
+    text = render_terminal(proposal_set)
+    assert "checked automatically before the action ran" in text
+    assert "provable from the record alone" in text
+    assert "backward DETERMINISTIC" not in text
+    assert "forward DETERMINISTIC" not in text
+
+
+def test_coverage_fraction_names_what_m_counts(store, signer):
+    """'provable on 1 of 1' never says 1 of 1 *what* -- the denominator
+    must carry a noun (dispatches/offers/decisions) so it reads as a
+    stranger's sentence, not a bare fraction they have to guess the units
+    of."""
+    events = [
+        {"kind": "dispatch", "dispatch_id": "d1", "action_class": "remediation", "tool": "remediate"},
+        {"kind": "confirmation", "commitment_ref": "d1", "status": "confirmed"},
+    ]
+    _observe(store, signer, events)
+    proposal_set = propose_from_ledger(store)
+    remediation = next(p for p in proposal_set.proposals if p.outcome_id == "outcome.remediation_confirmed")
+    assert remediation.coverage_fraction() == "1 of 1 dispatches (100%)"
+
+
 def test_write_proposals_yaml_round_trips(store, signer, tmp_path):
     _observe(store, signer, [])
     proposal_set = propose_from_ledger(store)

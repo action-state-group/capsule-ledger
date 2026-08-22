@@ -190,8 +190,8 @@ def main(argv: list[str] | None = None) -> int:
 
     run(store_dir)
     print(f"\nledger written to: {store_dir}")
-    print(f"$CAP report --ledger {store_dir}")
-    print(f"$CAP bundle --ledger {store_dir} --out {store_dir}/bundle.json --with-viewer")
+    print(f"capsule report --ledger {store_dir}")
+    print(f"capsule bundle --ledger {store_dir} --out {store_dir}/bundle.json --with-viewer")
     return 0
 
 

@@ -94,14 +94,16 @@ Okta's own API telling you "MFA is enabled" is still a claim being relayed,
 not a receipt this codebase's own gate produced.
 
 A stronger grade — a **counterparty-signed** confirmation the third system
-itself cryptographically attests to — is the natural paid-tier upgrade
-(same shape as the countersigned-outcome rung described in the Outcome
-Compiler product doc). It is explicitly **not** built here. If you are
-tempted to hand-wave a real connector's read up to a stronger grade because
-"Okta is trustworthy," don't — the grade describes what the *capsule*
-proves independently of vendor trust, and a plain API read proves only that
-the connector claims this, not that anyone can verify it without trusting
-the connector.
+itself cryptographically attests to, rather than a plain API read this
+codebase has to trust — is a further-out, explicitly **not-yet-built**
+rung above the mock/real-connector reference here (unrelated to, and not to
+be confused with, the [outcome compiler](outcome-compiler.md)'s own
+DETERMINISTIC/MANUAL/MODEL-ASSISTED verdict grades). If you are tempted to
+hand-wave a real connector's read up to a stronger grade because "Okta is
+trustworthy," don't — the grade describes what the *capsule* proves
+independently of vendor trust, and a plain API read proves only that the
+connector claims this, not that anyone can verify it without trusting the
+connector.
 
 ## The reference implementation: `MockIdPConnector`
 
@@ -162,8 +164,8 @@ contract:
    `signer_provider`, and call `ingest()` — from a webhook handler, a
    polling loop, or a queue consumer. Nothing else in this codebase changes.
 4. Do **not** grade the result above `runtime_claimed` yourself — see the
-   grading section above. If you need a stronger, independently-verifiable
-   grade, that is the paid-tier countersigned upgrade, not a connector
+   grading section above. A stronger, independently-verifiable grade is a
+   further-out, not-yet-built rung above this interface, not a connector
    change.
 
 ## What's explicitly not built here

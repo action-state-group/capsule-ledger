@@ -15,6 +15,7 @@ A guard checks each action your agent takes, appends the decision as a signed ca
 ## Understand it
 
 - **[Concepts in plain words](concepts.md)** — capsule, ledger, guard, verdict, fold, envelope, policy manifest, epoch, bundle — each one tied to a real field name or a real `capsule` command.
+- **[The outcome compiler](outcome-compiler.md)** — declaring an outcome in plain English (`capsule setup propose --statement ...`) and getting an honest, two-sided (before/after) verdict on it; **not yet merged to `main`**, doc says which branch to check out.
 - **[Onboarding: hooking an agent up to capsule-ledger](onboarding.md)** — the four ways to wire an agent (or framework) into a running ledger; says plainly which paths aren't implemented yet.
 - **[Guard failure semantics](failure-semantics.md)** — what happens when the ledger, the view, or the signer isn't available: what fails closed, what's allowed to fail open, and what always gets recorded.
 - **[Confirm-ingester connector interface](confirm-connector-interface.md)** — turning a third system's state change (an IdP flag, a closed ticket, a settled payment) into a fulfillment capsule chained to the commitment it confirms; the mock IdP reference implementation and how to wire a real connector.
