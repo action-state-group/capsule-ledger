@@ -22,6 +22,7 @@ from ..guards.signing import LocalSigner
 from ..ledger import LedgerStore
 from ..setup import adapters as setup_adapters
 from ..setup import confirm as setup_confirm
+from ..setup import declaration_drafter as setup_declaration_drafter
 from ..setup import enforce as setup_enforce
 from ..setup import init as setup_init_mod
 from ..setup import observe as setup_observe
@@ -146,6 +147,43 @@ def _cmd_observe(args: argparse.Namespace) -> int:
 
 def _cmd_propose(args: argparse.Namespace) -> int:
     store = DeclarationStore(_setup_dir(args))
+
+    # English statement -> draft declaration ([ldg-english-to-declaration-
+    # drafter]): a distinct mode from the batch DEFAULT_CANDIDATES run below
+    # -- one candidate, drafted from free text instead of matched from a
+    # fixed template catalog, so it gets its own validation and its own
+    # (still deterministic, still opt-in) evaluation path.
+    if args.statement is not None:
+        if not args.outcome_id:
+            print("capsule setup propose --statement: --outcome-id is required", file=sys.stderr)
+            return 1
+        if args.drafter is None:
+            print(
+                "capsule setup propose --statement: --drafter is required (use --drafter static "
+                "for the zero-network reference drafter)",
+                file=sys.stderr,
+            )
+            return 1
+        if args.drafter == "static":
+            declaration_drafter = setup_declaration_drafter.StaticDeclarationDrafter()
+        else:
+            try:
+                declaration_drafter = setup_declaration_drafter.DeepEvalDeclarationDrafter(model=args.model)
+            except setup_declaration_drafter.DrafterError as exc:
+                print(f"capsule setup propose: {exc.reason}: {exc}", file=sys.stderr)
+                return 1
+        with LedgerStore(_ledger_path(args)) as ledger:
+            outcome = setup_declaration_drafter.draft_declaration(
+                args.statement, outcome_id=args.outcome_id, drafter=declaration_drafter, ledger=ledger
+            )
+            proposal_set = setup_propose.ProposalSet(proposals=(outcome,), records_observed=0)
+            setup_propose.persist_proposals(proposal_set, store)
+        print(setup_propose.render_terminal(proposal_set), end="")
+        if args.out:
+            setup_propose.write_proposals_yaml(args.out, proposal_set)
+            print(f"wrote {args.out}")
+        return 1 if outcome.is_refused else 0
+
     with LedgerStore(_ledger_path(args)) as ledger:
         proposal_set = setup_propose.propose_from_ledger(ledger)
         if args.drafter is not None:
@@ -402,10 +440,19 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
         "--drafter", choices=["deepeval", "static"], default=None,
         help=(
             "opt-in: let a model draft PROSE/RATIONALE ONLY (verdict pairs and coverage numbers stay "
-            "the existing deterministic computation); default: off, zero model calls"
+            "the existing deterministic computation); with --statement, drafts the candidate "
+            "DECLARATION itself instead. Default: off, zero model calls"
         ),
     )
     p_propose.add_argument("--model", default=None, help="model id override passed to the deepeval drafter")
+    p_propose.add_argument(
+        "--statement", default=None,
+        help=(
+            "an English statement to draft into ONE candidate declaration (requires --outcome-id and "
+            "--drafter); a PROPOSAL requiring human confirm at T1, same as any other candidate"
+        ),
+    )
+    p_propose.add_argument("--outcome-id", default=None, help="the outcome_id to draft --statement under")
     p_propose.set_defaults(func=_cmd_propose)
 
     p_confirm = setup_sub.add_parser("confirm", help="the human touchpoints: T1 accept, T2 census, T4 refusal acknowledgment")
