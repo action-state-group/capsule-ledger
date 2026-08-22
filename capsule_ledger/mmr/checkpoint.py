@@ -42,10 +42,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import core
+from capsule_emit.checkpoint import core
 
 if TYPE_CHECKING:
-    from .index import MmrLedger
+    from capsule_emit.checkpoint import MmrLedger
 
 __all__ = [
     "CheckpointConfig",

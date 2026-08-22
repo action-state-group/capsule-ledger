@@ -69,11 +69,17 @@ hardware, and shipping a non-functional stub is worse than not shipping at all.
 
 | Feature | Tests | Verdict |
 |---------|-------|---------|
-| MMR append, peak hash, root computation | 1, 2, 3 | OSS |
-| Signed checkpoint format (mmr_size, root, key_id, timestamp) | 1, 3 | OSS |
+| MMR append, peak hash, root computation | 1, 2, 3 | OSS — consumed from the neutral `capsule_emit.checkpoint` core, not forked here |
+| Signed checkpoint format (mmr_size, root, key_id, timestamp) | 1, 3 | OSS — consumed from the neutral `capsule_emit.checkpoint` core, not forked here |
 | Register checkpoint at a SCITT TS, store COSE receipt | 2 | OSS |
 | Verify inclusion-to-peak + checkpoint + receipt chain | 1, 2 | OSS |
 | Fixed-cadence checkpoint trigger (operator's own cron) | 2 | OSS |
+
+The first two rows pass test 1 (counterparty interoperability) precisely because they are
+substrate a counterparty needs to verify this ledger's log — that is what places them in the
+neutral producer library (`capsule-emit`'s `checkpoint` subpackage) rather than as a
+capsule-ledger-local implementation. capsule-ledger imports that public interface; it never
+maintains a second copy of the MMR algorithm.
 
 ## Rationale
 
