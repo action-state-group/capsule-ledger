@@ -349,6 +349,13 @@ class TestRegisterCheckpoint:
 
 
 class TestVerifyReceiptOffline:
+    def setup_method(self):
+        # scitt-cose is the `checkpoint` extra, not `dev` — mock.patch("scitt_cose....")
+        # needs the module importable even though checkpoint.py's own import is a soft
+        # try/except. Skip loudly (not silently) rather than ModuleNotFoundError in CI's
+        # base `dev`-only job.
+        pytest.importorskip("scitt_cose")
+
     def _make_witness(self) -> WitnessRecord:
         return WitnessRecord(
             ts_url=DEFAULT_TS_URL,
