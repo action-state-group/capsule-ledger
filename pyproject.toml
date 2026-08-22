@@ -45,6 +45,11 @@ examples = ["capsule-emit>=0.3.0"]
 # lazily and raises a named, actionable JudgeError if this extra isn't
 # installed, so `capsule_ledger.judge` stays importable without it.
 judge = ["deepeval>=1.0"]
+# capsule_ledger/mmr/checkpoint.py uses scitt-cose for offline COSE receipt
+# verification and `cryptography` for Ed25519 key conversion. Both are
+# soft-imported (actionable ImportError if absent). Install this extra to
+# enable `capsule checkpoint verify` and `verify_receipt_offline`.
+checkpoint = ["scitt-cose>=0.2.0", "cryptography>=42.0"]
 
 [project.scripts]
 capsule = "capsule_ledger.cli:main"
