@@ -25,8 +25,11 @@ from capsule_ledger.compiler.offer_response import (
 from capsule_ledger.compiler.refusal import EVENT_REFUSAL
 from capsule_ledger.compiler.vocabulary import RESERVED_VERDICT_WORDS
 from capsule_ledger.examples.airline_engagement_pack import (
+    _OPTION_LANGUAGE_RE,
+    _PRESSURE_LANGUAGE_RE,
     DATA_FILE,
     AirlineClaimResult,
+    _asks_for_human,
     build_a8_satisfaction_refusal,
     build_airline_engagement_pack,
     load_conversations,
@@ -73,6 +76,18 @@ def test_a1_is_deterministic_both_sides(pack):
     by_id = {r.claim_id: r for r in pack.rows}
     assert by_id["A1"].forward_verdict == "DETERMINISTIC"
     assert by_id["A1"].backward_verdict == "DETERMINISTIC"
+
+
+def test_a4_and_a6_statements_do_not_overclaim(pack):
+    """Retuned, [ldg-airline-pack-semantics-tuning]: 'always reachable' and
+    'resolved' both overclaimed what a <100% ratio / a tool-call-absence
+    check can prove. Locking the renamed wording so a future edit can't
+    silently revert to the overclaiming statement."""
+    by_id = {r.claim_id: r for r in pack.rows}
+    assert "always" not in by_id["A4"].statement.lower()
+    assert by_id["A4"].statement == "a human was reachable when asked"
+    assert "resolved" not in by_id["A6"].statement.lower()
+    assert by_id["A6"].statement == "the case was handled without transfer to a human"
 
 
 def test_an_invalid_verdict_pair_is_rejected():
@@ -146,6 +161,18 @@ def test_a3a_is_with_instrumentation_and_names_a_real_missing_instrument(pack):
     assert " " not in a3a.missing_instrument
 
 
+def test_a3a_forward_verdict_matches_a2_and_a5_missing_instrument_pattern(pack):
+    """Retuned, [ldg-airline-pack-semantics-tuning]: A3a used to render
+    forward DETERMINISTIC while its own rationale said the deterministic
+    rule has nothing to run over on this dataset -- a self-contradiction.
+    A2 and A5 already render UNAVAILABLE-STATE-REQUIRED for exactly this
+    "missing typed record" situation; A3a now matches them."""
+    by_id = {r.claim_id: r for r in pack.rows}
+    a2, a3a, a5 = by_id["A2"], by_id["A3a"], by_id["A5"]
+    assert a3a.forward_verdict == "UNAVAILABLE-STATE-REQUIRED"
+    assert a3a.forward_verdict == a2.forward_verdict == a5.forward_verdict
+
+
 # --- A1's own guard: refuses a one-option offer, RED when removed ----------
 
 
@@ -203,6 +230,69 @@ def test_a1_guard_is_GREEN_once_a_second_option_exists(signer):
     assert response["asg_payload"]["detail"]["selected_option_digest"] == two_options[0]
 
 
+# --- retuned classifiers, synthetic strings, corpus-independent ------------
+# [ldg-airline-pack-semantics-tuning]: fast regression tests for the exact
+# false-positive/false-negative shapes the adversarial re-evaluation found,
+# independent of the vendored file (so they still catch a regex regression
+# even if the corpus is ever re-vendored).
+
+
+def test_a1_option_definition_excludes_independently_combinable_fields():
+    """'You can modify: flights / cabin / bags' is not an offer of mutually
+    exclusive options -- those fields are independently combinable, not
+    alternatives to pick between -- even though it was one of the phrasings
+    the OLD regex happened to miss for an unrelated reason (no count word)."""
+    text = "What changes would you like to make? You can modify:\n- Flight dates/times\n- Cabin class\n- Add baggage"
+    assert not _OPTION_LANGUAGE_RE.search(text)
+
+
+def test_a1_option_definition_catches_enumerated_alternatives():
+    text = "Your options at this point would be:\n1. Keep your current reservation\n2. Cancel without a refund"
+    assert _OPTION_LANGUAGE_RE.search(text)
+
+
+def test_a1_option_language_no_longer_fires_on_attribute_either_or():
+    """13 of 14 bare either/or hits in the vendored corpus were the agent
+    describing an existing attribute or restating the customer's own
+    stated flexibility, not offering a choice."""
+    assert not _OPTION_LANGUAGE_RE.search("Your reservations are either in basic economy or economy class.")
+    assert not _OPTION_LANGUAGE_RE.search("I see you're open to either Philadelphia or Newark as your destination.")
+
+
+def test_a1_option_language_still_fires_on_a_genuine_either_or_offer():
+    text = "Would you like me to proceed with either of these options, or do you have any other questions?"
+    assert _OPTION_LANGUAGE_RE.search(text)
+
+
+def test_a3b_no_longer_fires_on_agents_own_promptness():
+    """41 of 45 legacy hits were the agent describing what IT will do
+    quickly, not pressure applied to the customer."""
+    assert not _PRESSURE_LANGUAGE_RE.search("I'll check your reservation details right away.")
+    assert not _PRESSURE_LANGUAGE_RE.search("The refund has been processed immediately.")
+
+
+def test_a3b_no_longer_fires_on_agent_empathising_with_customer_urgency():
+    assert not _PRESSURE_LANGUAGE_RE.search("Since you mentioned your mom is sick, I understand this is an urgent situation.")
+
+
+def test_a3b_still_fires_on_a_genuine_deadline_or_expiry_clause():
+    assert _PRESSURE_LANGUAGE_RE.search("You must book today to keep this rate.")
+    assert _PRESSURE_LANGUAGE_RE.search("This offer expires at midnight -- last chance to lock in the price.")
+
+
+def test_a4_negation_guard_excludes_a_declined_transfer():
+    """A customer explicitly declining a transfer is not a request for
+    one -- the negation guard exists because the retuned broader vocabulary
+    ("talk to someone") would otherwise fire on the decline itself."""
+    text = "To be clear, I don't want to be transferred to a human agent -- I'd like you to handle this for me."
+    assert not _asks_for_human(text)
+
+
+def test_a4_still_catches_the_missed_transfer_phrasing():
+    assert _asks_for_human("Fine, transfer me to someone who can actually help.")
+    assert _asks_for_human("I'd like to talk to someone about this.")
+
+
 # --- measured rows report a real N-of-M over the vendored 200-sim file -----
 
 
@@ -212,29 +302,41 @@ def test_vendored_conversation_file_has_200_simulations():
 
 
 @pytest.mark.parametrize(
-    "measure",
+    "measure,expected_n",
     [
-        measure_a1_option_shaped_language,
-        measure_a3b_pressure_language_absent,
-        measure_a6_resolved_without_transfer,
-        measure_a7_pushback_present,
+        # Retuned, [ldg-airline-pack-semantics-tuning] (2026-08-22): these
+        # are the actual measured, hand-verified counts on the vendored
+        # file today -- NOT a target. Pinned exactly (not a range) because
+        # a bare "0 < n < m" is exactly what let a regex edit that halved
+        # A1's count ship green before: it cannot distinguish a genuine,
+        # hand-verified 200-of-200 (A3b) from a heuristic that stopped
+        # firing, nor can it catch a count that moved but stayed in-range.
+        # A real change to a classifier's precision/recall SHOULD move this
+        # number and SHOULD fail this test -- that is the point. When it's
+        # a genuine, deliberate retune: re-run the hand-labelling in
+        # tests/test_airline_engagement_pack_hand_labels.py, update
+        # hand_labels.json, and update the expected value here together,
+        # not this number alone.
+        (measure_a1_option_shaped_language, 111),
+        (measure_a3b_pressure_language_absent, 200),
+        (measure_a6_resolved_without_transfer, 160),
+        (measure_a7_pushback_present, 26),
     ],
 )
-def test_measured_rows_report_a_real_n_of_200(measure):
+def test_measured_rows_report_the_retuned_n_of_200(measure, expected_n):
     sims = load_conversations()
     n, m = measure(sims)
     assert m == 200
-    # unflattering numbers are expected and untuned -- the only structural
-    # requirement is a real, in-range count, never 0 or 200 flat (either
-    # extreme would mean the heuristic never fires at all, or always does)
-    assert 0 < n < m
+    assert n == expected_n
 
 
 def test_a4_measures_reachability_conditioned_on_having_asked():
+    """Pinned exact values, [ldg-airline-pack-semantics-tuning]: the
+    denominator (23/33) was retuned and hand-verified -- same reasoning as
+    ``test_measured_rows_report_the_retuned_n_of_200`` above."""
     sims = load_conversations()
     reached, asked = measure_a4_human_reachable_when_asked(sims)
-    assert asked > 0
-    assert 0 <= reached <= asked
+    assert (reached, asked) == (23, 33)
 
 
 def test_pack_rows_carry_their_measured_coverage(pack):

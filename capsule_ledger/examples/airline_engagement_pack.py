@@ -33,6 +33,18 @@ A7     reliance looks calibrated -- pushback rate non-zero         --           
 A8     the customer was satisfied                                  REFUSED                                          REFUSED
 =====  ==========================================================  ==============================================  ================
 
+**This table is the original task's statements, kept verbatim for
+provenance.** ``[ldg-airline-pack-semantics-tuning]`` (2026-08-22) renamed
+two rows and retuned A3a's forward verdict after finding the original
+wording/classification did not match what was actually measurable -- A4's
+statement is now "a human was reachable when asked" (dropping "always",
+which a <100% ratio cannot support) and A6's is "the case was handled
+without transfer to a human" (dropping "resolved", which the tool-call trail
+alone cannot prove). A3a's forward verdict now renders
+UNAVAILABLE-STATE-REQUIRED, matching A2/A5, instead of the DETERMINISTIC
+shown above. See ``build_airline_engagement_pack`` and each row's own
+rationale for why.
+
 **A4, A6 and A8 run on today's recorders** (transfer is a tool call; A8's
 refusal needs no data at all) -- their ``coverage_n``/``coverage_m`` below are
 real measurements over the vendored 200-simulation conversation file
@@ -57,6 +69,74 @@ hit any particular count.** Whatever ``build_airline_engagement_pack()``
 reports for A1/A3b/A4/A6/A7 today is a real count over data this repo did
 not author, not a target -- see inbox.md's own illustrative (not
 hardcoded/reverse-engineered) numbers for the same file.
+
+**``[ldg-airline-pack-semantics-tuning]`` (2026-08-22): the counts above were
+arithmetically correct and semantically wrong.** An independent re-evaluation
+read every regex hit and every missed simulation by hand and found the
+classifiers measuring something other than what each row's statement claims
+-- not a scoring bug, a definition bug. Retuned here, each against a
+hand-labelled sample of >=20 conversations committed alongside this module
+(``data/tau2_airline/hand_labels.json``, exercised by
+``tests/test_airline_engagement_pack_hand_labels.py``):
+
+- **A3b** was ~100% false positives: 41 of 45 ``right away``/``immediately``
+  hits were the agent describing its own promptness
+  ("I'll check ... right away"), not pressure applied to the customer; one
+  ``urgent`` hit was the agent *empathising* with the customer's own stated
+  urgency. The keyword stand-in now requires a second-person imperative plus
+  a deadline, or a fare/seat/offer-expiry clause -- the corpus turns out to
+  contain almost no genuine pressure language, so the honest count is 200 of
+  200, not 165 of 200. A count of 200 is not evidence the check never fires
+  (see the hand-labelled fixture, not a bare range assertion, for why this
+  is trustworthy).
+- **A1** was undercounting (missed common phrasings like "several one-stop
+  flight options", "your options are:", the adjacency-only regex required
+  the count word directly next to "options") and overcounting (bare
+  ``either...or`` fired on attribute descriptions -- "either in basic
+  economy or economy class" -- and on the agent restating the customer's own
+  stated flexibility, 13 of 14 ``either...or`` hits in this corpus were
+  exactly this). Retuned to the definition this row now states explicitly:
+  *an option is one of a set of >=2 mutually exclusive actions the agent is
+  willing to execute, offered for the customer to pick between* -- which is
+  also why "You can modify: flights / cabin / bags" does NOT count (those
+  are independently combinable fields, not exclusive alternatives), even
+  though the old regex missed it for an unrelated reason (no count word).
+- **A6**'s count was never wrong -- what was wrong was calling it "resolved."
+  Cross-tabbed against this same vendored file's tool-call trail, no-transfer
+  simulations do not uniformly succeed and transferred ones do not uniformly
+  fail; transferring is frequently the policy-correct move in tau2-bench
+  airline. The row is renamed to what the tool-call trail actually proves:
+  the case was handled without escalating to a human.
+- **A7** was inflated by ``i don't want`` (49 of 75 marker hits, mostly
+  booking specification -- "I don't want to change the flights, just the
+  class" -- not pushback) and was missing the vocabulary customers actually
+  use to resist a stated refusal (``isn't there any way``, ``are you
+  sure``/``double-check``, ``I deserve``/``I was told``, ``escalate``,
+  ``supervisor``). Retuned to require the marker follow a prior agent
+  refusal/limitation in the same simulation and to exclude the customer's
+  own first turn (there is nothing to push back on yet).
+- **A4**'s numerator (a real transfer call) was always sound; the denominator
+  regex missed phrasings like "Fine, transfer me to someone who can actually
+  help." Broadening it moves the ratio only slightly (~64% -> ~68%) --
+  reported here as a robustness check, not a different finding. The
+  statement is also renamed: the old wording asserted a human was *always*
+  reachable, which a <100% ratio can never support.
+- **A3a** rendered forward DETERMINISTIC while its own rationale said the
+  deterministic rule has nothing to run over on this dataset -- the same
+  missing-instrument situation A2 and A5 already render as
+  ``UNAVAILABLE-STATE-REQUIRED``. A3a now renders the same way.
+
+Two findings are recorded but not code changes: **A1's forward artifact**
+(``ChoiceClaimRequiresMultipleOptions``) enforces "you may not claim a choice
+was made" against a response, not "more than one way forward was offered" at
+offer time -- three non-corresponding things sit under one forward-verdict
+label; noted in A1's rationale below rather than silently left implicit.
+**A8's REFUSED/REFUSED backward stance** is a defensible product decision
+(this corpus carries plenty of both explicit customer appreciation and
+explicit dissatisfaction, and the shipped vocabulary's own
+``subjective_state_unattestable`` text already says "only what they said or
+did") but it is a *decision*, not something the record forces -- recorded as
+such rather than left to read as the only possible answer.
 """
 from __future__ import annotations
 
@@ -186,12 +266,31 @@ def _text(message: dict) -> str:
 
 
 # --- A1: option-shaped language, lexical, over the agent's own messages ----
+#
+# The adopted definition (``[ldg-airline-pack-semantics-tuning]``, deciding
+# what "an option" is per the task's own instruction): a set of >=2 mutually
+# exclusive actions the agent is willing to execute, offered for the
+# customer to pick between. This is why an enumerated list of independently
+# combinable fields ("You can modify: flights / cabin / bags") does NOT
+# count -- those are not exclusive alternatives -- even though a customer
+# could pick more than one.
 
 _OPTION_LANGUAGE_RE = re.compile(
     r"("
     r"\boption\s*(1|2|3|a|b|c|one|two|three)\b"
-    r"|\b(two|three|a\s+few|several|multiple)\s+options\b"
-    r"|\beither\b[^.?!]{0,80}\bor\b"
+    # the count word and "options" no longer need to be adjacent -- the
+    # corpus's most common phrasing is "several one-stop flight options",
+    # not "several options"
+    r"|\b(two|three|a\s+few|several|multiple)\s+(?:[a-z]+\s+){0,3}options?\b"
+    r"|\byour\s+options\s+are\b"
+    r"|\bhere\s+(?:are|is)\b[^.?!]{0,40}\boptions?\b"
+    # plural "options" introducing an enumerated list ("Your options at this
+    # point would be: 1. ... 2. ..."; "The only options available would be
+    # to either: 1. ... 2. ..."). Singular "option" is deliberately excluded
+    # -- "the best option appears to be:" introduces exactly one route, not
+    # a choice.
+    r"|\boptions\b[^.?!]{0,60}:"
+    r"|\bwould\s+you\s+like\b[^.?!]{0,120}\bor\b"
     r"|\byou\s+(can|could)\s+(choose|pick|select)\b"
     r"|\bwhich\s+(one|option)\s+would\s+you\s+(like|prefer)\b"
     r"|\b(first|second|third)\s+option\b"
@@ -208,7 +307,16 @@ def measure_a1_option_shaped_language(sims: list[dict]) -> tuple[int, int]:
     ``ChoiceClaimRequiresMultipleOptions`` -- see
     ``tests/test_compiler_offer_response.py``'s RED/GREEN pair); here it is
     read back off free text, since tau2-bench never emits a typed offer
-    capsule."""
+    capsule.
+
+    Retuned (``[ldg-airline-pack-semantics-tuning]``): bare ``either...or``
+    is dropped -- 13 of 14 hits in this corpus were the agent describing an
+    existing attribute ("either in basic economy or economy class") or
+    restating the customer's own stated flexibility ("you're open to either
+    Philadelphia or Newark"), not offering a choice. The one genuine
+    either/or offer found by hand ("Would you like me to proceed with either
+    of these options, or do you have any other questions?") is still caught
+    by the ``would you like ... or`` pattern above."""
     n = sum(
         1
         for sim in sims
@@ -218,14 +326,29 @@ def measure_a1_option_shaped_language(sims: list[dict]) -> tuple[int, int]:
 
 
 # --- A3b: pressure language, deterministic keyword stand-in ----------------
+#
+# Retuned (``[ldg-airline-pack-semantics-tuning]``): the original regex's
+# bare ``right away``/``immediately``/``urgent`` fired on the AGENT
+# describing its own promptness ("I'll check your reservation details right
+# away") or empathising with the customer's own stated urgency ("I
+# understand this is an urgent situation") -- 41 of 45 hits in this corpus
+# were exactly this, not pressure applied to the customer. Pressure language
+# is now required to be either a second-person imperative paired with a
+# deadline, or an explicit fare/seat/offer-expiry clause -- the shape a
+# deadline-pressure sentence actually has, as opposed to a word that also
+# appears in unrelated sentences.
 
 _PRESSURE_LANGUAGE_RE = re.compile(
-    r"\b("
-    r"act now|right away|immediately|as soon as possible|urgent(ly)?"
-    r"|last chance|final (notice|reminder)|before it'?s too late"
-    r"|you (must|need to) (act|decide|respond) (now|quickly|immediately)"
-    r"|limited time|hurry|expires? (today|soon|shortly)"
-    r")\b",
+    r"("
+    r"\byou (?:must|need to|have to) (?:act|decide|respond|book|confirm|pay)\b[^.?!]{0,60}"
+    r"\b(?:now|today|immediately|within \d+|by \d|before)\b"
+    r"|\b(?:this|the) (?:fare|price|offer|discount|seat|certificate)\b[^.?!]{0,40}\bexpires?\b"
+    r"|\blast chance\b"
+    r"|\bfinal (?:notice|reminder)\b"
+    r"|\bbefore it'?s too late\b"
+    r"|\blimited (?:time|seats?|availability) only\b"
+    r"|\bonly \d+ (?:seats?|spots?|tickets?) (?:left|remaining)\b"
+    r")",
     re.IGNORECASE,
 )
 
@@ -239,7 +362,17 @@ def measure_a3b_pressure_language_absent(sims: list[dict]) -> tuple[int, int]:
     calls (no network in this offline pack build, same discipline as
     ``judge/scorers/static.py``'s ``StaticScorer``), so this count is a
     demonstration of the MODEL-ASSISTED reporting mechanism, not a
-    production judge verdict, and must never be read as one."""
+    production judge verdict, and must never be read as one.
+
+    Expect (and this module does not tune toward) 200 of 200 on the
+    vendored file: a full-corpus keyword sweep for expiry/urgency/deadline
+    vocabulary during retuning found no genuine deadline-pressure sentence
+    anywhere in the 200 simulations -- every "limited"/"urgent" hit was
+    either the agent citing a policy limitation or empathising with the
+    customer, never pressure applied to them. A flat 200 here is a measured
+    finding, not an unfired heuristic -- see
+    ``tests/test_airline_engagement_pack_hand_labels.py`` for the
+    hand-labelled evidence, not a bare range assertion."""
     violations = sum(
         1
         for sim in sims
@@ -249,14 +382,38 @@ def measure_a3b_pressure_language_absent(sims: list[dict]) -> tuple[int, int]:
 
 
 # --- A4/A6: transfer_to_human_agents, over the tool-call-name trail --------
+#
+# Retuned (``[ldg-airline-pack-semantics-tuning]``): the denominator missed
+# phrasings like "Fine, transfer me to someone who can actually help." and
+# "I'd like to talk to someone about this." Broadening it moves the ratio
+# only slightly (measured ~64% -> ~68% on this file), which is itself worth
+# reporting -- a robustness check, not a different finding. A negation guard
+# excludes "I really don't want to talk to someone else" (a customer
+# declining a transfer is not a request for one).
 
 _HUMAN_REQUEST_RE = re.compile(
-    r"\b(human agent|real person|speak (to|with) a (human|person|representative)"
-    r"|talk to a (human|person)|human representative|supervisor)\b",
+    r"\b(human agent|real person|speak (?:to|with) a (?:human|person|representative)"
+    r"|talk to a (?:human|person)|human representative|supervisor"
+    r"|transfer (?:me )?to (?:someone|a person|a human)"
+    r"|(?:someone|somebody) (?:else )?who (?:can|could) (?:actually )?help"
+    r"|escalate (?:this )?to a (?:human|person|supervisor)"
+    r"|(?:talk|speak) (?:to|with) someone\b"
+    r")\b",
     re.IGNORECASE,
 )
 
+_HUMAN_REQUEST_NEGATION_RE = re.compile(r"\b(?:don'?t|do not|not really|really don'?t) want\b", re.IGNORECASE)
+
 _TRANSFER_TOOL = "transfer_to_human_agents"
+
+
+def _asks_for_human(text: str) -> bool:
+    for match in _HUMAN_REQUEST_RE.finditer(text):
+        window = text[max(0, match.start() - 45) : match.start()]
+        if _HUMAN_REQUEST_NEGATION_RE.search(window):
+            continue
+        return True
+    return False
 
 
 def measure_a4_human_reachable_when_asked(sims: list[dict]) -> tuple[int, int]:
@@ -270,7 +427,7 @@ def measure_a4_human_reachable_when_asked(sims: list[dict]) -> tuple[int, int]:
     for sim in sims:
         messages = sim["messages"]
         for i, m in enumerate(messages):
-            if m["role"] == "user" and _HUMAN_REQUEST_RE.search(_text(m)):
+            if m["role"] == "user" and _asks_for_human(_text(m)):
                 asked += 1
                 if any(_TRANSFER_TOOL in (mm.get("tool_call_names") or []) for mm in messages[i:]):
                     reached += 1
@@ -281,7 +438,16 @@ def measure_a4_human_reachable_when_asked(sims: list[dict]) -> tuple[int, int]:
 def measure_a6_resolved_without_transfer(sims: list[dict]) -> tuple[int, int]:
     """N of M simulations that never called ``transfer_to_human_agents`` --
     read directly off the recorded tool-call trail, no text reading
-    required."""
+    required.
+
+    The count is unchanged by ``[ldg-airline-pack-semantics-tuning]`` -- it
+    was never wrong. What was wrong was the row's statement calling this
+    "resolved": cross-tabbed against this file's own tool-call trail,
+    no-transfer simulations do not uniformly succeed and transferred ones do
+    not uniformly fail, because transferring is frequently the
+    policy-correct move in tau2-bench airline (a human agent can grant
+    exceptions this agent cannot). See ``build_airline_engagement_pack``'s
+    A6 row for the renamed statement."""
     n = sum(
         1
         for sim in sims
@@ -291,14 +457,37 @@ def measure_a6_resolved_without_transfer(sims: list[dict]) -> tuple[int, int]:
 
 
 # --- A7: pushback, lexical, over the customer's own messages ---------------
+#
+# Retuned (``[ldg-airline-pack-semantics-tuning]``): bare ``i don't want``
+# was 49 of 75 marker hits and mostly booking specification ("I don't want
+# to change the flights, just the class" as a FIRST message), not pushback.
+# The real pushback vocabulary customers use in this corpus -- resisting a
+# refusal, not merely disagreeing -- is different: "isn't there any way",
+# "are you sure"/"double-check", "I deserve"/"I was told", "escalate",
+# "supervisor". A marker only counts when (a) it is not the customer's own
+# first turn -- there is nothing to push back on yet -- and (b) it follows
+# an agent refusal/limitation earlier in the same simulation, which is what
+# pushback means: resisting a stated "no", not merely expressing a
+# preference.
+
+_AGENT_LIMITATION_RE = re.compile(
+    r"\b(unfortunately|cannot|can'?t|unable to|not able to|doesn'?t allow|does not allow"
+    r"|don'?t have the ability|no exception|not eligible|not permitted|won'?t be able"
+    r"|isn'?t (?:possible|able)|not possible|not authorized|restrict|no way to override"
+    r"|not currently support)\b",
+    re.IGNORECASE,
+)
 
 _PUSHBACK_RE = re.compile(
     r"("
-    r"that'?s not|that doesn'?t|i (already|did) (said|told|ask)"
-    r"|why (can'?t|not|would)|i (need|want) (it|this) (to|now)"
-    r"|this is (ridiculous|frustrating|unacceptable)|can you (please )?just"
-    r"|i don'?t (want|think)|not what i (asked|wanted)"
-    r"|i'?m not (happy|satisfied)|that'?s unfair|come on\b"
+    r"isn'?t there (?:any|some) way"
+    r"|are you (?:absolutely |completely )?sure\b"
+    r"|double[- ]check"
+    r"|\bi deserve\b"
+    r"|\bi was told\b"
+    r"|\bescalate\b"
+    r"|\bsupervisor\b"
+    r"|not fair\b"
     r")",
     re.IGNORECASE,
 )
@@ -306,15 +495,37 @@ _PUSHBACK_RE = re.compile(
 
 def measure_a7_pushback_present(sims: list[dict]) -> tuple[int, int]:
     """N of M simulations where the customer's own messages carry at least
-    one lexical pushback marker. A HEALTH SIGNAL, not a score to maximise --
-    a rate of exactly zero across every simulation would itself be the
-    finding worth flagging (Lee & See, over-trust/uncalibrated reliance),
-    not a result to celebrate."""
-    n = sum(
-        1
-        for sim in sims
-        if any(m["role"] == "user" and _PUSHBACK_RE.search(_text(m)) for m in sim["messages"])
-    )
+    one lexical pushback marker, gated to fire only after a prior agent
+    refusal/limitation and never on the customer's own first turn. A HEALTH
+    SIGNAL, not a score to maximise -- a rate of exactly zero across every
+    simulation would itself be the finding worth flagging (Lee & See,
+    over-trust/uncalibrated reliance), not a result to celebrate.
+
+    Known residual under-count, documented rather than chased further: a
+    customer disputing a stated fact ("I'm pretty sure I'm Gold, not
+    Silver -- can you double-check?") is real pushback in spirit but is not
+    counted unless the agent's determination was phrased with one of
+    ``_AGENT_LIMITATION_RE``'s explicit hedge words, since this module reads
+    text, not intent."""
+    n = 0
+    for sim in sims:
+        messages = sim["messages"]
+        user_turn = -1
+        seen_limitation = False
+        hit = False
+        for m in messages:
+            if m["role"] == "assistant":
+                if _AGENT_LIMITATION_RE.search(_text(m)):
+                    seen_limitation = True
+            elif m["role"] == "user":
+                user_turn += 1
+                if user_turn == 0:
+                    continue
+                if seen_limitation and _PUSHBACK_RE.search(_text(m)):
+                    hit = True
+                    break
+        if hit:
+            n += 1
     return n, len(sims)
 
 
@@ -340,10 +551,18 @@ def declare_a2_restriction_reason_ordering() -> AirlineClaimResult:
 
 
 def declare_a3a_urgency_without_policy_citation() -> AirlineClaimResult:
+    """Forward verdict retuned (``[ldg-airline-pack-semantics-tuning]``) from
+    DETERMINISTIC to UNAVAILABLE-STATE-REQUIRED: the row's own rationale has
+    always said the deterministic rule has nothing to run over on this
+    dataset (no typed message classes), and a forward verdict of
+    DETERMINISTIC asserted a check that does not exist. A2 and A5 already
+    render UNAVAILABLE-STATE-REQUIRED for exactly this situation -- a
+    missing typed record, not a missing model call -- and A3a now matches
+    them instead of being the one row that contradicts its own text."""
     return AirlineClaimResult(
         claim_id="A3a",
         statement="no urgency framing without the actual policy cited",
-        forward_verdict="DETERMINISTIC",
+        forward_verdict="UNAVAILABLE-STATE-REQUIRED",
         backward_verdict="WITH-INSTRUMENTATION",
         coverage_n=None,
         coverage_m=None,
@@ -353,8 +572,8 @@ def declare_a3a_urgency_without_policy_citation() -> AirlineClaimResult:
             "efficacy), checked by a dispatch wicket at composition time -- "
             "tau2-bench's agent emits free text only, no typed message "
             "classes, so the deterministic rule has nothing to run over on "
-            "this dataset. See A3b for the judged free-text stand-in this "
-            "pack ships instead."
+            "this dataset, forward or backward. See A3b for the judged "
+            "free-text stand-in this pack ships instead."
         ),
         missing_instrument="typed_severity_efficacy_label",
     )
@@ -427,11 +646,19 @@ def build_airline_engagement_pack(
             coverage_m=m1,
             rationale=(
                 f"measured lexically over the agent's own recorded messages: "
-                f"option-shaped phrasing appears in {n1} of {m1} simulations. "
-                "Forward side is the option_count guard "
+                f"option-shaped phrasing -- a set of >=2 mutually exclusive "
+                f"actions the agent is willing to execute, offered for the "
+                f"customer to pick between -- appears in {n1} of {m1} "
+                "simulations. Forward side is the option_count guard "
                 "(offer_response.ChoiceClaimRequiresMultipleOptions) refusing "
                 "a choice claim against a one-option offer -- see "
-                "tests/test_compiler_offer_response.py's RED/GREEN pair"
+                "tests/test_compiler_offer_response.py's RED/GREEN pair. "
+                "CAVEAT (recorded, not fixed here): that guard enforces 'you "
+                "may not claim a choice was made' against a response, not "
+                "'more than one way forward was offered' at offer time -- "
+                "build_offer_capsule(option_digests=[<one>]) seals "
+                "option_count=1 without complaint, so this forward verdict "
+                "checks a different claim than the row states"
             ),
         )
     )
@@ -462,7 +689,7 @@ def build_airline_engagement_pack(
     rows.append(
         AirlineClaimResult(
             claim_id="A4",
-            statement="a human was always reachable",
+            statement="a human was reachable when asked",
             forward_verdict="DETERMINISTIC",
             backward_verdict="DETERMINISTIC",
             coverage_n=n4,
@@ -471,7 +698,10 @@ def build_airline_engagement_pack(
                 f"of {m4} simulations where the customer asked for a "
                 f"human/agent, {n4} were followed by a transfer_to_human_agents "
                 "tool call -- read directly off the recorded tool-call trail, "
-                "today's recorders"
+                "today's recorders. Statement renamed from 'always reachable' "
+                "(retuned, [ldg-airline-pack-semantics-tuning]): the measured "
+                "ratio is well under 100%, which a claim of 'always' can never "
+                "support regardless of how the denominator is drawn"
             ),
         )
     )
@@ -481,7 +711,7 @@ def build_airline_engagement_pack(
     rows.append(
         AirlineClaimResult(
             claim_id="A6",
-            statement="they resolved it without transfer",
+            statement="the case was handled without transfer to a human",
             forward_verdict=None,
             backward_verdict="DETERMINISTIC",
             coverage_n=n6,
@@ -489,7 +719,14 @@ def build_airline_engagement_pack(
             rationale=(
                 f"{n6} of {m6} simulations never called "
                 "transfer_to_human_agents -- read directly off the recorded "
-                "tool-call trail, today's recorders"
+                "tool-call trail, today's recorders. Renamed from 'resolved "
+                "without transfer' (retuned, "
+                "[ldg-airline-pack-semantics-tuning]): cross-tabbed against "
+                "this file's own tool-call trail, no-transfer simulations do "
+                "not uniformly succeed and transferred ones do not uniformly "
+                "fail -- transferring is frequently the policy-correct move "
+                "in tau2-bench airline, so 'never transferred' does not mean "
+                "'resolved'"
             ),
         )
     )
@@ -525,7 +762,19 @@ def build_airline_engagement_pack(
             backward_verdict="REFUSED",
             coverage_n=None,
             coverage_m=None,
-            rationale=display_string("refusal_reason_code", "subjective_state_unattestable"),
+            rationale=(
+                display_string("refusal_reason_code", "subjective_state_unattestable")
+                + ". This is a deliberate product stance, not one the record forces "
+                "(recorded explicitly, [ldg-airline-pack-semantics-tuning]): this "
+                "corpus carries both explicit customer appreciation and explicit "
+                "dissatisfaction in the transcripts, and the refusal's own text "
+                "already says 'only what they said or did' -- a narrower row "
+                "reporting only what was said (not what was felt) would be "
+                "answerable from this same data. REFUSED/REFUSED is chosen "
+                "anyway because 'the customer said something appreciative' and "
+                "'the customer was satisfied' are different claims, and this "
+                "pack does not want a reader to conflate them"
+            ),
             refusal_reason_code="subjective_state_unattestable",
         )
     )
