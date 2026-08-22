@@ -47,8 +47,9 @@ def _build_signer(args: argparse.Namespace):
 
 
 def _open_mmr_ledger(ledger_path: str):
+    from capsule_emit.checkpoint import MmrLedger
+
     from ..ledger.store import LedgerStore
-    from ..mmr.index import MmrLedger
 
     store = LedgerStore(ledger_path)
     mmr = MmrLedger(store)
@@ -125,12 +126,13 @@ def _cmd_emit(args: argparse.Namespace) -> int:
 
 
 def _cmd_status(args: argparse.Namespace) -> int:
+    from capsule_emit.checkpoint import leaf_count
+
     from ..mmr.checkpoint import (
         list_checkpoints,
         load_config,
         load_latest_checkpoint,
     )
-    from ..mmr.core import leaf_count
     from .ledger_io import require_ledger_path
 
     ledger_path = require_ledger_path("checkpoint status", args)
@@ -174,7 +176,8 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
-    from ..mmr import core
+    from capsule_emit.checkpoint import core
+
     from ..mmr.checkpoint import (
         CheckpointRecord,
         list_checkpoints,
@@ -264,8 +267,9 @@ def _cmd_verify(args: argparse.Namespace) -> int:
 
     # Cadence lag check on the latest.
     if prev is not None:
+        from capsule_emit.checkpoint import leaf_count as lc
+
         from ..mmr.checkpoint import load_config
-        from ..mmr.core import leaf_count as lc
 
         current_entries = mmr.leaf_count()
         witnessed_entries = lc(prev.mmr_size)
