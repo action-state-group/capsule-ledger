@@ -27,8 +27,7 @@ which likewise takes an already-hashed leaf as an opaque input.
 """
 from __future__ import annotations
 
-from capsule_ledger.mmr import core
-from capsule_ledger.mmr.store import MemoryNodeStore
+from capsule_emit.checkpoint import MemoryNodeStore, core
 
 # fmt: off
 KAT39_LEAVES = [

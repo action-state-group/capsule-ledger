@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """The session digest: an MMR root over one session's ordered turn capsules.
 
-Reuses ``capsule_ledger.mmr.core`` unchanged -- the same MMRIVER-compatible,
-position-committed hashing scheme the ledger's own whole-ledger completeness
-certificate uses (``mmr/index.py``'s ``MmrLedger``), just scoped to one
-session's turn ids instead of the whole ledger's append order. A session's
-turns are not generally contiguous in the shared ledger (other
+Reuses ``capsule_emit.checkpoint.core`` unchanged -- the same
+MMRIVER-compatible, position-committed hashing scheme the ledger's own
+whole-ledger completeness certificate uses (``capsule_emit.checkpoint``'s
+``MmrLedger``), just scoped to one session's turn ids instead of the whole
+ledger's append order. capsule-ledger consumes this MMR/CLL core from the
+neutral producer library rather than forking it (Amendment E, 2026-08-21). A
+session's turns are not generally contiguous in the shared ledger (other
 sessions/agents interleave), so this builds a fresh, throwaway MMR from the
 explicit ordered id list the session-close capsule itself carries, rather
 than indexing ledger ``seq``.
@@ -19,8 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ..mmr import core
-from ..mmr.store import MemoryNodeStore
+from capsule_emit.checkpoint import MemoryNodeStore, core
 
 __all__ = ["session_root", "turn_inclusion_proof", "verify_turn_inclusion"]
 

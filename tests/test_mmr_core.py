@@ -9,9 +9,7 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
-from capsule_ledger.mmr import core
-from capsule_ledger.mmr.store import MemoryNodeStore
+from capsule_emit.checkpoint import MemoryNodeStore, core
 
 
 def _popcount(n: int) -> int:
