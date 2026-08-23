@@ -2,9 +2,14 @@
 """MMR peaks checkpoint: sign, register with a Transparency Service, verify.
 
 A *checkpoint* is a signed, tamper-evident snapshot of the MMR's current peak
-set: ``{mmr_size, root, prev_size, prev_root, key_id, timestamp}``.
-Registering its digest with a SCITT Transparency Service (TS) yields a COSE
-Receipt that provides third-party freshness evidence up to that checkpoint.
+set: ``{v, kind, log_id, mmr_size, root, prev_size, prev_root, key_id,
+timestamp}`` — the CLL shape ratified in Amendment E, wire-identical to
+``capsule_emit.checkpoint.CheckpointRecord`` and scitt-cose's
+``cll.Checkpoint``. ``log_id`` identifies which log a checkpoint belongs to
+in a multi-log/multi-peer deployment; single-node ``capsule-ledger`` always
+emits ``log_id=""``. Registering the digest with a SCITT Transparency
+Service (TS) yields a COSE Receipt that provides third-party freshness
+evidence up to that checkpoint.
 
 Verification chain (all links must hold):
   1. MMR inclusion-to-peak: any leaf under ``mmr_size`` is genuinely in the log
@@ -137,6 +142,11 @@ class CheckpointRecord:
     ``signature`` covers the signing body (all fields except ``signature`` and
     ``witnesses``, serialised as deterministic JSON). ``witnesses`` is populated
     after registration with one or more Transparency Services.
+
+    Wire-identical to ``capsule_emit.checkpoint.CheckpointRecord`` and
+    scitt-cose's ``cll.Checkpoint`` (Amendment E CLL shape). ``log_id``
+    defaults to ``""``: single-node ``capsule-ledger`` never multiplexes
+    logs, so every checkpoint it emits carries the empty log id.
     """
 
     v: int
@@ -148,6 +158,7 @@ class CheckpointRecord:
     key_id: str
     timestamp: str      # ISO 8601 UTC
     signature: str      # hex HMAC-SHA256 over signing_body
+    log_id: str = ""     # "" for single-node; identifies the log in a multi-log deployment
     witnesses: list[WitnessRecord] = field(default_factory=list)
 
     def signing_body(self) -> str:
@@ -155,6 +166,7 @@ class CheckpointRecord:
         body = {
             "v": self.v,
             "kind": self.kind,
+            "log_id": self.log_id,
             "mmr_size": self.mmr_size,
             "root": self.root,
             "prev_size": self.prev_size,
@@ -175,6 +187,7 @@ class CheckpointRecord:
         d = {
             "v": self.v,
             "kind": self.kind,
+            "log_id": self.log_id,
             "mmr_size": self.mmr_size,
             "root": self.root,
             "prev_size": self.prev_size,
@@ -193,6 +206,7 @@ class CheckpointRecord:
         return cls(
             v=int(d["v"]),
             kind=d["kind"],
+            log_id=d.get("log_id", ""),
             mmr_size=int(d["mmr_size"]),
             root=d["root"],
             prev_size=int(d["prev_size"]),
@@ -219,12 +233,14 @@ def emit_checkpoint(
     *,
     prev: CheckpointRecord | None = None,
     timestamp: str | None = None,
+    log_id: str = "",
 ) -> CheckpointRecord:
     """Build and sign a checkpoint from ``mmr``'s current state.
 
     ``signer`` is any object with ``key_id: str`` and ``sign(digest_hex: str) -> str``.
     ``prev`` is the previous checkpoint (for monotonicity + rollback detection).
     ``timestamp`` overrides the current UTC time (for deterministic tests).
+    ``log_id`` defaults to ``""`` — single-node deployments never need to set it.
 
     Raises ``RollbackError`` if the MMR is inconsistent with ``prev``.
     """
@@ -268,6 +284,7 @@ def emit_checkpoint(
         key_id=signer.key_id,
         timestamp=timestamp,
         signature="",
+        log_id=log_id,
     )
     sig = signer.sign(cp.digest())
     cp.signature = sig
