@@ -18,8 +18,22 @@ classifiers = [
 ]
 # Capsule parsing goes through the public agent-action-capsule reference
 # library — never vendored into this repo.
+#
+# capsule-emit[checkpoint] -- the neutral CLL/MMR core (append, peak hash,
+# root computation, checkpoint format) this package consumes from
+# capsule_emit.checkpoint rather than forking (Amendment E, 2026-08-21; see
+# docs/oss-project-scope.md). Required, not optional: capsule_ledger.cli.
+# bundle_cmd's completeness certificate, capsule_ledger.conversation.merkle's
+# session digest, and capsule_ledger.mmr.checkpoint's sign/register/verify
+# path all depend on it directly, not just the examples path. PENDING:
+# 0.4.0 is on capsule-emit's `main` (version bumped, checkpoint subpackage
+# present, requires scitt-cose>=0.2.0 which is on scitt-cose's `main` at
+# 0.2.1) but neither is released to PyPI yet -- this floor will not resolve
+# via `pip install` until those releases are cut. See
+# ledger/outbox.md [ldg-release-train-cll] for the tracking decision.
 dependencies = [
     "agent-action-capsule>=0.1.0",
+    "capsule-emit[checkpoint]>=0.4.0",
     "pyyaml>=6.0",
 ]
 
@@ -28,16 +42,11 @@ Homepage = "https://github.com/action-state-group/capsule-ledger"
 Source = "https://github.com/action-state-group/capsule-ledger"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0", "capsule-ledger[examples]"]
+dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0"]
 # Pinned below 2.0: the 2.0 release restructured the package (split out
 # mcp-types) and dropped the `mcp.server.fastmcp` import path this server
 # uses -- see capsule_ledger/mcp/server.py.
 mcp = ["mcp>=1.0,<2.0"]
-# capsule_ledger/examples/two_agents.py is the only thing in this package
-# that imports capsule-emit -- the rest of capsule-ledger never depends on
-# it. Floor matches the oldest published PyPI release whose emit() signature
-# this example relies on; the local capsule-emit checkout may be ahead.
-examples = ["capsule-emit>=0.3.0"]
 # capsule_ledger/judge/scorers/deepeval_scorer.py -- the judge harness's
 # default (BYOM) Scorer -- and capsule_ledger/setup/prose_drafter.py's
 # opt-in DeepEvalRationaleDrafter (`capsule setup propose --drafter
@@ -47,6 +56,11 @@ examples = ["capsule-emit>=0.3.0"]
 # error if this extra isn't installed, so `capsule_ledger.judge` and
 # `capsule_ledger.setup` both stay importable without it.
 judge = ["deepeval>=1.0"]
+# capsule_ledger/mmr/checkpoint.py uses scitt-cose for offline COSE receipt
+# verification and `cryptography` for Ed25519 key conversion. Both are
+# soft-imported (actionable ImportError if absent). Install this extra to
+# enable `capsule checkpoint verify` and `verify_receipt_offline`.
+checkpoint = ["scitt-cose>=0.2.0", "cryptography>=42.0"]
 
 [project.scripts]
 capsule = "capsule_ledger.cli:main"

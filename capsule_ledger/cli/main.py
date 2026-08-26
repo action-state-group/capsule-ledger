@@ -27,6 +27,7 @@ from . import (
     bisect_cmd,
     blame_cmd,
     bundle_cmd,
+    checkpoint_cmd,
     confirm_cmds,
     console_cmd,
     constraints_cmd,
@@ -60,6 +61,7 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     fold_cmds.add_parser(sub)
+    checkpoint_cmd.add_parser(sub)
     init_cmds.add_parser(sub)
     thresholds_cmds.add_parser(sub)
     enforce_cmds.add_parser(sub)
@@ -184,6 +186,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "setup":
         if getattr(args, "setup_command", None) is None:
             args.setup_parser.print_help()
+            return 0
+        return args.func(args)
+
+    if args.command == "checkpoint":
+        if getattr(args, "checkpoint_command", None) is None:
+            args.cp_parser.print_help()
             return 0
         return args.func(args)
 

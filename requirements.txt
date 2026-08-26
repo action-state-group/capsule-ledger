@@ -8,7 +8,7 @@
 #
 # Usage:
 #   pip install -r requirements.txt
-#   pip install -e .[dev,examples]
+#   pip install -e .[dev]
 #
 # LOAD-BEARING PINS (do not loosen without regenerating the committed fixture):
 #   capsule-emit==0.4.0        — tests/fixtures/two_agents_sim_ledger.jsonl was
@@ -20,25 +20,52 @@
 #                                any version change requires a full re-vector-run.
 #   PyYAML==6.0.3              — YAML parsing on the verification path.
 #
-# To regenerate after a planned version bump:
-#   1. Update the pin here.
+# KNOWN DELIBERATE MISMATCH (2026-08-22, [airline-demo-emit-to-seal-migration]):
+# examples/two_agents.py now calls capsule_emit.seal() (capsule-emit's emit()
+# was renamed in PR #70 / emit-clean-break-stub, itself unreleased) but this
+# pin stays at 0.3.2 -- seal() does not exist there, so the example will not
+# actually run against this lockfile until the pin below moves past 0.4.0.
+# Left deliberately out of sync rather than bumped ahead of the PyPI release,
+# same pattern as [ldg-mmr-consume-neutral-core]'s capsule-emit[checkpoint]
+# floor. Confirmed by direct byte comparison (not assumed): seal() and emit()
+# produce byte-identical capsules within the same capsule-emit version, so the
+# rename itself is not what will break the fixture match. What WILL: an
+# unrelated capsule-emit format change already landed between 0.3.2 and main
+# (a new `canonicalization_id` field in compute_attestation) that changes the
+# two emit-minted capsules' bytes regardless of emit()-vs-seal(). So the next
+# pin bump past 0.3.2 requires fixture regeneration either way -- expected,
+# not a regression introduced by this rename.
+#
+# To regenerate after the planned 0.4.0 bump:
+#   1. Update the pin here (and pyproject.toml's `examples` extra floor).
 #   2. Run: python -m capsule_ledger.examples.two_agents \
 #              --out tests/fixtures/two_agents_sim_ledger.jsonl
 #   3. Confirm: pytest tests/test_two_agents_example.py -v
 #   4. Commit fixture + this file together.
 #
-# PIN BUMP + FIXTURE REGEN (2026-08-22, [ldg-compiler-front-door]): bumped
-# 0.3.2 -> 0.4.0 to match `main`'s own [ldg-release-train-cll] bump (commit
-# 554e823), which this branch predates -- PyPI's published capsule-emit moved
-# to 0.4.0 out from under this whole unmerged stack, so any branch on it now
-# resolves 0.4.0 unpinned and fails the byte-match test on a fresh install.
-# The byte diff is confined to the two capsule-emit-minted capsules
-# (intent_declare/intent_fulfill), caused solely by the new
+# PIN BUMP + FIXTURE REGEN (2026-08-22, [ldg-release-train-cll], absorbing
+# [ldg-mmr-consume-neutral-core]): bumped 0.3.2 -> 0.4.0 and regenerated the
+# fixture. Verified the byte diff is confined to the two capsule-emit-minted
+# capsules (intent_declare/intent_fulfill) and is caused solely by the new
 # `canonicalization_id` field landing in capsule-emit's compute_attestation
-# between 0.3.2 and 0.4.0 (RFC 8785 canonicalization) -- spec-driven, not
-# drift; same field, same accept decision `main` already made. Verified this
-# branch's regenerated fixture is byte-identical to `main`'s own regenerated
-# one.
+# between 0.3.2 and main -- spec-driven (RFC 8785 canonicalization), not
+# drift; capsule_id/signature/parent_capsule_id differences are downstream
+# digest consequences of that one field. Per Steven's DECISION, 2026-08-22:
+# regenerate and accept. Tested against capsule-emit's `main` (514e0d3) +
+# scitt-cose's `main` (9cebba4) via editable install, since neither 0.4.0 nor
+# 0.2.1 is on PyPI yet -- this pin resolves the moment capsule-emit cuts that
+# release. See ledger/outbox.md [ldg-release-train-cll].
+#
+# PIN BUMP + FIXTURE REGEN (2026-08-22, [ldg-compiler-front-door]): bumped
+# 0.3.2 -> 0.4.0 independently on this branch to match `main`'s own
+# [ldg-release-train-cll] bump above (commit 554e823), which this branch
+# predates -- PyPI's published capsule-emit moved to 0.4.0 out from under
+# this whole unmerged stack, so any branch on it now resolves 0.4.0 unpinned
+# and fails the byte-match test on a fresh install. Same root cause as
+# above (new `canonicalization_id` field, RFC 8785 canonicalization) --
+# spec-driven, not drift; same accept decision `main` already made. Verified
+# this branch's regenerated fixture is byte-identical to `main`'s own
+# regenerated one.
 
 # --- verification path (§7a-5 mandatory exact pins) -------------------------
 agent-action-capsule==0.1.0

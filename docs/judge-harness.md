@@ -123,7 +123,11 @@ capsule judge adjudicate --ledger <dir> --judgment <capsule_id> \
 
 `judge run` auto-discovers the session's turn capsules and, when the session
 has already closed, auto-chains the judgment to the session-close capsule
-(relation `confirms`) and carries its `session_digest`. `--scorer static`
+(relation `confirms`, provisional — the judge observes a different stream
+than the session it judges; see [confirm-connector-interface.md's chain
+relation note](confirm-connector-interface.md#chain-relation-under-revision)
+for why this cross-stream relation choice is under revision) and carries its
+`session_digest`. `--scorer static`
 needs `--static-label`/`--static-confidence` and makes no model call — useful
 for scripted demos; `--scorer deepeval` (the default) makes a real model call
 and needs whatever DeepEval's configured model backend expects (e.g.
