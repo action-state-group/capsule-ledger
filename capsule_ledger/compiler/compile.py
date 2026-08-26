@@ -325,6 +325,7 @@ class DriftResult:
     drifted: bool
     p_drifted: bool
     f_drifted: bool
+    d_drifted: bool
     recomputed_d_digest: str
     sealed_d_digest: str
 
@@ -336,13 +337,17 @@ def verify_compilation_record(sealed_detail: dict, *, recompiled: CompiledDeclar
     trust the original compile run can hold D, recompile it themselves
     (``compile_declaration``), and check the two halves still bind to the
     SAME declaration -- not merely that each half is internally
-    well-formed."""
+    well-formed. That includes the d-leg itself: a record sealed against a
+    different declaration's digest must be flagged even when P and F happen
+    to match, or C only proves internal consistency, not binding to D."""
     p_drifted = sealed_detail["p_digest"] != recompiled.forward.digest()
     f_drifted = sealed_detail["f_digest"] != recompiled.backward.digest()
+    d_drifted = d_digest != sealed_detail["d_digest"]
     return DriftResult(
-        drifted=p_drifted or f_drifted,
+        drifted=p_drifted or f_drifted or d_drifted,
         p_drifted=p_drifted,
         f_drifted=f_drifted,
+        d_drifted=d_drifted,
         recomputed_d_digest=d_digest,
         sealed_d_digest=sealed_detail["d_digest"],
     )
