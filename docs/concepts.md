@@ -1,6 +1,6 @@
 # Concepts in plain words
 
-Nine words cover everything. Each one is a real field you can see in a capsule, or a real
+These words cover everything. Each one is a real field you can see in a capsule, or a real
 `capsule` command run against `tests/fixtures/two_agents_sim_ledger.jsonl` — no theory
 required.
 
@@ -178,6 +178,22 @@ bundle /tmp/bundle.json: 7 record(s), verifies clean
 
 Verification is free and unmetered — anyone with the bundle file can run `capsule
 verify` themselves, no account, no server call back to this project.
+
+### Declaration, outcome, compiler
+
+**Not yet on `main`** — see [the outcome compiler](outcome-compiler.md) for which
+branch to check out; the concepts are documented here now because the code exists
+and a stranger reading this file should be able to find it.
+
+A **declaration** is one plain-English statement about an outcome you want checked
+— "a refund was confirmed by the billing system." `capsule setup propose
+--statement "..." --outcome-id ...` turns it into a candidate; the **compiler**
+grades that candidate on two axes at once — forward (checkable *before* the
+action, e.g. `DETERMINISTIC`) and backward (provable *from the record*, e.g.
+`provable from the record alone`) — and can honestly answer `REFUSED` for a
+statement no evidence rule could ever check, rather than fake a number.
+`capsule setup status` shows every declaration you've authored and its verdict
+pair in this same plain English.
 
 ---
 

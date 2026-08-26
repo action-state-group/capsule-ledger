@@ -205,6 +205,17 @@ event", never silently folded into an ordinary added-record count.
 and exit `1`. The verb names are reserved so scripts and docs referencing them
 don't silently typo into a shell error; don't build against them yet.
 
+### `capsule setup` — declare an outcome in English, get a compiled verdict
+
+**Not yet on `main`** — see [`docs/outcome-compiler.md`](docs/outcome-compiler.md)
+for which branch has it. `capsule setup propose --statement "..." --outcome-id
+... --drafter static` turns one plain-English statement into a candidate
+declaration and compiles it into a forward (before-the-action) verdict and a
+backward (from-the-record) verdict at once — `capsule setup confirm accept`
+freezes it, `capsule setup enforce shadow`/`promote`/`dispatch` take it live. A
+verdict of `REFUSED` is a real, working answer for a claim no evidence rule can
+check — not an error.
+
 ## Environment variables
 
 | Variable | Used by | Meaning |

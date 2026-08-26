@@ -55,6 +55,17 @@
 # scitt-cose's `main` (9cebba4) via editable install, since neither 0.4.0 nor
 # 0.2.1 is on PyPI yet -- this pin resolves the moment capsule-emit cuts that
 # release. See ledger/outbox.md [ldg-release-train-cll].
+#
+# PIN BUMP + FIXTURE REGEN (2026-08-22, [ldg-compiler-front-door]): bumped
+# 0.3.2 -> 0.4.0 independently on this branch to match `main`'s own
+# [ldg-release-train-cll] bump above (commit 554e823), which this branch
+# predates -- PyPI's published capsule-emit moved to 0.4.0 out from under
+# this whole unmerged stack, so any branch on it now resolves 0.4.0 unpinned
+# and fails the byte-match test on a fresh install. Same root cause as
+# above (new `canonicalization_id` field, RFC 8785 canonicalization) --
+# spec-driven, not drift; same accept decision `main` already made. Verified
+# this branch's regenerated fixture is byte-identical to `main`'s own
+# regenerated one.
 
 # --- verification path (§7a-5 mandatory exact pins) -------------------------
 agent-action-capsule==0.1.0
