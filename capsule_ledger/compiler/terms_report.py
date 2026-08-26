@@ -55,7 +55,24 @@ below is intentionally a duplicated literal, not an import; its value must
 stay in lockstep with ``capsule_compiler.judge_agent.satellite.
 EVENT_SATELLITE_VERDICT`` by convention, the same way this module already
 treats the verdict payload's JSON shape (design §2 [rev]'s fenced schema)
-as a wire contract rather than a shared Python type.
+as a wire contract rather than a shared Python type. ``EVENT_RUN_SUMMARY``
+below is the same convention, kept in lockstep with
+``capsule_compiler.judge_agent.satellite.EVENT_RUN_SUMMARY``.
+
+**Coverage denominator is sourced from the run-summary capsule, not
+reinvented from verdict rows (adversarial pass Attack 4, launch-blocker).**
+A unit that never got any verdict row sealed for a term -- silently
+dropped mid-run, not ABSTAIN, not judge-asserted inapplicable -- is
+invisible to a denominator built purely from ``records``' verdict rows:
+coverage reads n/n = 100% even though the true population (design §2
+[rev]'s "units in range", committed in the closing run-summary capsule,
+independent of which verdicts happened to seal) was larger. For every
+judged-term line, this module cross-checks the verdict-row-derived count
+against the matching run-summary capsule's ``units_in_range`` when one is
+present for that epoch, sources ``units_in_range`` from the honest
+run-summary count, and renders a ``coverage_discrepancy`` caveat -- never
+a silent pick-one -- when the two disagree; ``verdict_rows_n`` always
+carries the row-derived count too, so neither number is hidden.
 """
 from __future__ import annotations
 
@@ -70,6 +87,7 @@ from .terms_desk import CompiledTerm, compiled_term_digest, evaluate_term_fold
 
 __all__ = [
     "EVENT_SATELLITE_VERDICT",
+    "EVENT_RUN_SUMMARY",
     "ABSTAIN",
     "FoldEnvelope",
     "TermReportLine",
@@ -81,6 +99,8 @@ __all__ = [
 # capsule_compiler.judge_agent.satellite.EVENT_SATELLITE_VERDICT, duplicated
 # intentionally -- see module docstring for why this is not an import.
 EVENT_SATELLITE_VERDICT = "judge_agent_verdict"
+# capsule_compiler.judge_agent.satellite.EVENT_RUN_SUMMARY, same convention.
+EVENT_RUN_SUMMARY = "judge_agent_run_summary"
 ABSTAIN = "ABSTAIN"
 
 _VERDICT_READ_PATHS = (
@@ -141,6 +161,13 @@ class TermReportLine:
     units_in_range: int
     envelope: FoldEnvelope
     caveats: tuple[Mapping[str, Any], ...] = ()
+    # Attack 4 (adversarial pass): the row-derived count is always carried
+    # alongside `units_in_range` so a reader can see both numbers, never
+    # just the one this module chose to trust. `coverage_discrepancy` is
+    # True only when a run-summary capsule for this epoch was found AND
+    # its `units_in_range` disagrees with `verdict_rows_n`.
+    verdict_rows_n: int | None = None
+    coverage_discrepancy: bool = False
 
     @property
     def coverage_n(self) -> int:
@@ -163,6 +190,8 @@ class TermReportLine:
             "applicable_n": self.applicable_n,
             "inapplicable_n": self.inapplicable_n,
             "units_in_range": self.units_in_range,
+            "verdict_rows_n": self.verdict_rows_n,
+            "coverage_discrepancy": self.coverage_discrepancy,
             "coverage": {"n": self.coverage_n, "m": self.coverage_m},
             "envelope": self.envelope.to_dict(),
             "caveats": [dict(c) for c in self.caveats],
@@ -272,6 +301,31 @@ def _inapplicable_count(
     )
 
 
+def _run_summary_units_in_range(records: Sequence[dict], epoch: str) -> int | None:
+    """The honest population for ``epoch``, as committed by the closing
+    run-summary capsule (design §2 [rev]: "the run closes with a
+    run-summary capsule committing {..., units in range, ...}"), or
+    ``None`` if no such capsule is present in this ``records`` slice --
+    that absence is not itself an error (a report can predate chunk 6's
+    daily orchestrator wiring), it just means there is no independent
+    population to cross-check the verdict rows against. When more than one
+    run-summary capsule exists for the same epoch (a rerun), the last one
+    in append order wins -- the same "latest wins" convention
+    ``capsule_compiler.judge_agent.satellite.latest_run_summary`` uses."""
+    found: int | None = None
+    for record in records:
+        payload = record.get("asg_payload") or {}
+        if payload.get("event") != EVENT_RUN_SUMMARY:
+            continue
+        detail = payload.get("detail") or {}
+        if detail.get("epoch") != epoch:
+            continue
+        units_in_range = detail.get("units_in_range")
+        if isinstance(units_in_range, int):
+            found = units_in_range
+    return found
+
+
 def _same_family_caveat(epoch: str, siblings: Sequence[str], same_family_pairs: frozenset, judge_family_by_epoch: Mapping[str, str]) -> dict | None:
     for other in siblings:
         if other == epoch or other is None:
@@ -332,12 +386,29 @@ def render_terms_report(
                 verdict_counts = _verdict_breakdown(records, ct.term_id, c_digest, epoch, range_start=range_start, as_of=as_of)
                 inapplicable_n = _inapplicable_count(records, ct.term_id, c_digest, epoch, range_start=range_start, as_of=as_of)
                 applicable_n = sum(verdict_counts.values())
+                verdict_rows_n = applicable_n + inapplicable_n
+
+                run_summary_n = _run_summary_units_in_range(records, epoch) if epoch is not None else None
+                coverage_discrepancy = run_summary_n is not None and run_summary_n != verdict_rows_n
+                units_in_range = run_summary_n if run_summary_n is not None else verdict_rows_n
 
                 caveats: list[Mapping[str, Any]] = list(epoch_caveats.get(epoch, ())) if epoch is not None else []
                 if epoch is not None:
                     caveat = _same_family_caveat(epoch, epochs_by_c_digest.get(c_digest, ()), same_family_pairs, judge_family_by_epoch)
                     if caveat is not None:
                         caveats.append(caveat)
+                if coverage_discrepancy:
+                    caveats.append(
+                        {
+                            "caveat": "coverage_discrepancy",
+                            "detail": (
+                                f"run-summary capsule for epoch {epoch!r} commits units_in_range="
+                                f"{run_summary_n}, but only {verdict_rows_n} verdict row(s) are sealed for "
+                                f"term {ct.term_id!r} at c_digest {c_digest!r} -- some units may have been "
+                                "silently dropped rather than judged, abstained, or marked inapplicable."
+                            ),
+                        }
+                    )
 
                 lines.append(
                     TermReportLine(
@@ -349,7 +420,7 @@ def render_terms_report(
                         verdict_counts=verdict_counts,
                         applicable_n=applicable_n,
                         inapplicable_n=inapplicable_n,
-                        units_in_range=applicable_n + inapplicable_n,
+                        units_in_range=units_in_range,
                         envelope=FoldEnvelope(
                             f_digest=ct.f_digest,
                             range_start=range_start,
@@ -359,6 +430,8 @@ def render_terms_report(
                             epoch=epoch,
                         ),
                         caveats=tuple(caveats),
+                        verdict_rows_n=verdict_rows_n,
+                        coverage_discrepancy=coverage_discrepancy,
                     )
                 )
             continue

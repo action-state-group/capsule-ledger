@@ -319,3 +319,94 @@ def test_inapplicable_rows_are_counted_not_dropped():
     line = report.lines[0]
     assert line.inapplicable_n == 2
     assert line.units_in_range == 3
+
+
+# --- Attack 4 (adversarial pass, launch-blocker): silently dropped units ---
+# must not be invisible to coverage. `units_in_range` built purely from
+# sealed verdict rows reads n/n = 100% even when the run-summary capsule's
+# committed population is larger -- the honest denominator that already
+# exists (`RunSummaryCounts.units_in_range`, sealed in the
+# EVENT_RUN_SUMMARY capsule) must be consulted and any disagreement made
+# visible, not silently resolved by trusting the verdict rows alone.
+
+
+def _run_summary_record(*, epoch: str, units_in_range: int):
+    detail = {
+        "range": {"checkpoint_prev": None, "checkpoint_close": {"mmr_size": 10, "root": "r" * 64}},
+        "epoch": epoch,
+        "grace_window_minutes": 2880,
+        "units_in_range": units_in_range,
+        "verdicts_emitted": units_in_range,
+        "abstentions": 0,
+        "abstain_rate_per_term_micros": {},
+        "units_skipped": [],
+        "open_units": 0,
+    }
+    return build_event_capsule(
+        operator=OPERATOR,
+        developer=DEVELOPER,
+        signer=_signer,
+        event="judge_agent_run_summary",
+        detail=detail,
+        action_id=f"judge_agent.run_summary/{epoch}",
+    )
+
+
+def test_silently_dropped_units_surface_as_a_visible_coverage_discrepancy():
+    """Attack 4 repro: 10 subjects were in the run-summary's committed
+    population for this epoch, but only 2 carry verdict rows for the term
+    under test (the other 8 were silently dropped, e.g. by a mid-run
+    crash). The verdict-row-derived count alone reads 2/2 == 100% coverage
+    -- the bug. Cross-checking against the run-summary's `units_in_range`
+    must surface the gap instead of hiding it."""
+    ct = _judged_term()
+    c_digest = compiled_term_digest(ct)
+    records = [
+        _verdict_record(term_id=ct.term_id, c_digest=c_digest, epoch="epoch-a", verdict="pass", subject_id="1" * 64),
+        _verdict_record(term_id=ct.term_id, c_digest=c_digest, epoch="epoch-a", verdict="fail", subject_id="2" * 64),
+        _run_summary_record(epoch="epoch-a", units_in_range=10),
+    ]
+    report = render_terms_report((ct,), records)
+    line = report.lines[0]
+    # the row-derived count alone (the pre-fix behavior) is 2 -- this stays
+    # visible as its own field, never silently discarded
+    assert line.verdict_rows_n == 2
+    # the honest denominator is the run-summary's committed population
+    assert line.units_in_range == 10
+    assert line.coverage_discrepancy is True
+    assert any(c.get("caveat") == "coverage_discrepancy" for c in line.caveats)
+
+
+def test_matching_run_summary_renders_no_discrepancy():
+    ct = _judged_term()
+    c_digest = compiled_term_digest(ct)
+    records = [
+        _verdict_record(term_id=ct.term_id, c_digest=c_digest, epoch="epoch-a", verdict="pass", subject_id="1" * 64),
+        _verdict_record(term_id=ct.term_id, c_digest=c_digest, epoch="epoch-a", verdict="fail", subject_id="2" * 64),
+        _run_summary_record(epoch="epoch-a", units_in_range=2),
+    ]
+    report = render_terms_report((ct,), records)
+    line = report.lines[0]
+    assert line.verdict_rows_n == 2
+    assert line.units_in_range == 2
+    assert line.coverage_discrepancy is False
+    assert all(c.get("caveat") != "coverage_discrepancy" for c in line.caveats)
+
+
+def test_no_run_summary_present_falls_back_to_verdict_rows_without_a_fabricated_discrepancy():
+    """When no run-summary capsule exists for the epoch at all (e.g. an
+    older ledger, or a report run before chunk 6 wires up the daily
+    orchestrator), there is no independent population to cross-check
+    against -- fall back to the verdict-row-derived count exactly as
+    before, and never claim a discrepancy with a number that isn't
+    actually there."""
+    ct = _judged_term()
+    c_digest = compiled_term_digest(ct)
+    records = [
+        _verdict_record(term_id=ct.term_id, c_digest=c_digest, epoch="epoch-a", verdict="pass", subject_id="1" * 64),
+    ]
+    report = render_terms_report((ct,), records)
+    line = report.lines[0]
+    assert line.verdict_rows_n == 1
+    assert line.units_in_range == 1
+    assert line.coverage_discrepancy is False
