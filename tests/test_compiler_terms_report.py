@@ -16,6 +16,9 @@ Load-bearing properties, each with a named test:
    ``epoch_caveats``.
 7. Per-epoch lines never blend -- two epochs judging the same c_digest
    render as two lines, each with its own counts.
+8. Sampled-mode sampling rate (chunk 4's sampler) renders in the fold
+   envelope when supplied via ``epoch_sampling_rates``; a line for which no
+   rate was supplied never fabricates one.
 """
 from __future__ import annotations
 
@@ -168,6 +171,9 @@ def test_deterministic_term_line_also_carries_a_fold_envelope():
     assert envelope.f_digest == ct.f_digest
     assert envelope.checkpoint_root == "root456"
     assert envelope.epoch is None
+    # a full-census/unsampled line (no judge epoch at all) must never
+    # fabricate a sampling rate
+    assert envelope.sampling_rate is None
 
 
 # --- 3. clause_ref provenance column ----------------------------------------
@@ -410,3 +416,51 @@ def test_no_run_summary_present_falls_back_to_verdict_rows_without_a_fabricated_
     assert line.verdict_rows_n == 1
     assert line.units_in_range == 1
     assert line.coverage_discrepancy is False
+
+
+# --- 8. sampled-mode sampling rate (chunk 4's sampler) -----------------------
+# Acceptance addendum item 4: "sampled-mode sampling rate must appear in the
+# report fold envelope (absent from terms_report.py:123-140)." This module
+# never re-derives the rate (same discipline as the self-seeded-sampler
+# caveat) -- it only has somewhere to render what chunk 4's sampler already
+# decided, supplied per-epoch via ``epoch_sampling_rates``.
+
+
+def test_sampled_mode_line_carries_the_supplied_sampling_rate():
+    ct = _judged_term()
+    c_digest = compiled_term_digest(ct)
+    records = [_verdict_record(term_id=ct.term_id, c_digest=c_digest, epoch="epoch-a", verdict="pass")]
+    report = render_terms_report((ct,), records, epoch_sampling_rates={"epoch-a": 0.1})
+    line = report.lines[0]
+    assert line.envelope.sampling_rate == 0.1
+
+
+def test_unsampled_judged_line_does_not_fabricate_a_sampling_rate():
+    ct = _judged_term()
+    c_digest = compiled_term_digest(ct)
+    records = [_verdict_record(term_id=ct.term_id, c_digest=c_digest, epoch="epoch-a", verdict="pass")]
+    # no epoch_sampling_rates supplied at all -- e.g. a full-census epoch
+    report = render_terms_report((ct,), records)
+    line = report.lines[0]
+    assert line.envelope.sampling_rate is None
+
+
+def test_sampling_rate_is_scoped_per_epoch_never_bled_across_lines():
+    ct = _judged_term()
+    c_digest = compiled_term_digest(ct)
+    records = [
+        _verdict_record(term_id=ct.term_id, c_digest=c_digest, epoch="epoch-a", verdict="pass"),
+        _verdict_record(term_id=ct.term_id, c_digest=c_digest, epoch="epoch-b", verdict="fail"),
+    ]
+    report = render_terms_report((ct,), records, epoch_sampling_rates={"epoch-a": 0.25})
+    by_epoch = {line.epoch: line for line in report.lines}
+    assert by_epoch["epoch-a"].envelope.sampling_rate == 0.25
+    assert by_epoch["epoch-b"].envelope.sampling_rate is None
+
+
+def test_envelope_to_dict_carries_the_sampling_rate():
+    ct = _judged_term()
+    c_digest = compiled_term_digest(ct)
+    records = [_verdict_record(term_id=ct.term_id, c_digest=c_digest, epoch="epoch-a", verdict="pass")]
+    report = render_terms_report((ct,), records, epoch_sampling_rates={"epoch-a": 0.5})
+    assert report.lines[0].envelope.to_dict()["sampling_rate"] == 0.5
