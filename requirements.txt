@@ -11,10 +11,11 @@
 #   pip install -e .[dev,examples]
 #
 # LOAD-BEARING PINS (do not loosen without regenerating the committed fixture):
-#   capsule-emit==0.3.2        — tests/fixtures/two_agents_sim_ledger.jsonl was
-#                                generated with this exact release; a different
-#                                version WILL change capsule bytes and break the
-#                                byte-match test in test_two_agents_example.py.
+#   capsule-emit==0.4.0        — tests/fixtures/two_agents_sim_ledger.jsonl was
+#                                regenerated against this exact release; a
+#                                different version WILL change capsule bytes
+#                                and break the byte-match test in
+#                                test_two_agents_example.py.
 #   agent-action-capsule==0.1.0 — the verification path runs through this library;
 #                                any version change requires a full re-vector-run.
 #   PyYAML==6.0.3              — YAML parsing on the verification path.
@@ -25,13 +26,26 @@
 #              --out tests/fixtures/two_agents_sim_ledger.jsonl
 #   3. Confirm: pytest tests/test_two_agents_example.py -v
 #   4. Commit fixture + this file together.
+#
+# PIN BUMP + FIXTURE REGEN (2026-08-22, [ldg-compiler-front-door]): bumped
+# 0.3.2 -> 0.4.0 to match `main`'s own [ldg-release-train-cll] bump (commit
+# 554e823), which this branch predates -- PyPI's published capsule-emit moved
+# to 0.4.0 out from under this whole unmerged stack, so any branch on it now
+# resolves 0.4.0 unpinned and fails the byte-match test on a fresh install.
+# The byte diff is confined to the two capsule-emit-minted capsules
+# (intent_declare/intent_fulfill), caused solely by the new
+# `canonicalization_id` field landing in capsule-emit's compute_attestation
+# between 0.3.2 and 0.4.0 (RFC 8785 canonicalization) -- spec-driven, not
+# drift; same field, same accept decision `main` already made. Verified this
+# branch's regenerated fixture is byte-identical to `main`'s own regenerated
+# one.
 
 # --- verification path (§7a-5 mandatory exact pins) -------------------------
 agent-action-capsule==0.1.0
 PyYAML==6.0.3
 
 # --- fixture generation path (LOAD-BEARING — see header) --------------------
-capsule-emit==0.3.2
+capsule-emit==0.4.0
 
 # --- transitive dependencies (full freeze for complete reproducibility) ------
 annotated-types==0.8.0

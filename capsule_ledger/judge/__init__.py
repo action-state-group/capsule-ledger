@@ -8,16 +8,22 @@ conversation profile), and MANUAL spot-check adjudication.
 """
 from __future__ import annotations
 
+from .calibration import JudgeCalibrationStats, compute_judge_calibration_stats
 from .capsules import (
     EVENT_ADJUDICATION,
+    EVENT_DRIFT_CHECK,
     EVENT_JUDGMENT,
     EVENT_PROMPT_ACTIVATED,
+    ExternalProofRef,
     build_adjudication_capsule,
+    build_judge_drift_check_capsule,
     build_judge_prompt_activation_capsule,
     build_judgment_capsule,
     find_adjudications_for_judgment,
+    find_drift_checks_for_judgment,
     find_judgments_for_session,
     find_latest_prompt_activation,
+    judge_pin_digest,
 )
 from .errors import JudgeError
 from .harness import JudgeHarness
@@ -29,6 +35,9 @@ __all__ = [
     "EVENT_JUDGMENT",
     "EVENT_ADJUDICATION",
     "EVENT_PROMPT_ACTIVATED",
+    "EVENT_DRIFT_CHECK",
+    "ExternalProofRef",
+    "JudgeCalibrationStats",
     "JudgeError",
     "JudgeEvidence",
     "JudgeHarness",
@@ -36,11 +45,15 @@ __all__ = [
     "ScoreResult",
     "Scorer",
     "build_adjudication_capsule",
+    "build_judge_drift_check_capsule",
     "build_judge_prompt_activation_capsule",
     "build_judgment_capsule",
+    "compute_judge_calibration_stats",
     "find_adjudications_for_judgment",
+    "find_drift_checks_for_judgment",
     "find_judgments_for_session",
     "find_latest_prompt_activation",
+    "judge_pin_digest",
     "load_prompt_file",
     "load_prompt_text",
     "parse_prompt_definition",

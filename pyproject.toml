@@ -39,11 +39,13 @@ mcp = ["mcp>=1.0,<2.0"]
 # this example relies on; the local capsule-emit checkout may be ahead.
 examples = ["capsule-emit>=0.3.0"]
 # capsule_ledger/judge/scorers/deepeval_scorer.py -- the judge harness's
-# default (BYOM) Scorer -- is the only thing that imports deepeval; the rest
-# of the judge harness (prompt digest-pinning, judgment/adjudication
-# capsules) has no hard dependency on it. deepeval_scorer.py imports it
-# lazily and raises a named, actionable JudgeError if this extra isn't
-# installed, so `capsule_ledger.judge` stays importable without it.
+# default (BYOM) Scorer -- and capsule_ledger/setup/prose_drafter.py's
+# opt-in DeepEvalRationaleDrafter (`capsule setup propose --drafter
+# deepeval`) are the only things that import deepeval; the rest of the
+# judge harness and setup/propose.py's deterministic pipeline have no hard
+# dependency on it. Both import it lazily and raise a named, actionable
+# error if this extra isn't installed, so `capsule_ledger.judge` and
+# `capsule_ledger.setup` both stay importable without it.
 judge = ["deepeval>=1.0"]
 # capsule_ledger/mmr/checkpoint.py uses scitt-cose for offline COSE receipt
 # verification and `cryptography` for Ed25519 key conversion. Both are
