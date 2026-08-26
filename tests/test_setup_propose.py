@@ -5,7 +5,9 @@ from capsule_ledger.setup.declarations import DeclarationStore
 from capsule_ledger.setup.observe import ObserveRecorder
 from capsule_ledger.setup.propose import (
     diff_against_stored,
+    observed_action_classes,
     persist_proposals,
+    propose_from_census,
     propose_from_ledger,
     render_terminal,
     write_proposals_yaml,
@@ -203,3 +205,45 @@ def test_persist_proposals_never_overwrites_an_accepted_candidate(store, signer,
     persist_proposals(proposal_set_2, decl_store)
     assert decl_store.load("outcome.trust_increased").acceptance_state == "accepted"
     assert decl_store.load("outcome.trust_increased").d_digest == frozen_digest
+
+
+# --- census: acceptance addendum item 2 -------------------------------------
+# "Census is the chunk-2 core, not a nice-to-have -- grading currently runs
+# only over static DEFAULT_CANDIDATES; an observed-action_class enumeration
+# over the corpus is required for the pack-first walk to demo."
+
+
+def test_census_enumerates_observed_action_classes_from_the_corpus(store, signer):
+    """'refund' is dispatched but named by NO ``DEFAULT_CANDIDATES`` entry
+    -- the census must surface it directly from the corpus, not from the
+    hardcoded catalog."""
+    events = [{"kind": "dispatch", "dispatch_id": "d1", "action_class": "refund", "tool": "issue_refund"}]
+    _observe(store, signer, events)
+    assert observed_action_classes(store) == {"refund"}
+
+
+def test_census_grading_includes_an_action_class_absent_from_default_candidates(store, signer):
+    """DEFAULT_CANDIDATES alone never proposes anything for 'refund';
+    census-based grading must, proving grading runs over what is actually
+    observed rather than only the hardcoded default list."""
+    events = [{"kind": "dispatch", "dispatch_id": "d1", "action_class": "refund", "tool": "issue_refund"}]
+    _observe(store, signer, events)
+
+    baseline = propose_from_ledger(store)
+    assert not any(getattr(p.candidate, "action_class", None) == "refund" for p in baseline.proposals)
+
+    census_set = propose_from_census(store)
+    refund_proposals = [p for p in census_set.proposals if getattr(p.candidate, "action_class", None) == "refund"]
+    assert len(refund_proposals) == 1
+    assert refund_proposals[0].coverage_n == 0
+    assert refund_proposals[0].coverage_m == 1
+
+
+def test_census_grading_still_includes_every_default_candidate(store, signer):
+    """Census-based grading is additive -- it must not drop any of the
+    catalog's own candidates, including the corpus-independent REFUSED
+    ones."""
+    _observe(store, signer, [])
+    census_set = propose_from_census(store)
+    outcome_ids = {p.outcome_id for p in census_set.proposals}
+    assert {"outcome.trust_increased", "outcome.agent_resolved_case"} <= outcome_ids

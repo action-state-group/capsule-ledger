@@ -122,7 +122,14 @@ def _slug(term_id: str) -> str:
 class FoldEnvelope:
     """design §3's fenced envelope: ``{f_digest, record range, checkpoint
     root, as_of}``, plus ``epoch`` (design §3 [rev]: a formal parameter of
-    every compiled ``F_i`` from T1, not bolted on later)."""
+    every compiled ``F_i`` from T1, not bolted on later). ``sampling_rate``
+    (acceptance addendum item 4) is chunk 4's sampler's own declared rate
+    for THIS epoch's adjudication sample, when supplied by the caller via
+    ``render_terms_report``'s ``epoch_sampling_rates`` -- ``None`` for any
+    line the sampler didn't cover (a deterministic-rule line with no judge
+    epoch, or a judged epoch nobody passed a rate in for), never a
+    fabricated default, same discipline as the self-seeded-sampler
+    caveat."""
 
     f_digest: str | None
     range_start: int
@@ -130,6 +137,7 @@ class FoldEnvelope:
     checkpoint_root: str | None
     as_of: str | None
     epoch: str | None
+    sampling_rate: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -138,6 +146,7 @@ class FoldEnvelope:
             "checkpoint_root": self.checkpoint_root,
             "as_of": self.as_of,
             "epoch": self.epoch,
+            "sampling_rate": self.sampling_rate,
         }
 
 
@@ -351,6 +360,7 @@ def render_terms_report(
     checkpoint_root: str | None = None,
     epoch_opens: Sequence[EpochOpen] = (),
     epoch_caveats: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
+    epoch_sampling_rates: Mapping[str, float] | None = None,
 ) -> TermsReport:
     """The report: ``F`` evaluated over ``records`` (design §3). ``records``
     is a plain slice -- subject capsules for deterministic-rule terms,
@@ -362,8 +372,14 @@ def render_terms_report(
     for caveats this module does not itself compute (design §5's
     self-seeded-sampler caveat, produced by chunk 4's
     ``AdjudicationSeed.to_caveat``) -- rendered verbatim, merged with the
-    same-family caveat this module does compute."""
+    same-family caveat this module does compute. ``epoch_sampling_rates``
+    is the analogous caller-supplied ``epoch_id -> rate`` map for chunk 4's
+    sampler's own declared sampling rate (acceptance addendum item 4) --
+    this module never re-derives it, only carries it into the matching
+    epoch's ``FoldEnvelope``; an epoch absent from the map renders
+    ``sampling_rate=None``, never a fabricated value."""
     epoch_caveats = epoch_caveats or {}
+    epoch_sampling_rates = epoch_sampling_rates or {}
     judge_family_by_epoch = {e.epoch_id: e.judge_family for e in epoch_opens}
     same_family_pairs = same_family_epoch_pairs(epoch_opens)
     range_end = range_start + len(records) - 1 if records else range_start - 1
@@ -428,6 +444,7 @@ def render_terms_report(
                             checkpoint_root=checkpoint_root,
                             as_of=as_of,
                             epoch=epoch,
+                            sampling_rate=epoch_sampling_rates.get(epoch) if epoch is not None else None,
                         ),
                         caveats=tuple(caveats),
                         verdict_rows_n=verdict_rows_n,

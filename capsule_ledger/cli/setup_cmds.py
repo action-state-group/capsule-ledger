@@ -210,7 +210,11 @@ def _cmd_propose(args: argparse.Namespace) -> int:
         return 1 if outcome.is_refused else 0
 
     with LedgerStore(_ledger_path(args)) as ledger:
-        proposal_set = setup_propose.propose_from_ledger(ledger)
+        # Pack-first walk (acceptance addendum item 2): grade DEFAULT_CANDIDATES
+        # PLUS the census -- every action_class actually observed in the
+        # corpus that the catalog doesn't already name -- not the hardcoded
+        # catalog alone.
+        proposal_set = setup_propose.propose_from_census(ledger)
         if args.drafter is not None:
             # Opt-in only: drafting a candidate's PROSE never touches the
             # verdict pairs or coverage numbers computed above -- see
