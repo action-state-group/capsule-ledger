@@ -140,6 +140,43 @@ def test_a_hand_written_declaration_matching_the_written_shape_is_not_ignored(tm
     assert store.load("outcome.hand_written").candidate == c
 
 
+def test_load_raises_declaration_corrupt_when_declaration_tampered_post_save(tmp_path):
+    """Adversarial pass Attack 5 (launch-blocker): the on-disk
+    ``declaration`` body must not be swappable after ``save()`` while
+    ``d_digest`` is left untouched. A term's confirmed content (e.g. its
+    ``statement``) is exactly what T1 confirms and what everything
+    downstream (``t_digest``/``f_digest``/``j_digest``) is supposed to
+    commit to -- if ``load()`` echoes a stale ``d_digest`` instead of
+    recomputing it from the ``declaration`` it just parsed, a hand-edit of
+    the statement on disk is invisible to every digest built from this
+    store, and ``verify_terms_compilation_record`` reports ``drifted ==
+    False`` for a term whose substance was narrowed after confirmation."""
+    import json
+
+    store = DeclarationStore(tmp_path)
+    c = AttainmentCandidate(
+        outcome_id="outcome.escalation_ack",
+        statement="every escalation is acknowledged within one business day",
+        action_class="verb_ack",
+    )
+    store.save(c, acceptance_state="accepted", forward_verdict="DETERMINISTIC", backward_verdict="DETERMINISTIC")
+
+    path = store._path("outcome.escalation_ack")
+    data = json.loads(path.read_text())
+    original_d_digest = data["d_digest"]
+    # Substantively narrow the confirmed statement -- a real post-T1 tamper
+    # -- while leaving `d_digest` exactly as `save()` originally wrote it.
+    data["declaration"]["statement"] = (
+        "escalations from platinum-tier accounts only are acknowledged, eventually"
+    )
+    assert data["d_digest"] == original_d_digest
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+
+    with pytest.raises(DeclarationCorrupt) as exc_info:
+        store.load("outcome.escalation_ack")
+    assert exc_info.value.path == path
+
+
 def test_outcome_id_with_slash_does_not_collide_with_underscore_form(tmp_path):
     """A naive ``outcome_id.replace('/', '__')`` filename scheme collides
     ``"a/b"`` with a literal ``"a__b"`` -- both would map to the same file.
