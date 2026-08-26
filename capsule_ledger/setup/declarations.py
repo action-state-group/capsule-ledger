@@ -169,6 +169,22 @@ class DeclarationStore:
             candidate = candidate_from_canonical_dict(data["declaration"])
         except (KeyError, ValueError, TypeError) as exc:
             raise DeclarationCorrupt(path, f"'declaration' is not a valid candidate ({exc})") from exc
+        recomputed = candidate_digest(candidate)
+        if recomputed != data.get("d_digest"):
+            # Adversarial pass Attack 5: `d_digest` is what every downstream
+            # digest (t_digest/f_digest/j_digest) commits to as D's stand-in
+            # -- trusting it verbatim from disk would let a post-T1 hand-edit
+            # of `declaration` (a real content change) pass through with the
+            # sealed record showing zero drift. Recompute it from the
+            # `declaration` this load just parsed and fail loudly on
+            # mismatch, the same DeclarationCorrupt path already used for
+            # unreadable/malformed store content.
+            raise DeclarationCorrupt(
+                path,
+                f"stored d_digest {data.get('d_digest')!r} does not match candidate_digest() "
+                f"of 'declaration' ({recomputed!r}) -- the declaration body was modified "
+                "without going through save()",
+            )
         return StoredCandidate(
             candidate=candidate,
             acceptance_state=data["acceptance_state"],
