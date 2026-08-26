@@ -36,6 +36,7 @@ from .candidates import (
     DecisionCandidate,
     OfferResponseCandidate,
     RefusedCandidate,
+    attainment_candidate_for_action_class,
     candidate_to_canonical_dict,
 )
 from .declarations import DeclarationStore, StoredCandidate, candidate_digest
@@ -48,7 +49,9 @@ __all__ = [
     "ProposedOutcome",
     "ProposalSet",
     "DriftEntry",
+    "observed_action_classes",
     "propose_from_ledger",
+    "propose_from_census",
     "persist_proposals",
     "render_terminal",
     "write_proposals_yaml",
@@ -281,6 +284,38 @@ def propose_from_ledger(
         if outcome is not None:
             proposals.append(outcome)
     return ProposalSet(proposals=tuple(proposals), records_observed=records_observed)
+
+
+def observed_action_classes(ledger: LedgerAPI) -> frozenset[str]:
+    """The census (design §1's pack-first flow -- "the census grades every
+    row against the adopter's actual corpus"; acceptance addendum item 2):
+    every distinct ``action_class`` this ledger's own dispatch events
+    actually carry, read straight off the corpus rather than assembled from
+    ``DEFAULT_CANDIDATES``'s fixed catalog. A candidate is NOT a guess mined
+    from nothing here either -- this is what is actually observed."""
+    return frozenset(ac for r in _scan(ledger, EVENT_DISPATCH) if (ac := _detail(r).get("action_class")))
+
+
+def propose_from_census(
+    ledger: LedgerAPI,
+    base_candidates: tuple[Candidate, ...] = DEFAULT_CANDIDATES,
+    *,
+    allow_zero_coverage: bool = False,
+) -> ProposalSet:
+    """The pack-first walk's grading step (acceptance addendum item 2):
+    grade ``base_candidates`` (the pack, ``DEFAULT_CANDIDATES`` by default)
+    PLUS one synthesized attainment candidate per ``action_class`` the
+    census finds in the corpus that no candidate in ``base_candidates``
+    already names -- so an action_class present in the corpus but absent
+    from the catalog still surfaces, instead of grading only ever running
+    over the hardcoded list. Additive only: every ``base_candidates`` entry
+    is still graded exactly as ``propose_from_ledger`` would grade it."""
+    named_action_classes = {
+        c.action_class for c in base_candidates if isinstance(c, (AttainmentCandidate, DecisionCandidate))
+    }
+    census_only = observed_action_classes(ledger) - named_action_classes
+    extra = tuple(attainment_candidate_for_action_class(ac) for ac in sorted(census_only))
+    return propose_from_ledger(ledger, base_candidates + extra, allow_zero_coverage=allow_zero_coverage)
 
 
 def persist_proposals(proposal_set: ProposalSet, store: DeclarationStore) -> None:

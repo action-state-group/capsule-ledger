@@ -52,6 +52,7 @@ __all__ = [
     "DecisionCandidate",
     "Candidate",
     "DEFAULT_CANDIDATES",
+    "attainment_candidate_for_action_class",
 ]
 
 CandidateKind = str  # "attainment" | "offer_response" | "refused" | "decision"
@@ -173,3 +174,21 @@ DEFAULT_CANDIDATES: tuple[Candidate, ...] = (
         action_class="booking.modify",
     ),
 )
+
+
+def attainment_candidate_for_action_class(action_class: str) -> AttainmentCandidate:
+    """Synthesize a deployment-neutral attainment candidate for an
+    ``action_class`` the census (``setup.propose.observed_action_classes``)
+    found actually dispatched in the corpus but that no candidate in the
+    catalog already names -- acceptance addendum item 2: grading must cover
+    what is actually observed, not only ``DEFAULT_CANDIDATES``'s fixed
+    list. Graded by the exact same evidence rule as any other attainment
+    candidate (``propose._propose_attainment``); the ``outcome_id`` is
+    namespaced ``outcome.observed.*`` so it never collides with a
+    hand-authored or catalog outcome_id."""
+    slug = action_class.replace(".", "_").replace("-", "_")
+    return AttainmentCandidate(
+        outcome_id=f"outcome.observed.{slug}",
+        statement=f"an action of class {action_class!r} was confirmed by an external system",
+        action_class=action_class,
+    )

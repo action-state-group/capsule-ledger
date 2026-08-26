@@ -25,6 +25,7 @@ import unittest.mock as mock
 from pathlib import Path
 
 import pytest
+from capsule_emit.checkpoint import MemoryNodeStore, MmrLedger
 
 from capsule_ledger.guards.signing import LocalSigner
 from capsule_ledger.ledger.store import LedgerStore
@@ -46,8 +47,6 @@ from capsule_ledger.mmr.checkpoint import (
     verify_checkpoint_signature,
     verify_receipt_offline,
 )
-from capsule_ledger.mmr.index import MmrLedger
-from capsule_ledger.mmr.store import MemoryNodeStore
 
 _LIVE_TS = os.environ.get("CAPSULE_TEST_LIVE_TS") == "1"
 
@@ -254,7 +253,7 @@ class TestVerifyCheckpointConsistency:
 
         # Simulate rollback: build a fresh MmrLedger by appending DIFFERENT leaf
         # hashes for the same size. The recomputed root at cp1.mmr_size will differ.
-        from capsule_ledger.mmr import core as mmr_core
+        from capsule_emit.checkpoint import core as mmr_core
 
         mutant_store = MemoryNodeStore()
         mutant_mmr = MmrLedger.__new__(MmrLedger)

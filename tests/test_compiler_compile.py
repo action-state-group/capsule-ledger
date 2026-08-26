@@ -215,6 +215,27 @@ def test_falsification_mutant_is_provably_not_a_vacuous_pass(signer):
     assert clean.drifted is False
 
 
+def test_falsification_d_leg_mutant_a_record_sealed_against_a_different_declaration_must_drift(signer):
+    """Acceptance addendum item 1: `drifted` must include the d-leg. Seal a
+    compilation record against declaration D1's digest, then verify it with
+    a recompile whose d_digest belongs to a DIFFERENT declaration D2 -- even
+    though P and F themselves are unchanged (no p/f drift), the record no
+    longer binds to the same D and must be flagged. If this test cannot
+    fail, the d-leg check is decoration."""
+    compiled = _compile_remediation()
+    d1_digest = _digest("D1")
+    cap = seal_compilation_record(compiled, d_digest=d1_digest, operator=OPERATOR, developer=DEVELOPER, signer=signer)
+    detail = cap["asg_payload"]["detail"]
+
+    d2_digest = _digest("D2")
+    drift = verify_compilation_record(detail, recompiled=_compile_remediation(), d_digest=d2_digest)
+
+    assert drift.p_drifted is False
+    assert drift.f_drifted is False
+    assert drift.d_drifted is True
+    assert drift.drifted is True
+
+
 def test_refused_declarations_seal_a_record_with_no_plan_or_fold_but_still_drift_detectable(signer):
     refused = compile_declaration(
         Declaration(
