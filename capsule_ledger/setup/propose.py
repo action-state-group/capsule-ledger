@@ -69,6 +69,15 @@ class ProposedOutcome:
     missing_instrument: str | None = None
     refusal_reason_code: str | None = None
     candidate: Candidate | None = field(repr=False, compare=False, default=None)
+    # Drafter provenance ([ldg-english-to-declaration-drafter]) -- set only
+    # when this candidate's STRUCTURE (not just its rationale prose) came
+    # from a `declaration_drafter.DeclarationDrafter`. Deliberately outside
+    # `candidate_to_canonical_dict`/`candidate_digest`: D's digest, and
+    # everything derived from it (verdict pair, coverage, P/F/C), must never
+    # depend on whether a drafter was involved -- that is the model-on vs
+    # model-off invariant, enforced structurally rather than by convention.
+    drafted_by_model_id: str | None = None
+    drafted_by_prompt_digest: str | None = None
 
     @property
     def is_refused(self) -> bool:
@@ -137,9 +146,11 @@ def _offer_response_coverage(ledger: LedgerAPI, namespace: str) -> tuple[int, in
     return accepted, len(offers), instrumented
 
 
-def _propose_attainment(ledger: LedgerAPI, c: AttainmentCandidate) -> ProposedOutcome | None:
+def _propose_attainment(
+    ledger: LedgerAPI, c: AttainmentCandidate, *, allow_zero_coverage: bool = False
+) -> ProposedOutcome | None:
     n, m = _attainment_coverage(ledger, c.action_class)
-    if m == 0:
+    if m == 0 and not allow_zero_coverage:
         return None
     return ProposedOutcome(
         outcome_id=c.outcome_id,
@@ -153,9 +164,11 @@ def _propose_attainment(ledger: LedgerAPI, c: AttainmentCandidate) -> ProposedOu
     )
 
 
-def _propose_offer_response(ledger: LedgerAPI, c: OfferResponseCandidate) -> ProposedOutcome | None:
+def _propose_offer_response(
+    ledger: LedgerAPI, c: OfferResponseCandidate, *, allow_zero_coverage: bool = False
+) -> ProposedOutcome | None:
     n, m, instrumented = _offer_response_coverage(ledger, c.offer_namespace)
-    if m == 0:
+    if m == 0 and not allow_zero_coverage:
         return None
     if instrumented:
         return ProposedOutcome(
@@ -184,9 +197,11 @@ def _propose_offer_response(ledger: LedgerAPI, c: OfferResponseCandidate) -> Pro
     )
 
 
-def _propose_decision(ledger: LedgerAPI, c: DecisionCandidate) -> ProposedOutcome | None:
+def _propose_decision(
+    ledger: LedgerAPI, c: DecisionCandidate, *, allow_zero_coverage: bool = False
+) -> ProposedOutcome | None:
     n, m = _decision_coverage(ledger, c.action_class)
-    if m == 0:
+    if m == 0 and not allow_zero_coverage:
         return None
     return ProposedOutcome(
         outcome_id=c.outcome_id,
@@ -223,18 +238,32 @@ def _propose_refused(c: RefusedCandidate) -> ProposedOutcome:
     )
 
 
-def propose_from_ledger(ledger: LedgerAPI, candidates: tuple[Candidate, ...] = DEFAULT_CANDIDATES) -> ProposalSet:
+def propose_from_ledger(
+    ledger: LedgerAPI,
+    candidates: tuple[Candidate, ...] = DEFAULT_CANDIDATES,
+    *,
+    allow_zero_coverage: bool = False,
+) -> ProposalSet:
+    """``allow_zero_coverage`` (default False, preserving every existing
+    caller's behavior byte-for-byte): when True, a candidate with zero
+    matching evidence (``m == 0``) is still proposed at 0-of-0 instead of
+    silently dropped. The default batch run over ``DEFAULT_CANDIDATES``
+    wants "absent, not failing" for a corpus rerun (module docstring); a
+    freshly drafted single candidate ([ldg-english-to-declaration-drafter])
+    must never vanish with no output just because no traffic has hit it
+    yet -- 0 of 0 is the honest, expected first answer, not something to
+    hide."""
     proposals: list[ProposedOutcome] = []
     records_observed = sum(1 for _ in ledger.scan(ScanQuery(action_type="fyi")))
     for c in candidates:
         if isinstance(c, AttainmentCandidate):
-            outcome = _propose_attainment(ledger, c)
+            outcome = _propose_attainment(ledger, c, allow_zero_coverage=allow_zero_coverage)
         elif isinstance(c, OfferResponseCandidate):
-            outcome = _propose_offer_response(ledger, c)
+            outcome = _propose_offer_response(ledger, c, allow_zero_coverage=allow_zero_coverage)
         elif isinstance(c, RefusedCandidate):
             outcome = _propose_refused(c)
         elif isinstance(c, DecisionCandidate):
-            outcome = _propose_decision(ledger, c)
+            outcome = _propose_decision(ledger, c, allow_zero_coverage=allow_zero_coverage)
         else:  # pragma: no cover - closed set, defensive
             raise TypeError(f"unknown candidate type {type(c)!r}")
         if outcome is not None:
@@ -262,6 +291,8 @@ def persist_proposals(proposal_set: ProposalSet, store: DeclarationStore) -> Non
             backward_verdict=p.backward_verdict,
             refusal_reason_code=p.refusal_reason_code,
             missing_instrument=p.missing_instrument,
+            drafted_by_model_id=p.drafted_by_model_id,
+            drafted_by_prompt_digest=p.drafted_by_prompt_digest,
         )
 
 
@@ -294,6 +325,9 @@ def _proposal_to_dict(p: ProposedOutcome) -> dict:
         d["missing_instrument"] = p.missing_instrument
     if p.refusal_reason_code is not None:
         d["refusal_reason_code"] = p.refusal_reason_code
+    if p.drafted_by_model_id is not None:
+        d["drafted_by_model_id"] = p.drafted_by_model_id
+        d["drafted_by_prompt_digest"] = p.drafted_by_prompt_digest
     d["declaration"] = candidate_to_canonical_dict(p.candidate)
     return d
 

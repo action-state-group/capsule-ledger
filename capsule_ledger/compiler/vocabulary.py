@@ -20,7 +20,12 @@ vocabulary leaking onto the auditor's desk"):
   sets). Seeded with exactly the two refusals this wave's design work
   demonstrated: an effect claim that assumes the agent caused a resolution
   it can only be shown to have recommended, and a goal too unbounded to
-  decompose into windowed proxies.
+  decompose into windowed proxies. Deliberately extended once more
+  ([ldg-english-to-declaration-drafter]) with a third, authoring-time
+  refusal: an English statement a drafter could not map to any known
+  evidence-rule kind at all -- distinct from the two above, which are
+  compile-time refusals of a claim the compiler UNDERSTOOD but cannot
+  decompose. This one fires before there is a claim shape to reason about.
 - ``RE_DERIVABILITY_GRADES`` -- design §2.3: whether a constraint's inputs
   are sealed and its verdict independently re-derivable from a compiled
   plan alone (``pure_replay`` -- e.g. containment), or whether re-deriving
@@ -85,6 +90,10 @@ REFUSAL_REASON_CODES = frozenset(
         # window cannot be compiled into a windowed proxy and must refuse
         # rather than ship as an opaque score.
         "unbounded_goal_unmonitorable",
+        # [ldg-english-to-declaration-drafter]: a drafted English statement
+        # that matches no known evidence-rule kind (attainment/offer_response/
+        # decision) -- an authoring-time refusal, not a compile-time one.
+        "statement_not_mappable",
     }
 )
 
@@ -162,6 +171,7 @@ DISPLAY_STRINGS: dict[str, dict[str, str]] = {
             "but not that the recommendation is what made them act"
         ),
         "unbounded_goal_unmonitorable": "this goal has no time window, so no record could ever settle it",
+        "statement_not_mappable": "no known evidence rule can check this statement at all",
     },
     "re_derivability_grade": {
         "pure_replay": "a stranger can recompute this verdict from the compiled plan alone",
