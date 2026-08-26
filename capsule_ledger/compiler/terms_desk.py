@@ -88,6 +88,7 @@ __all__ = [
     "TermsDriftResult",
     "compile_term",
     "compile_terms_document",
+    "compiled_term_digest",
     "build_terms_compilation_record_capsule",
     "verify_terms_compilation_record",
     "evaluate_term_fold",
@@ -439,6 +440,25 @@ def compile_term(term: TermDeclaration) -> CompiledTerm:
 
 def compile_terms_document(doc: TermsDocument) -> tuple[CompiledTerm, ...]:
     return tuple(compile_term(t) for t in sorted(doc.terms, key=lambda t: t.term_id))
+
+
+def compiled_term_digest(ct: CompiledTerm) -> str:
+    """``c_digest`` -- "the term's own compiled-artifact digest, C's per-term
+    digest" (epic chunk 3's ``judge_agent.payload.TermRef`` docstring, which
+    names this value but could not produce it because this profile, epic
+    chunk 2, had not been built yet). The digest of exactly the row this
+    term seals into ``C`` (``_compiled_term_to_row``) -- never a second,
+    hand-typed notion of "this term's version" that could drift from what
+    actually got sealed. Changes exactly when the sealed row would change,
+    including across a renegotiation that alters this term's
+    ``a_digest``/``f_digest``/``j_digest``/``p_digest`` -- which is what
+    makes report-time partitioning by ``c_digest`` (design §3 [rev]: "a
+    range spanning T_v1->T_v2 renders the affected terms as two lines, one
+    per compiled version") a correct proxy for "did this term's compiled
+    definition change," including for a REFUSED term (whose row carries
+    only ``term_id``/``a_digest``/``clause_ref``/``refusal_reason_code``,
+    still a real, comparable version)."""
+    return json_digest(_compiled_term_to_row(ct))
 
 
 def _compiled_term_to_row(ct: CompiledTerm) -> dict:
