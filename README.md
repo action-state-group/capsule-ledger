@@ -52,6 +52,16 @@ verifiable record — see [`docs/onboarding.md`](docs/onboarding.md). **Two of
 the four paths aren't built yet; the doc says so plainly rather than
 inventing them** — Goose and Dapr have no integration code in this repo yet.
 
+## Declaring outcomes (the outcome compiler)
+
+Beyond checking individual actions, capsule-ledger can compile **one plain-English
+statement** ("every refund over $500 is approved by a manager first") into a
+before-the-fact guard and an after-the-fact fold, bound together so they can't
+silently disagree — and it will honestly refuse a statement it can't check, in one
+sentence, rather than fake a verdict. **Not yet merged to `main`** — see
+[`docs/outcome-compiler.md`](docs/outcome-compiler.md) for the concept, a
+two-command working example, and which branch to check out today.
+
 ## What's here
 
 - `capsule_ledger/ledger/` — append-only store and the query API (agent, time range, counterparty, verdict, action type).

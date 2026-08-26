@@ -57,6 +57,16 @@ __all__ = [
 ]
 
 
+# What the ``M`` in "N of M" counts, per candidate kind -- named so
+# "provable on 6 of 10" reads as "6 of 10 offers", not a bare denominator
+# a reader has to guess the units of.
+_COVERAGE_NOUNS: dict[str, str] = {
+    "attainment": "dispatches",
+    "offer_response": "offers",
+    "decision": "decisions",
+}
+
+
 @dataclass(frozen=True)
 class ProposedOutcome:
     outcome_id: str
@@ -98,7 +108,9 @@ class ProposedOutcome:
         if self.coverage_n is None or self.coverage_m is None:
             return None
         pct = round(100 * self.coverage_n / self.coverage_m) if self.coverage_m else 0
-        return f"{self.coverage_n} of {self.coverage_m} ({pct}%)"
+        noun = _COVERAGE_NOUNS.get(self.candidate.kind) if self.candidate is not None else None
+        denominator = f"{self.coverage_m} {noun}" if noun else str(self.coverage_m)
+        return f"{self.coverage_n} of {denominator} ({pct}%)"
 
 
 @dataclass(frozen=True)
@@ -301,7 +313,9 @@ def render_terminal(proposal_set: ProposalSet) -> str:
     lines.append("")
     for p in proposal_set.proposals:
         lines.append(f"  {p.status_glyph()} {p.outcome_id}")
-        lines.append(f"      backward {p.backward_verdict} · forward {p.forward_verdict}")
+        forward_line = display_string("forward_verdict", p.forward_verdict)
+        backward_line = display_string("backward_verdict", p.backward_verdict)
+        lines.append(f"      forward: {forward_line} · backward: {backward_line}")
         fraction = p.coverage_fraction()
         if fraction is not None:
             lines.append(f"      provable on {fraction}")

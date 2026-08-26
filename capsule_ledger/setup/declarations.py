@@ -29,7 +29,14 @@ from agent_action_capsule.canonical import json_digest
 
 from .candidates import Candidate, candidate_from_canonical_dict, candidate_to_canonical_dict
 
-__all__ = ["ACCEPTANCE_STATES", "DeclarationNotFound", "DeclarationStore", "StoredCandidate", "candidate_digest"]
+__all__ = [
+    "ACCEPTANCE_STATES",
+    "DeclarationCorrupt",
+    "DeclarationNotFound",
+    "DeclarationStore",
+    "StoredCandidate",
+    "candidate_digest",
+]
 
 DECLARATIONS_DIRNAME = "declarations"
 
@@ -43,6 +50,21 @@ ACCEPTANCE_STATES = frozenset({"proposed", "accepted", "refused"})
 
 class DeclarationNotFound(KeyError):
     """No candidate with this ``outcome_id`` in the store."""
+
+
+class DeclarationCorrupt(ValueError):
+    """A file under ``declarations/`` exists but is not a readable stored
+    candidate -- invalid JSON, or valid JSON missing a required key. This
+    directory is not write-only output: a hand-authored file placed here
+    (matching the shape ``propose``/``confirm`` themselves write) is a
+    legitimate input, so garbage placed here must fail loudly, by name,
+    rather than being silently skipped or crashing the caller with a bare
+    ``KeyError``/``JSONDecodeError`` traceback."""
+
+    def __init__(self, path: Path, reason: str) -> None:
+        self.path = path
+        self.reason = reason
+        super().__init__(f"{path}: {reason}")
 
 
 def candidate_digest(c: Candidate) -> str:
@@ -137,8 +159,16 @@ class DeclarationStore:
         path = self._path(outcome_id)
         if not path.is_file():
             raise DeclarationNotFound(outcome_id)
-        data = json.loads(path.read_text())
-        candidate = candidate_from_canonical_dict(data["declaration"])
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError as exc:
+            raise DeclarationCorrupt(path, f"not valid JSON ({exc})") from exc
+        if not isinstance(data, dict) or "declaration" not in data or "acceptance_state" not in data:
+            raise DeclarationCorrupt(path, "valid JSON, but missing the required 'declaration'/'acceptance_state' keys")
+        try:
+            candidate = candidate_from_canonical_dict(data["declaration"])
+        except (KeyError, ValueError, TypeError) as exc:
+            raise DeclarationCorrupt(path, f"'declaration' is not a valid candidate ({exc})") from exc
         return StoredCandidate(
             candidate=candidate,
             acceptance_state=data["acceptance_state"],
