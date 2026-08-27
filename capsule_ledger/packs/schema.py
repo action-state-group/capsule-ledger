@@ -55,12 +55,15 @@ __all__ = [
     "NORMALIZED_ACTION_FIELDS",
     "HOLDS_INTEGRATION_VALUES",
     "KNOWN_SCOPE_DIMENSIONS",
+    "MEASURABILITY_VALUES",
+    "EVIDENCE_INSTRUMENT_KINDS",
     "Obligation",
     "ActionSemantic",
     "ProposerStub",
     "FixtureScenario",
     "PackFixtures",
     "WindowSpec",
+    "EvidenceInstrument",
     "Outcome",
     "ScopeCensus",
     "PackDefinition",
@@ -99,6 +102,33 @@ HOLDS_INTEGRATION_VALUES = frozenset({"none", "stubbed", "built"})
 # are the fields a numeric-aggregate check (today: caps) can genuinely be
 # partitioned by, given the normalized Action/capsule fields this repo has.
 KNOWN_SCOPE_DIMENSIONS = frozenset({"developer", "operator", "action_class", "target"})
+
+# Whether an outcome's verdict is actually computed against this pack's
+# fixtures/corpus, or declared honest-but-unmeasured because the corpus this
+# pack ships against never emits the record the check would need (adversarial
+# review finding, [pack-harden-tau2-oracle]: previously this was a hardcoded
+# per-term "always inapplicable" lambda a future coder could point at ANY
+# term -- including one with a real fail -- with nothing to catch it).
+# "declared_not_measured" is not a permanent judgment about the STATEMENT;
+# it is a factual claim about THIS pack's fixtures, and ``corpus_verify.py``
+# is the oracle that makes the claim checkable rather than merely asserted.
+MEASURABILITY_VALUES = frozenset({"measured", "declared_not_measured"})
+
+# The closed set of evidence-instrument kinds ``corpus_verify.py`` knows how
+# to resolve against a corpus. Deliberately narrow and mechanical -- both
+# kinds ask "does any unit in the corpus carry this signal at all", never
+# "is the signal correct", which is exactly the honest, cheap-to-verify shape
+# of "this pack's corpus has -- or lacks -- the record type a term needs":
+#   * structured_field: a named key on a unit/message dict, outside whatever
+#     base schema the corpus's own reconstruction produces (e.g. a typed
+#     severity/efficacy label, a stated-constraint field, a restriction-
+#     reason-cited marker) -- present with a non-empty value anywhere means
+#     the corpus DOES carry it.
+#   * tool_call_name: a named tool/function call appearing anywhere in a
+#     unit's tool-call trail.
+# An unrecognized kind is a typo, same "unregistered is a typo" doctrine as
+# every other closed set in this module -- never silently accepted as data.
+EVIDENCE_INSTRUMENT_KINDS = frozenset({"structured_field", "tool_call_name"})
 
 
 @dataclass(frozen=True)
@@ -187,6 +217,26 @@ class WindowSpec:
 
 
 @dataclass(frozen=True)
+class EvidenceInstrument:
+    """What ``corpus_verify.py`` resolves against a corpus to check a
+    ``measurability`` claim -- see ``EVIDENCE_INSTRUMENT_KINDS`` for the
+    closed set of ``kind``s and what each one means. Exactly one of
+    ``field``/``name`` is set, matching whichever ``kind`` this is."""
+
+    kind: str
+    field: str | None = None  # kind == "structured_field"
+    name: str | None = None  # kind == "tool_call_name"
+
+    def to_dict(self) -> dict:
+        out: dict[str, Any] = {"kind": self.kind}
+        if self.field is not None:
+            out["field"] = self.field
+        if self.name is not None:
+            out["name"] = self.name
+        return out
+
+
+@dataclass(frozen=True)
 class Outcome:
     """The sister table to ``Obligation`` (design §0: "one declaration ...
     compiled forward into a check ... compiled backward into a report").
@@ -233,6 +283,13 @@ class Outcome:
     required_assurance_grade: str | None = None
     exposure_denominator_ref: str | None = None
     retention_check: str | None = None
+    # measurability/evidence_instrument -- optional, additive
+    # ([pack-harden-tau2-oracle]); default "measured" so a pack declared
+    # before this field existed parses and DIGESTS identically to before
+    # (canonical_dict below omits it whenever it's the default, same
+    # convention every other optional Outcome field already follows).
+    measurability: str = "measured"
+    evidence_instrument: EvidenceInstrument | None = None
 
 
 @dataclass(frozen=True)
@@ -339,6 +396,12 @@ class PackDefinition:
                     **({"required_assurance_grade": o.required_assurance_grade} if o.required_assurance_grade else {}),
                     **({"exposure_denominator_ref": o.exposure_denominator_ref} if o.exposure_denominator_ref else {}),
                     **({"retention_check": o.retention_check} if o.retention_check else {}),
+                    **({"measurability": o.measurability} if o.measurability != "measured" else {}),
+                    **(
+                        {"evidence_instrument": o.evidence_instrument.to_dict()}
+                        if o.evidence_instrument is not None
+                        else {}
+                    ),
                 }
                 for o in self.outcomes
             ]

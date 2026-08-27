@@ -56,9 +56,11 @@ from .errors import (
     FOLD_FILE_NOT_FOUND,
     INVALID_ACTION_SEMANTIC,
     INVALID_CONSTRAINT,
+    INVALID_EVIDENCE_INSTRUMENT,
     INVALID_FIXTURES,
     INVALID_FOLD_REF,
     INVALID_HOLDS_INTEGRATION,
+    INVALID_MEASURABILITY,
     INVALID_OUTCOME,
     INVALID_PACK_ID,
     INVALID_RE_DERIVABILITY_GRADE,
@@ -67,6 +69,7 @@ from .errors import (
     INVALID_VERDICT,
     MALFORMED_PACK,
     MISSING_CONSTRAINT_SCOPE,
+    MISSING_EVIDENCE_INSTRUMENT,
     MISSING_EVIDENCE_RULE,
     MISSING_REFUSAL_REASON,
     MISSING_REQUIRED_FIELD,
@@ -79,11 +82,14 @@ from .errors import (
     PackDefinitionError,
 )
 from .schema import (
+    EVIDENCE_INSTRUMENT_KINDS,
     HOLDS_INTEGRATION_VALUES,
     KNOWN_SCOPE_DIMENSIONS,
+    MEASURABILITY_VALUES,
     NORMALIZED_ACTION_FIELDS,
     PACK_ID_RE,
     ActionSemantic,
+    EvidenceInstrument,
     FixtureScenario,
     Obligation,
     Outcome,
@@ -493,6 +499,34 @@ def _parse_window(raw: Any, *, what: str) -> WindowSpec | None:
     return WindowSpec(duration=duration, cure=cure, grace=grace)
 
 
+def _parse_evidence_instrument(raw: Any, *, outcome_id: str) -> EvidenceInstrument:
+    raw = _require_mapping(raw, f"outcomes[{outcome_id!r}].evidence_instrument")
+    kind = raw.get("kind")
+    if kind not in EVIDENCE_INSTRUMENT_KINDS:
+        raise PackDefinitionError(
+            INVALID_EVIDENCE_INSTRUMENT,
+            f"outcomes[{outcome_id!r}].evidence_instrument.kind={kind!r} must be one of "
+            f"{sorted(EVIDENCE_INSTRUMENT_KINDS)}",
+        )
+    if kind == "structured_field":
+        field = raw.get("field")
+        if not isinstance(field, str) or not field:
+            raise PackDefinitionError(
+                INVALID_EVIDENCE_INSTRUMENT,
+                f"outcomes[{outcome_id!r}].evidence_instrument.field is required and must be a non-empty "
+                "string for kind: structured_field, e.g. field: restriction_reason_cited",
+            )
+        return EvidenceInstrument(kind=kind, field=field)
+    name = raw.get("name")
+    if not isinstance(name, str) or not name:
+        raise PackDefinitionError(
+            INVALID_EVIDENCE_INSTRUMENT,
+            f"outcomes[{outcome_id!r}].evidence_instrument.name is required and must be a non-empty string "
+            "for kind: tool_call_name, e.g. name: issue_refund",
+        )
+    return EvidenceInstrument(kind=kind, name=name)
+
+
 def _parse_outcomes(raw: Any) -> tuple[Outcome, ...]:
     """``outcomes[]``, the sister table to ``obligations[]`` (design of
     record 2026-08-19). Every entry needs a confirming-evidence rule and a
@@ -591,6 +625,31 @@ def _parse_outcomes(raw: Any) -> tuple[Outcome, ...]:
                 f"{sorted(RE_DERIVABILITY_GRADES)}, or omitted",
             )
 
+        measurability = entry.get("measurability", "measured")
+        if measurability not in MEASURABILITY_VALUES:
+            raise PackDefinitionError(
+                INVALID_MEASURABILITY,
+                f"outcomes[{outcome_id!r}].measurability={measurability!r} must be one of "
+                f"{sorted(MEASURABILITY_VALUES)}, or omitted (defaults to 'measured')",
+            )
+        evidence_instrument_raw = entry.get("evidence_instrument")
+        if measurability == "declared_not_measured" and evidence_instrument_raw is None:
+            raise PackDefinitionError(
+                MISSING_EVIDENCE_INSTRUMENT,
+                f"outcomes[{outcome_id!r}] declares measurability=declared_not_measured but no "
+                "evidence_instrument -- a declared-not-measured claim must name the specific signal "
+                "this pack's corpus never carries, so corpus_verify.py can actually check the claim "
+                "rather than merely trust it, e.g.:\n"
+                "evidence_instrument:\n"
+                "  kind: structured_field\n"
+                "  field: restriction_reason_cited",
+            )
+        evidence_instrument = (
+            _parse_evidence_instrument(evidence_instrument_raw, outcome_id=outcome_id)
+            if evidence_instrument_raw is not None
+            else None
+        )
+
         outcomes.append(
             Outcome(
                 id=outcome_id,
@@ -607,6 +666,8 @@ def _parse_outcomes(raw: Any) -> tuple[Outcome, ...]:
                 required_assurance_grade=entry.get("required_assurance_grade"),
                 exposure_denominator_ref=entry.get("exposure_denominator_ref"),
                 retention_check=entry.get("retention_check"),
+                measurability=measurability,
+                evidence_instrument=evidence_instrument,
             )
         )
     return tuple(outcomes)
