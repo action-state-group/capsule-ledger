@@ -75,3 +75,64 @@ def test_walkthrough_is_deterministic_modulo_timestamps(capsys):
         return re.sub(r"[0-9a-f]{6,64}", "<digest>", text)
 
     assert _scrub(first) == _scrub(second)
+
+
+def test_ascii_format_reports_the_same_numbers_as_verbose(capsys):
+    main(["--corpus", str(CORPUS_PATH), "--rgb-src", str(RGB_SRC)])
+    verbose_out = capsys.readouterr().out
+
+    rc = main(["--corpus", str(CORPUS_PATH), "--rgb-src", str(RGB_SRC), "--format", "ascii"])
+    assert rc == 0
+    ascii_out = capsys.readouterr().out
+
+    # no PART 1/2/3 narration banners in ascii mode
+    assert "PART 1 -- THE DATASET" not in ascii_out
+    assert "PART 2 -- THE PACK OF OUTCOMES" not in ascii_out
+    assert "PART 3 -- DRILL DOWN" not in ascii_out
+    # condensed sections present instead
+    assert "## term outcomes (real, sealed corpus -- digest-verified turns)" in ascii_out
+    assert "## drill-down: term -> case -> chain" in ascii_out
+    assert "subjective_state_unattestable" in ascii_out
+
+    # the real, digest-verified corpus terms are numerically identical between formats
+    # (verbose indents these one level deeper under "2d. NEW: ...")
+    for term_line in ("A1: 23 of 73", "A3b: 73 of 73", "A6: 47 of 73", "A7: 4 of 73"):
+        assert f"- {term_line}" in ascii_out
+        assert f"- {term_line}" in verbose_out
+
+
+def test_permalink_out_builds_a_verifiable_bundle_and_offline_viewer(tmp_path, capsys):
+    out_path = tmp_path / "permalink.json"
+    rc = main(
+        [
+            "--corpus", str(CORPUS_PATH),
+            "--rgb-src", str(RGB_SRC),
+            "--format", "ascii",
+            "--permalink-out", str(out_path),
+        ]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "permalink: " in out
+    assert "all verify" in out
+    assert "verify: https://verify.agentactioncapsule.org/bundle#" in out
+
+    assert out_path.is_file()
+    viewer_path = out_path.with_suffix(".html")
+    assert viewer_path.is_file()
+
+    import json
+
+    bundle = json.loads(out_path.read_text(encoding="utf-8"))
+    assert bundle["bundle_version"] == "1"
+    assert len(bundle["records"]) > 0
+    assert all(v["ok"] for v in bundle["verification"].values())
+    assert bundle["completeness_certificate"] is not None
+
+    html = viewer_path.read_text(encoding="utf-8")
+    # the one embed slot render_offline_viewer_html substitutes (see its own
+    # docstring: "@@BUNDLE_FRAGMENT@@" legitimately reappears elsewhere in the
+    # vendored template as BUNDLE_JS's own placeholder-detection logic, so
+    # checking for the ABSENCE of the literal token would be a false negative)
+    assert '<script>window.__BUNDLE_FRAGMENT_B64U__="@@BUNDLE_FRAGMENT@@";</script>' not in html
+    assert "window.__BUNDLE_FRAGMENT_B64U__=" in html
