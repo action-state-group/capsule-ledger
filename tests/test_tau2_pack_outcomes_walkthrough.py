@@ -44,8 +44,10 @@ def test_walkthrough_runs_clean_and_prints_all_three_parts(capsys):
     # the honest, mechanically-verified corpus stats (not tuned)
     assert "total capsule records     : 1757" in out
     assert "distinct subjects (conversation sessions) : 73" in out
-    # the honest census-grading finding (also asserted by test_airline_pack_desk.py)
-    assert "0 of 959 resolve" in out
+    # the honest finding: a direct resolve() fails (wrong digest scheme), but
+    # this module's brute-force sha256 workaround recovers every turn's text
+    assert "0 of 959 resolve via a direct PayloadStore.resolve" in out
+    assert "959 of 959 resolve -- the turn text IS sealed" in out
     # census + sampling-rate + coverage-discrepancy, exercised for the one
     # judge-shaped term this walkthrough seals a sampled verdict fixture for
     assert "sampling_rate=0.25" in out

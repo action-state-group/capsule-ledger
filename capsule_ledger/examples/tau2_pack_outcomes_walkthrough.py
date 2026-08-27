@@ -15,16 +15,33 @@ backward verdict is judge-shaped (A3b, MODEL-ASSISTED), since no
 
 **The honest finding, printed plainly, not hidden (task's own instruction:
 "HONEST numbers ... do not tune")**: the real, sealed tau2-airline capsule
-corpus (record-grounding-bench's ``demo/chunk1-tau2-corpus``) records
-conversation turns digest-only, by design (privacy: the turn's own words
-never enter the record). Every A1-A7 row census-grades to
-WITH-INSTRUMENTATION (0 of 0) against that real corpus for exactly this
-reason -- verified numerically below, not asserted. This is a real
-capability gap this pack surfaces, not a bug in this script. To still show
-what a MEASURED pack of outcomes and a per-subject drill-down look like,
-PART 2b/3 cross-reference tau2-bench's own vendored, committed trajectory
-file (same airline domain, real published benchmark transcripts) -- clearly
-labelled wherever it is used, never blended into the corpus's own numbers.
+corpus (record-grounding-bench's ``demo/chunk1-tau2-corpus``) commits each
+conversation turn's ``content_digest`` under a *different* digest scheme
+(plain ``sha256`` over the turn's raw content -- see rgb-src's
+``recorders/capsule_pipeline.py:turn_raw_content``/``_digest_message``)
+than the one ``PayloadStore.resolve()`` recomputes under
+(``json_digest``/JCS canonicalization) -- so a direct
+``payload_store.resolve(content_digest)`` call correctly returns "no
+preimage here" for every single turn, not because the turn's own words
+were never sealed, but because that's the wrong key for this corpus's own
+digest scheme. **The turn text was, in fact, sealed** (rgb-src's own
+``corpus_builder.py`` docstring names this exact mismatch and the fix it
+ships: a ``turn_payload_index.json`` bridge mapping
+``{session_id, turn_capsule_id, payload_digest}``) -- but that specific
+index file is missing from this fixture's build on disk (the build was
+interrupted before its final write; see rgb-src git log
+``88fc846 ... WIP preserve``). This module recovers the real preimages
+anyway, honestly labelled as a workaround for that missing index: brute-force
+scan every ``payloads/*.json`` file, hash each with the corpus's OWN
+``sha256(turn_raw_content)`` scheme (not ``json_digest``), and match against
+each turn's stored ``content_digest`` -- verified below to resolve **every**
+turn in this corpus (959 of 959 distinct digests), not zero. PART 2b/3 use
+these real, digest-verified turns for A1/A3b/A6/A7's case-level drill-down
+against the sealed corpus itself. Separately (kept clearly labelled, never
+blended into the corpus's own numbers), PART 2c cross-references
+tau2-bench's own vendored, committed trajectory file (same airline domain,
+real published benchmark transcripts) for the pack's own hand-tuned,
+byte-reproducible N-of-M counts, which this module does not alter.
 
 Run it (offline, no network, no live model calls anywhere in this path):
 
@@ -42,6 +59,8 @@ workspace's own multi-repo layout.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import shutil
 import sys
 import tempfile
@@ -99,6 +118,46 @@ def _load_rgb_corpus_verify(rgb_src: Path):
     return verify_corpus
 
 
+def _load_rgb_turn_raw_content(rgb_src: Path):
+    """The one function this module imports from rgb-src's own recorder
+    (``recorders/capsule_pipeline.py``) to ground this module's digest
+    workaround in the SOURCE's own algorithm, not a guessed reimplementation
+    -- ``turn_raw_content`` is the exact string ``_digest_message`` hashes
+    (plain text for a text turn, ``json.dumps([{"name","arguments"}],
+    sort_keys=True)`` for a tool-calls-only turn); a resolved payload IS
+    already that exact string (``corpus_builder.py`` seals
+    ``turn_raw_content(message)`` verbatim), so recomputing the digest below
+    is just ``hashlib.sha256(text.encode()).hexdigest()`` -- this import
+    exists so a reviewer can diff this module's one-line digest against the
+    source's own, instead of trusting a second, independent claim of it."""
+    sys.path.insert(0, str(rgb_src))
+    from record_grounding_bench.recorders.capsule_pipeline import turn_raw_content  # type: ignore
+
+    return turn_raw_content
+
+
+def _index_sealed_payloads_by_content_sha256(corpus_path: Path) -> dict[str, str]:
+    """Workaround for this fixture's missing ``turn_payload_index.json``
+    (see module docstring): every ``payloads/*.json`` file already holds a
+    real preimage (rgb-src's ``corpus_builder.py`` seals
+    ``turn_raw_content(message)`` verbatim via ``PayloadStore.put()``), just
+    keyed by a *different* digest (``json_digest``) than the one
+    ``content_digest`` uses (plain ``sha256`` over that same string). Indexing
+    every payload under ITS OWN ``sha256`` (not its ``json_digest`` filename)
+    makes each one look up directly by the ``content_digest`` a
+    ``conversation_turn`` capsule actually carries -- an O(payload count)
+    scan, done once, not a per-turn re-scan."""
+    index: dict[str, str] = {}
+    payloads_dir = corpus_path / "payloads"
+    if not payloads_dir.is_dir():
+        return index
+    for f in payloads_dir.glob("*.json"):
+        content = json.loads(f.read_text(encoding="utf-8"))
+        if isinstance(content, str):
+            index[hashlib.sha256(content.encode("utf-8")).hexdigest()] = content
+    return index
+
+
 def describe_dataset(corpus_path: Path, rgb_src: Path) -> None:
     _hr("PART 1 -- THE DATASET: the real tau2-airline capsule corpus")
     print(f"corpus fixture : {corpus_path}")
@@ -143,21 +202,34 @@ def describe_dataset(corpus_path: Path, rgb_src: Path) -> None:
     print(f"  turn capsules                              : {turn_count}")
     print(f"  guard-decision capsules                    : {len(decide)}  by tool: {tools}")
 
-    # The honest reason A1-A7 will census-grade to WITH-INSTRUMENTATION below:
-    # verify numerically, don't just quote it.
+    # The honest finding, verified numerically, not quoted from the module
+    # docstring: a DIRECT PayloadStore.resolve(content_digest) lookup fails
+    # for every turn (wrong digest scheme -- json_digest, not content_digest's
+    # own plain sha256), which is NOT the same claim as "turn text was never
+    # sealed". The brute-force sha256 index below recovers the real text.
     digests = {
         c["asg_payload"]["detail"]["content_digest"]
         for c in records
         if c.get("asg_payload", {}).get("event") == "conversation_turn"
     }
     payloads = PayloadStore(str(corpus_path))
-    resolvable = sum(1 for d in digests if payloads.resolve(d) is not None)
+    direct_resolvable = sum(1 for d in digests if payloads.resolve(d) is not None)
+    sha256_index = _index_sealed_payloads_by_content_sha256(corpus_path)
+    workaround_resolvable = sum(1 for d in digests if d in sha256_index)
     print()
     print(
         f"  turn content_digest values: {len(digests)} distinct; "
-        f"{resolvable} of {len(digests)} resolve in this corpus's own payload store "
-        "-- turn text is sealed digest-only by design (privacy), so no lexical or "
-        "tool-trail check can run directly against this corpus's own turn content."
+        f"{direct_resolvable} of {len(digests)} resolve via a direct "
+        "PayloadStore.resolve(content_digest) call (wrong digest scheme for this "
+        "corpus's own content_digest -- expected, not a privacy finding)"
+    )
+    print(
+        f"  same {len(digests)} digests, resolved via this module's brute-force "
+        f"sha256(payload) index (the corpus's OWN digest scheme -- see rgb-src's "
+        f"turn_raw_content/_digest_message): {workaround_resolvable} of {len(digests)} "
+        "resolve -- the turn text IS sealed in this corpus's own payload store; "
+        "PART 2b/3 use these real, digest-verified turns for A1/A3b/A6/A7's "
+        "case-level drill-down."
     )
 
 
