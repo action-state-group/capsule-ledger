@@ -57,6 +57,8 @@ __all__ = [
     "find_epoch_opens",
     "latest_epoch_open",
     "same_family_epoch_pairs",
+    "all_pins_deterministic_rule",
+    "verify_same_family_caveat_integrity",
 ]
 
 EVENT_EPOCH_OPEN = "compiler.epoch_open"
@@ -263,3 +265,56 @@ def same_family_epoch_pairs(epoch_opens: Sequence[EpochOpen]) -> frozenset[froze
             if a.epoch_id != b.epoch_id and a.judge_family == b.judge_family:
                 pairs.add(frozenset((a.epoch_id, b.epoch_id)))
     return frozenset(pairs)
+
+
+def all_pins_deterministic_rule(pins: Sequence[EpochPin]) -> bool:
+    """True iff every pin in ``pins`` is a deterministic-rule pin (``EpochPin
+    .__post_init__`` already enforces that a pin carries exactly a rule pin
+    XOR a judge pin, so "no ``model_id``" and "has ``rule_digest``" are the
+    same fact). An epoch with an EMPTY pin set is not "all deterministic" --
+    there is nothing to derive a family from, so callers should treat it as
+    unknown provenance, not mechanically same-family with another empty-pin
+    epoch."""
+    return bool(pins) and all(p.model_id is None for p in pins)
+
+
+def verify_same_family_caveat_integrity(epoch_opens: Sequence[EpochOpen]) -> None:
+    """The oracle cross-check design §2's same-family caveat needs (adversarial
+    review finding, [pack-harden-tau2-oracle] -- see ``adv-tau2-demo.md`` Area
+    3): ``same_family_epoch_pairs`` trusts ``EpochOpen.judge_family`` as a
+    free-typed string with nothing cross-checking it against what the epoch's
+    OWN pin set proves. A coder could dodge the caveat by typing two
+    different ``judge_family`` labels for two epochs that are, in fact,
+    equally uninformative about model-provider independence.
+
+    This closes the one slice of that gap that is mechanically, unambiguously
+    derivable without a provider registry: every epoch that is ENTIRELY
+    deterministic-rule (``all_pins_deterministic_rule`` -- zero live-model
+    pins anywhere in it) cannot possibly have model-family independence from
+    another such epoch, no matter what free-text label either declares
+    (design §2's independence claim is specifically about model-provider
+    diversity; an epoch with no live model call has none to be independent
+    with). So every fully-deterministic-rule epoch in ``epoch_opens`` MUST
+    declare the SAME ``judge_family`` as every other one -- if two disagree,
+    that is either a labelling bug or a live-model call the pin set doesn't
+    reflect, and this raises rather than let the caveat silently not fire for
+    a pair that is, in truth, exactly as correlated as any other
+    deterministic-rule pair.
+
+    Deliberately does NOT attempt to derive/validate a family label for
+    epochs that DO carry live-model pins -- cross-model-family diversity
+    (e.g. "gpt-4-turbo" vs "gpt-4-mini" both being OpenAI) has no registry in
+    this codebase to derive from, and inventing one is out of scope here;
+    design's own worked example (a real model-provider string) is already
+    harder to fudge than a hand-typed research label for a rule-based judge
+    (see Area 3's severity note)."""
+    deterministic = [e for e in epoch_opens if all_pins_deterministic_rule(e.pins)]
+    families = {e.judge_family for e in deterministic}
+    if len(families) > 1:
+        raise CompilerError(
+            f"epochs {[e.epoch_id for e in deterministic]} are all fully deterministic-rule (zero live-model "
+            f"pins) but declare different judge_family labels {sorted(families)} -- two epochs with no live "
+            "model call cannot have independent judge families; declaring different labels would silently "
+            "suppress the same-family caveat design §2 requires. Use the identical judge_family string for "
+            "every fully deterministic-rule epoch."
+        )

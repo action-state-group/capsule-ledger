@@ -279,3 +279,164 @@ def test_valid_re_derivability_grade_on_an_obligation_loads_clean(tmp_path):
     (tmp_path / "spend.yaml").write_text(MINIMAL_FOLD_YAML)
     pack = load_pack_dir(tmp_path)
     assert pack.obligations[0].re_derivability_grade == "ledger_state_dependent"
+
+
+# --- measurability / evidence_instrument ([pack-harden-tau2-oracle]) ------
+#
+# Closes the adversarial-review finding (adv-tau2-demo.md Area 1/4) that a
+# term's "declared, not measured on this corpus" status was a hardcoded
+# Python lambda a future coder could point at ANY term -- including one with
+# a real fail -- with nothing in the schema/loader to catch it. Measurability
+# is now closed-set DATA, and a declared_not_measured claim MUST carry an
+# evidence_instrument -- corpus_verify.py is the runtime oracle that checks
+# the claim against a real corpus (see tests/test_corpus_verify.py).
+
+
+def test_zero_outcome_pack_digest_is_unaffected_by_measurability_default(tmp_path):
+    """A pack with no outcomes[] key still digests identically -- the new
+    fields don't touch the additive-schema guarantee already proven above."""
+    pack_dir = _write_pack(tmp_path)
+    pack = load_pack_dir(pack_dir)
+    assert "outcomes" not in pack.canonical_dict()
+
+
+def test_default_measurability_is_measured_and_omitted_from_the_digest(tmp_path):
+    """An outcome that doesn't mention measurability at all -- the ordinary
+    case for every pre-existing outcome -- parses as 'measured' and the
+    digest renders identically to before this field existed (no
+    'measurability' key at all), so no already-sealed pack pin moves."""
+    pack_dir = _write_pack(tmp_path, {"outcomes": [_outcome()]})
+    pack = load_pack_dir(pack_dir)
+    assert pack.outcomes[0].measurability == "measured"
+    assert pack.outcomes[0].evidence_instrument is None
+    assert "measurability" not in pack.canonical_dict()["outcomes"][0]
+    assert "evidence_instrument" not in pack.canonical_dict()["outcomes"][0]
+
+
+def test_invalid_measurability_value_is_rejected(tmp_path):
+    pack_dir = _write_pack(tmp_path, {"outcomes": [_outcome(measurability="sort_of_measured")]})
+    with pytest.raises(PackDefinitionError) as exc:
+        load_pack_dir(pack_dir)
+    assert exc.value.reason == "invalid_measurability"
+
+
+def test_declared_not_measured_without_an_evidence_instrument_is_rejected(tmp_path):
+    """The RED case this task exists to close: a term declares itself
+    unmeasurable but names no checkable signal -- exactly the unverifiable
+    shape the old hardcoded ``always_false`` lambda had."""
+    pack_dir = _write_pack(
+        tmp_path,
+        {"outcomes": [_outcome(measurability="declared_not_measured", forward_verdict="UNAVAILABLE-STATE-REQUIRED")]},
+    )
+    with pytest.raises(PackDefinitionError) as exc:
+        load_pack_dir(pack_dir)
+    assert exc.value.reason == "missing_evidence_instrument"
+
+
+def test_declared_not_measured_with_an_evidence_instrument_loads_clean(tmp_path):
+    """The GREEN near-miss: same claim, now naming a checkable instrument."""
+    pack_dir = _write_pack(
+        tmp_path,
+        {
+            "outcomes": [
+                _outcome(
+                    measurability="declared_not_measured",
+                    forward_verdict="UNAVAILABLE-STATE-REQUIRED",
+                    evidence_instrument={"kind": "structured_field", "field": "restriction_reason_cited"},
+                )
+            ]
+        },
+    )
+    pack = load_pack_dir(pack_dir)
+    outcome = pack.outcomes[0]
+    assert outcome.measurability == "declared_not_measured"
+    assert outcome.evidence_instrument.kind == "structured_field"
+    assert outcome.evidence_instrument.field == "restriction_reason_cited"
+    rendered = pack.canonical_dict()["outcomes"][0]
+    assert rendered["measurability"] == "declared_not_measured"
+    assert rendered["evidence_instrument"] == {"kind": "structured_field", "field": "restriction_reason_cited"}
+
+
+def test_unknown_evidence_instrument_kind_is_rejected(tmp_path):
+    pack_dir = _write_pack(
+        tmp_path,
+        {
+            "outcomes": [
+                _outcome(
+                    measurability="declared_not_measured",
+                    forward_verdict="UNAVAILABLE-STATE-REQUIRED",
+                    evidence_instrument={"kind": "vibes", "field": "x"},
+                )
+            ]
+        },
+    )
+    with pytest.raises(PackDefinitionError) as exc:
+        load_pack_dir(pack_dir)
+    assert exc.value.reason == "invalid_evidence_instrument"
+
+
+def test_structured_field_instrument_without_a_field_name_is_rejected(tmp_path):
+    pack_dir = _write_pack(
+        tmp_path,
+        {
+            "outcomes": [
+                _outcome(
+                    measurability="declared_not_measured",
+                    forward_verdict="UNAVAILABLE-STATE-REQUIRED",
+                    evidence_instrument={"kind": "structured_field"},
+                )
+            ]
+        },
+    )
+    with pytest.raises(PackDefinitionError) as exc:
+        load_pack_dir(pack_dir)
+    assert exc.value.reason == "invalid_evidence_instrument"
+
+
+def test_tool_call_name_instrument_loads_clean(tmp_path):
+    pack_dir = _write_pack(
+        tmp_path,
+        {
+            "outcomes": [
+                _outcome(
+                    measurability="declared_not_measured",
+                    forward_verdict="UNAVAILABLE-STATE-REQUIRED",
+                    evidence_instrument={"kind": "tool_call_name", "name": "issue_refund"},
+                )
+            ]
+        },
+    )
+    pack = load_pack_dir(pack_dir)
+    assert pack.outcomes[0].evidence_instrument.name == "issue_refund"
+
+
+def test_measured_outcome_may_still_declare_an_evidence_instrument(tmp_path):
+    """evidence_instrument is optional documentation on a 'measured' outcome
+    (only REQUIRED when declared_not_measured) -- a pack author may still
+    name the real signal a measured check reads, for corpus_verify.py or a
+    future consumer to cross-reference."""
+    pack_dir = _write_pack(
+        tmp_path,
+        {"outcomes": [_outcome(evidence_instrument={"kind": "tool_call_name", "name": "offer_alternative"})]},
+    )
+    pack = load_pack_dir(pack_dir)
+    assert pack.outcomes[0].measurability == "measured"
+    assert pack.outcomes[0].evidence_instrument.name == "offer_alternative"
+
+
+def test_the_real_airline_engagement_pack_loads_clean_with_expected_measurability_split():
+    """The real, committed catalog pack this task templatizes -- not a
+    synthetic fixture. 5 measured (A1, A3b, A4, A6, A7), 3 declared_not_measured
+    (A2, A3a, A5), matching the exact split
+    ``record_grounding_bench.judge_run.airline_terms`` judges over the tau2
+    airline corpus."""
+    pack_dir = Path(__file__).parent.parent / "capsule_ledger" / "packs" / "catalog" / "airline-engagement"
+    pack = load_pack_dir(pack_dir)
+    by_id = {o.id: o for o in pack.outcomes}
+    assert set(by_id) == {"A1", "A2", "A3a", "A3b", "A4", "A5", "A6", "A7"}
+    measured = {oid for oid, o in by_id.items() if o.measurability == "measured"}
+    declared_not_measured = {oid for oid, o in by_id.items() if o.measurability == "declared_not_measured"}
+    assert measured == {"A1", "A3b", "A4", "A6", "A7"}
+    assert declared_not_measured == {"A2", "A3a", "A5"}
+    for oid in declared_not_measured:
+        assert by_id[oid].evidence_instrument is not None

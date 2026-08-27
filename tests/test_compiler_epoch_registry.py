@@ -22,6 +22,7 @@ from capsule_ledger.compiler.epoch_registry import (
     GENESIS_PARENT,
     EpochOpen,
     EpochPin,
+    all_pins_deterministic_rule,
     build_epoch_open_capsule,
     epoch_open_from_record,
     epoch_opens_from_records,
@@ -29,6 +30,7 @@ from capsule_ledger.compiler.epoch_registry import (
     latest_epoch_open,
     pin_set_for_terms,
     same_family_epoch_pairs,
+    verify_same_family_caveat_integrity,
 )
 from capsule_ledger.compiler.terms_desk import (
     ApplicabilitySpec,
@@ -239,3 +241,90 @@ def test_same_family_epoch_pairs_empty_when_every_epoch_differs():
 def test_same_family_epoch_pairs_never_self_pairs():
     a = EpochOpen(epoch_id="epoch-a", opened_at="t1", t_digest=T_DIGEST, judge_family="openai")
     assert same_family_epoch_pairs((a,)) == frozenset()
+
+
+# --- all_pins_deterministic_rule / verify_same_family_caveat_integrity ----
+# ([pack-harden-tau2-oracle], adv-tau2-demo.md Area 3): judge_family was a
+# free-typed string with nothing cross-checking it against the epoch's own
+# pin set -- a coder could dodge the same-family caveat by typing two
+# different labels for two epochs that are, in fact, equally uninformative
+# about model independence (both zero live-model calls). These tests prove
+# the RED case (the exact adversarial scenario) is now caught, and that the
+# check leaves every existing free-text-label usage above untouched.
+
+
+def _deterministic_pins(*term_ids: str) -> tuple[EpochPin, ...]:
+    return tuple(EpochPin(term_id=t, rule_digest="r" * 64) for t in term_ids)
+
+
+def test_all_pins_deterministic_rule_true_when_every_pin_is_a_rule_pin():
+    assert all_pins_deterministic_rule(_deterministic_pins("t1", "t2")) is True
+
+
+def test_all_pins_deterministic_rule_false_when_any_pin_is_a_judge_pin():
+    pins = (*_deterministic_pins("t1"), EpochPin(term_id="t2", model_id="m", prompt_digest="p" * 64))
+    assert all_pins_deterministic_rule(pins) is False
+
+
+def test_all_pins_deterministic_rule_false_for_an_empty_pin_set():
+    """No pins means no provenance to derive a family from -- not vacuously
+    'same family' with another empty-pin epoch."""
+    assert all_pins_deterministic_rule(()) is False
+
+
+def test_two_fully_deterministic_epochs_with_mismatched_judge_family_labels_is_caught():
+    """The RED case: exactly the dodge a future coder could otherwise get
+    away with -- two epochs, both zero live-model pins (the tau2 airline
+    demo's actual shape, epoch A and epoch B), declaring DIFFERENT
+    judge_family strings to make same_family_epoch_pairs render no caveat."""
+    epoch_a = EpochOpen(
+        epoch_id="epoch-a",
+        opened_at="t1",
+        t_digest=T_DIGEST,
+        judge_family="deterministic-rule/regex-family-a",
+        pins=_deterministic_pins("A1", "A3b"),
+    )
+    epoch_b = EpochOpen(
+        epoch_id="epoch-b",
+        opened_at="t2",
+        t_digest=T_DIGEST,
+        judge_family="deterministic-rule/regex-family-b",  # dodge: different label, same lack of independence
+        pins=_deterministic_pins("A1", "A3b"),
+    )
+    with pytest.raises(CompilerError, match="judge_family"):
+        verify_same_family_caveat_integrity((epoch_a, epoch_b))
+
+
+def test_two_fully_deterministic_epochs_with_the_same_judge_family_label_passes():
+    """The GREEN near-miss: same pin shape, honestly sharing one label --
+    the tau2 airline demo's actual epoch A / epoch B registration."""
+    epoch_a = EpochOpen(
+        epoch_id="epoch-a", opened_at="t1", t_digest=T_DIGEST, judge_family="deterministic-rule/no-live-model", pins=_deterministic_pins("A1")
+    )
+    epoch_b = EpochOpen(
+        epoch_id="epoch-b", opened_at="t2", t_digest=T_DIGEST, judge_family="deterministic-rule/no-live-model", pins=_deterministic_pins("A1")
+    )
+    verify_same_family_caveat_integrity((epoch_a, epoch_b))  # must not raise
+
+
+def test_verify_same_family_caveat_integrity_does_not_touch_epochs_with_live_model_pins():
+    """Deliberately out of scope (see the function's own docstring): an
+    epoch with a live-model pin is not derived/validated here -- existing
+    free-text judge_family usage (e.g. 'openai' with no pins, or with a
+    judge pin) must keep passing unmodified."""
+    epoch_a = EpochOpen(epoch_id="epoch-a", opened_at="t1", t_digest=T_DIGEST, judge_family="openai")
+    epoch_b = EpochOpen(
+        epoch_id="epoch-b",
+        opened_at="t2",
+        t_digest=T_DIGEST,
+        judge_family="anthropic",
+        pins=(EpochPin(term_id="term.judged_care", model_id="claude-x@1", prompt_digest="q" * 64),),
+    )
+    verify_same_family_caveat_integrity((epoch_a, epoch_b))  # must not raise -- neither is all-deterministic
+
+
+def test_verify_same_family_caveat_integrity_ignores_a_lone_deterministic_epoch():
+    epoch_a = EpochOpen(
+        epoch_id="epoch-a", opened_at="t1", t_digest=T_DIGEST, judge_family="deterministic-rule/no-live-model", pins=_deterministic_pins("A1")
+    )
+    verify_same_family_caveat_integrity((epoch_a,))  # nothing to compare against -- must not raise
