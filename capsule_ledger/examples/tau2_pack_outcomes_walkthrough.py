@@ -797,7 +797,7 @@ def pack_of_outcomes(corpus_path: Path, work_dir: Path, *, verbose: bool = True)
 # --------------------------------------------------------------------------
 
 
-def _representative_turn(turns: list["RealTurn"], keyword: str | None = None) -> "RealTurn | None":
+def _representative_turn(turns: list[RealTurn], keyword: str | None = None) -> RealTurn | None:
     """A real, real-corpus narration turn to ground an inapplicable row's
     reasoning in something concrete rather than pure abstraction -- picks
     the first assistant narration turn containing *keyword* (case
@@ -811,7 +811,7 @@ def _representative_turn(turns: list["RealTurn"], keyword: str | None = None) ->
 
 
 def render_inapplicable_case(
-    *, term_id: str, clause_ref: str, reason: str, turn: "RealTurn | None", records_by_id: dict, corpus_path: Path
+    *, term_id: str, clause_ref: str, reason: str, turn: RealTurn | None, records_by_id: dict, corpus_path: Path
 ) -> None:
     print(f"  ⚠ case={(turn.session_id if turn else '(none)')}  term={term_id}  clause_ref={clause_ref}  verdict=WITH-INSTRUMENTATION")
     print(f"      reason: {reason}")
@@ -847,9 +847,9 @@ def _render_term_drilldown_section(
     *,
     label: str,
     term_id: str,
-    result: "RealTermResult",
+    result: RealTermResult,
     clause_ref: str,
-    real_sessions: dict[str, list["RealTurn"]],
+    real_sessions: dict[str, list[RealTurn]],
     real_records_by_id: dict[str, dict],
     corpus_path: Path,
 ) -> None:
@@ -885,7 +885,7 @@ def _render_inapplicable_section(
     *,
     header: str,
     pack,
-    real_sessions: dict[str, list["RealTurn"]],
+    real_sessions: dict[str, list[RealTurn]],
     real_records_by_id: dict[str, dict],
     corpus_path: Path,
 ) -> None:
@@ -923,8 +923,8 @@ def drill_down(
     judge_c_capsule,
     sampled,
     pack,
-    real_terms: dict[str, "RealTermResult"],
-    real_sessions: dict[str, list["RealTurn"]],
+    real_terms: dict[str, RealTermResult],
+    real_sessions: dict[str, list[RealTurn]],
     real_records_by_id: dict[str, dict],
     corpus_path: Path,
 ) -> None:
@@ -1031,8 +1031,8 @@ def render_ascii_report(
     *,
     corpus_path: Path,
     dataset_result,
-    real_terms: dict[str, "RealTermResult"],
-    real_sessions: dict[str, list["RealTurn"]],
+    real_terms: dict[str, RealTermResult],
+    real_sessions: dict[str, list[RealTurn]],
     real_records_by_id: dict[str, dict],
     pack,
 ) -> None:
@@ -1092,7 +1092,7 @@ def render_ascii_report(
 # --------------------------------------------------------------------------
 
 
-def _selected_drilldown_turns(result: "RealTermResult") -> list["RealTurn"]:
+def _selected_drilldown_turns(result: RealTermResult) -> list[RealTurn]:
     """The exact pass/fail cases ``_render_term_drilldown_section`` shows --
     factored out so the permalink bundle below cites precisely the turns a
     reader of PART 3 (or the ascii report) actually saw, not an arbitrary
@@ -1108,7 +1108,7 @@ def _selected_drilldown_turns(result: "RealTermResult") -> list["RealTurn"]:
 
 
 def _demo_drilldown_capsule_ids(
-    real_terms: dict[str, "RealTermResult"], real_records_by_id: dict[str, dict]
+    real_terms: dict[str, RealTermResult], real_records_by_id: dict[str, dict]
 ) -> list[str]:
     """Capsule ids behind every case PART 3 drills into: each shown turn,
     plus whatever guard-decision/observation capsule that turn's own
@@ -1140,7 +1140,7 @@ def _demo_drilldown_capsule_ids(
 
 def build_demo_permalink_bundle(
     corpus_path: Path,
-    real_terms: dict[str, "RealTermResult"],
+    real_terms: dict[str, RealTermResult],
     real_records_by_id: dict[str, dict],
     *,
     verify_base_url: str = DEFAULT_VERIFY_BASE_URL,
