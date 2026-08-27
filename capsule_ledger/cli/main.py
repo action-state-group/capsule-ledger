@@ -183,15 +183,15 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return args.func(args)
 
-    if args.command == "setup":
-        if getattr(args, "setup_command", None) is None:
-            args.setup_parser.print_help()
-            return 0
-        return args.func(args)
-
     if args.command == "checkpoint":
         if getattr(args, "checkpoint_command", None) is None:
             args.cp_parser.print_help()
+            return 0
+        return args.func(args)
+
+    if args.command == "setup":
+        if getattr(args, "setup_command", None) is None:
+            args.setup_parser.print_help()
             return 0
         return args.func(args)
 
