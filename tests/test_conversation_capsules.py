@@ -13,14 +13,17 @@ import pytest
 from capsule_ledger.conversation import (
     EVENT_CONVERSATION_TURN,
     EVENT_SESSION_CLOSE,
+    EVENT_TURN_REFERENCE,
     SPEAKER_ROLES,
     ConversationSession,
     InvalidSpeakerRole,
     SessionAlreadyClosedError,
     build_session_close_capsule,
     build_turn_capsule,
+    build_turn_reference_capsule,
     find_session_close,
     find_session_turns,
+    find_turn_reference,
     session_root,
     turn_inclusion_proof,
     verify_turn_inclusion,
@@ -354,3 +357,63 @@ def test_event_type_and_scan_filter_shape(store, signer):
     events = [r.capsule["asg_payload"]["event"] for r in fyi_records]
     assert events.count(EVENT_CONVERSATION_TURN) == 1
     assert events.count(EVENT_SESSION_CLOSE) == 1
+
+
+# -- turn -> external-capsule cross-reference ---------------------------------
+
+
+def test_turn_reference_resolves_a_referenced_capsule_back_to_its_turn(store, signer):
+    sess = _session(store, signer)
+    turn = sess.record_turn(speaker_role="assistant", content_digest=_digest("book it"))
+    sess.close()
+
+    # Stand-in for a tool-call capsule some other pipeline recorded, built
+    # and appended independently of the conversation profile.
+    tool_capsule_id = "b" * 64
+    reference = build_turn_reference_capsule(
+        turn_capsule_id=turn.capsule_id,
+        referenced_capsule_ids=[tool_capsule_id],
+        operator=OPERATOR,
+        developer=DEVELOPER,
+        signer=signer,
+    )
+    store.append(reference, consequential=False)
+
+    found = find_turn_reference(store, tool_capsule_id)
+    assert found is not None
+    assert found.capsule["asg_payload"]["event"] == EVENT_TURN_REFERENCE
+    assert found.capsule["asg_payload"]["detail"]["turn_capsule_id"] == turn.capsule_id
+    assert found.capsule["chain"] == {"parent_capsule_id": turn.capsule_id, "relation": "confirms"}
+    result = store.verify(found.capsule_id)
+    assert result.ok, result.findings
+
+
+def test_turn_reference_supports_multiple_referenced_capsules(store, signer):
+    sess = _session(store, signer)
+    turn = sess.record_turn(speaker_role="assistant", content_digest=_digest("book it"))
+    sess.close()
+
+    ids = ["c" * 64, "d" * 64]
+    reference = build_turn_reference_capsule(
+        turn_capsule_id=turn.capsule_id, referenced_capsule_ids=ids, operator=OPERATOR, developer=DEVELOPER, signer=signer,
+    )
+    store.append(reference, consequential=False)
+
+    for capsule_id in ids:
+        found = find_turn_reference(store, capsule_id)
+        assert found is not None
+        assert found.capsule["asg_payload"]["detail"]["referenced_capsule_ids"] == ids
+
+
+def test_find_turn_reference_returns_none_when_unreferenced(store, signer):
+    sess = _session(store, signer)
+    sess.record_turn(speaker_role="user", content_digest=_digest("hello"))
+    sess.close()
+    assert find_turn_reference(store, "e" * 64) is None
+
+
+def test_turn_reference_requires_at_least_one_referenced_capsule(signer):
+    with pytest.raises(ValueError, match="non-empty"):
+        build_turn_reference_capsule(
+            turn_capsule_id="a" * 64, referenced_capsule_ids=[], operator=OPERATOR, developer=DEVELOPER, signer=signer,
+        )
