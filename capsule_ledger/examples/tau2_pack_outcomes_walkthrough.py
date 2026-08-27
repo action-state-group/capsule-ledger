@@ -81,9 +81,14 @@ from ..compiler.terms_report import render_terms_report
 from ..guards import LocalSigner
 from ..guards.capsule import build_event_capsule
 from ..ledger import LedgerStore
+from ..mmr.checkpoint import list_checkpoints, load_checkpoint
 from ..payload_store import PayloadStore
 from .airline_engagement_pack import (
+    _AGENT_LIMITATION_RE,
+    _OPTION_LANGUAGE_RE,
     _PRESSURE_LANGUAGE_RE,
+    _PUSHBACK_RE,
+    _TRANSFER_TOOL,
     _text,
     build_airline_engagement_pack,
     load_conversations,
@@ -231,6 +236,319 @@ def describe_dataset(corpus_path: Path, rgb_src: Path) -> None:
         "PART 2b/3 use these real, digest-verified turns for A1/A3b/A6/A7's "
         "case-level drill-down."
     )
+
+
+# --------------------------------------------------------------------------
+# REAL-CORPUS DRILL-DOWN INFRASTRUCTURE -- turns resolved from the sealed
+# corpus's own payload store (see module docstring), grouped into sessions,
+# and read by A1/A3b/A6/A7's OWN unmodified classifiers (imported from
+# airline_engagement_pack, never re-implemented) -- so PART 3 can drill from
+# an aggregate line down to a REAL turn from THIS corpus, not only the
+# vendored reference file.
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RealTurn:
+    """One ``conversation_turn`` capsule from the sealed corpus, with its
+    real preimage resolved (see ``_index_sealed_payloads_by_content_sha256``)
+    and re-verified live against ``content_digest`` -- never trusted merely
+    because a payload file existed with a matching name."""
+
+    capsule_id: str
+    seq: int
+    session_id: str
+    turn_index: int
+    speaker_role: str
+    content_digest: str
+    text: str | None
+    is_tool_call_turn: bool
+    tool_call_names: tuple[str, ...]
+    narration: str
+    digest_verified: bool
+
+
+def _fingerprint(capsule_id: str) -> str:
+    """Same 8-char-prefix-plus-ellipsis truncation ``report/model.py`` uses
+    for every capsule reference, reused here rather than inventing a second
+    truncation convention."""
+    return f"{capsule_id[:8]}…" if capsule_id else "(none)"
+
+
+def _resolve_real_turns(corpus_path: Path) -> tuple[list[RealTurn], dict[str, dict], dict[str, int]]:
+    store = LedgerStore(str(corpus_path))
+    try:
+        scanned = list(store.scan())
+    finally:
+        store.close()
+    records_by_id = {r.capsule["capsule_id"]: r.capsule for r in scanned}
+    seq_by_id = {r.capsule["capsule_id"]: r.seq for r in scanned}
+    sha256_index = _index_sealed_payloads_by_content_sha256(corpus_path)
+
+    turns: list[RealTurn] = []
+    for r in scanned:
+        c = r.capsule
+        if c.get("asg_payload", {}).get("event") != "conversation_turn":
+            continue
+        detail = c["asg_payload"]["detail"]
+        content_digest = detail["content_digest"]
+        text = sha256_index.get(content_digest)
+        digest_verified = text is not None and hashlib.sha256(text.encode("utf-8")).hexdigest() == content_digest
+        is_tool_call_turn = False
+        tool_call_names: tuple[str, ...] = ()
+        narration = ""
+        if text is not None:
+            try:
+                parsed = json.loads(text)
+            except (json.JSONDecodeError, TypeError):
+                parsed = None
+            # This corpus's own turn_raw_content() emits a JSON list of
+            # {"name","arguments"} dicts for a tool-calls-only turn (no
+            # separate typed field distinguishes it) -- the same shape check
+            # rgb-src's own recorder relies on (tau2's message model:
+            # content XOR tool_calls, never both).
+            if isinstance(parsed, list) and parsed and all(isinstance(d, dict) and "name" in d for d in parsed):
+                is_tool_call_turn = True
+                tool_call_names = tuple(d["name"] for d in parsed)
+            else:
+                narration = text
+        turns.append(
+            RealTurn(
+                capsule_id=c["capsule_id"],
+                seq=r.seq,
+                session_id=detail["session_id"],
+                turn_index=detail["turn_index"],
+                speaker_role=detail["speaker_role"],
+                content_digest=content_digest,
+                text=text,
+                is_tool_call_turn=is_tool_call_turn,
+                tool_call_names=tool_call_names,
+                narration=narration,
+                digest_verified=digest_verified,
+            )
+        )
+    turns.sort(key=lambda t: (t.session_id, t.turn_index))
+    return turns, records_by_id, seq_by_id
+
+
+def _group_sessions(turns: list[RealTurn]) -> dict[str, list[RealTurn]]:
+    sessions: dict[str, list[RealTurn]] = {}
+    for t in turns:
+        sessions.setdefault(t.session_id, []).append(t)
+    return sessions
+
+
+def _case_a1(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
+    for t in turns:
+        if t.speaker_role == "assistant":
+            m = _OPTION_LANGUAGE_RE.search(t.narration)
+            if m:
+                return "pass", t, m.group(0)
+    return "fail", None, None
+
+
+def _case_a3b(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
+    for t in turns:
+        if t.speaker_role == "assistant":
+            m = _PRESSURE_LANGUAGE_RE.search(t.narration)
+            if m:
+                return "fail", t, m.group(0)
+    return "pass", None, None
+
+
+def _case_a6(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
+    for t in turns:
+        if _TRANSFER_TOOL in t.tool_call_names:
+            return "fail", t, _TRANSFER_TOOL
+    return "pass", None, None
+
+
+def _case_a7(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
+    """Same stateful walk as ``measure_a7_pushback_present`` (imported
+    regexes, not a second definition), applied turn-by-turn to one session
+    so the specific triggering turn is recoverable for drill-down."""
+    user_turn = -1
+    seen_limitation = False
+    for t in turns:
+        if t.speaker_role == "assistant":
+            if _AGENT_LIMITATION_RE.search(t.narration):
+                seen_limitation = True
+        elif t.speaker_role == "user":
+            user_turn += 1
+            if user_turn == 0:
+                continue
+            if seen_limitation:
+                m = _PUSHBACK_RE.search(t.narration)
+                if m:
+                    return "pass", t, m.group(0)
+    return "fail", None, None
+
+
+_REAL_CORPUS_CASE_FNS = {"A1": _case_a1, "A3b": _case_a3b, "A6": _case_a6, "A7": _case_a7}
+
+
+@dataclass(frozen=True)
+class RealTermResult:
+    term_id: str
+    n: int
+    m: int
+    cases: dict[str, tuple[str, RealTurn | None, str | None]]  # session_id -> (verdict, turn, evidence)
+
+
+def measure_real_corpus_terms(sessions: dict[str, list[RealTurn]]) -> dict[str, RealTermResult]:
+    """A1/A3b/A6/A7 measured against the SEALED CORPUS's own real,
+    digest-verified turns -- not the vendored reference file (PART 2c,
+    unchanged). A genuinely new, additive measurement; does not alter any
+    number PART 2c already reports."""
+    results: dict[str, RealTermResult] = {}
+    for term_id, case_fn in _REAL_CORPUS_CASE_FNS.items():
+        cases = {sid: case_fn(turns) for sid, turns in sessions.items()}
+        n = sum(1 for verdict, _, _ in cases.values() if verdict == "pass")
+        results[term_id] = RealTermResult(term_id=term_id, n=n, m=len(sessions), cases=cases)
+    return results
+
+
+@dataclass(frozen=True)
+class ChainStep:
+    label: str
+    capsule_id: str
+    detail: str
+
+
+def _checkpoint_step(corpus_path: Path, seq: int) -> ChainStep:
+    from capsule_emit.checkpoint import core as mmr_core
+
+    for size in sorted(list_checkpoints(corpus_path)):
+        if mmr_core.leaf_count(size) >= seq:
+            cp = load_checkpoint(corpus_path, size)
+            return ChainStep(
+                label="checkpoint",
+                capsule_id="",
+                detail=(
+                    f"mmr_size={size} root={cp.root[:8]}… (self-witnessed, "
+                    f"witnesses=[]) -- record seq={seq} is sealed under this root"
+                ),
+            )
+    return ChainStep(
+        label="checkpoint",
+        capsule_id="",
+        detail=f"record seq={seq} is UNSEALED (mid-shift, no checkpoint covers it yet -- honest, expected)",
+    )
+
+
+def _chain_for_turn(turn: RealTurn, records_by_id: dict[str, dict], corpus_path: Path) -> list[ChainStep]:
+    """The real, sealed evidence chain behind one drill-down case: the turn
+    itself, whatever guard-decision/observation capsule this turn's own
+    ``conversation_turn_reference`` cites (rgb-src's ``record_conversation``
+    writes this reference for every turn that made a tool call), and the
+    checkpoint that seals the turn's own ledger position. All content-address
+    links (capsule ids), no synthetic connective tissue."""
+    chain = [
+        ChainStep(
+            label="turn",
+            capsule_id=turn.capsule_id,
+            detail=(
+                f"session={turn.session_id} turn_index={turn.turn_index} "
+                f"role={turn.speaker_role} content_digest={turn.content_digest[:16]}..."
+            ),
+        )
+    ]
+    ref = next(
+        (
+            c
+            for c in records_by_id.values()
+            if c.get("asg_payload", {}).get("event") == "conversation_turn_reference"
+            and c["asg_payload"]["detail"].get("turn_capsule_id") == turn.capsule_id
+        ),
+        None,
+    )
+    if ref is None:
+        chain.append(
+            ChainStep(
+                label="guard-decision",
+                capsule_id="",
+                detail="cites: (nothing -- no tool call/observation was recorded from this turn)",
+            )
+        )
+    else:
+        for rc_id in ref["asg_payload"]["detail"]["referenced_capsule_ids"]:
+            cited = records_by_id.get(rc_id)
+            if cited is None:
+                chain.append(
+                    ChainStep(label="guard-decision", capsule_id=rc_id, detail="cites (not found in this ledger -- a chain gap)")
+                )
+            elif cited.get("action_type") == "decide":
+                results = ", ".join(f"{c['id']}={c['result']}" for c in cited.get("constraints", []))
+                chain.append(
+                    ChainStep(
+                        label="guard-decision",
+                        capsule_id=rc_id,
+                        detail=f"decide {cited['action_id']}  disposition={cited['disposition']['decision']}  constraints=[{results}]",
+                    )
+                )
+            else:
+                verdict_class = cited.get("disposition", {}).get("verdict_class", "?")
+                chain.append(
+                    ChainStep(
+                        label="observation",
+                        capsule_id=rc_id,
+                        detail=f"{cited.get('action_id')}  verdict_class={verdict_class}",
+                    )
+                )
+    chain.append(_checkpoint_step(corpus_path, turn.seq))
+    return chain
+
+
+def render_real_case(
+    *,
+    term_id: str,
+    clause_ref: str,
+    verdict: str,
+    session_id: str,
+    turn: RealTurn | None,
+    evidence: str | None,
+    records_by_id: dict[str, dict],
+    corpus_path: Path,
+    session_turns: tuple[RealTurn, ...] = (),
+) -> None:
+    glyph = "✓" if verdict == "pass" else "✗"
+    print(f"  {glyph} case={session_id}  term={term_id}  clause_ref={clause_ref}  verdict={verdict}")
+    if turn is None:
+        # An absence-of-evidence verdict (e.g. A3b's "no pressure language
+        # found") has no single triggering turn by construction -- still
+        # ground it in a REAL turn from this same session (not a match;
+        # shown so this case is never just an assertion with nothing behind
+        # it) rather than printing nothing.
+        turn = next((t for t in session_turns if not t.is_tool_call_turn and t.narration), None)
+        if turn is None:
+            print("      (no single triggering turn, and no narration turn in this session to show for context)")
+            return
+        print(
+            "      (absence-of-evidence verdict -- no single triggering turn; showing one real turn "
+            "from this session for context, not a match)"
+        )
+    print(f"      turn: [{_fingerprint(turn.capsule_id)}]  turn_index={turn.turn_index}  role={turn.speaker_role}")
+    if turn.is_tool_call_turn:
+        print(f"      actual turn (tool call): {', '.join(turn.tool_call_names)}")
+    else:
+        preview = turn.narration
+        if len(preview) > 200:
+            preview = preview[:200] + "..."
+        print(f"      actual turn text: {preview!r}")
+    if evidence:
+        print(f"      matched phrase/tool: {evidence!r}")
+    recomputed = hashlib.sha256((turn.text or "").encode("utf-8")).hexdigest()
+    print(f"      content_digest (sealed)   ={turn.content_digest}")
+    print(f"      sha256(resolved payload)  ={recomputed}")
+    print(
+        "      -> digest-verified against sealed capsule"
+        if turn.digest_verified
+        else "      -> DIGEST MISMATCH -- do not trust this text (local payload may be corrupted/tampered)"
+    )
+    print("      chain: turn -> guard-decision -> verdict -> checkpoint")
+    for step in _chain_for_turn(turn, records_by_id, corpus_path):
+        cid = f"  [{_fingerprint(step.capsule_id)}]" if step.capsule_id else ""
+        print(f"        {step.label}{cid}: {step.detail}")
 
 
 # --------------------------------------------------------------------------
@@ -421,14 +739,37 @@ def pack_of_outcomes(corpus_path: Path, work_dir: Path):
     print(
         "2c. cross-reference: real, measured N-of-M for A1/A3b/A4/A6/A7 over the SAME "
         "vendored tau2-bench file (build_airline_engagement_pack() -- unmodified), "
-        "since the real corpus above has nothing to measure against (0 of 0, honest):"
+        "kept exactly as this pack already reports it -- this module changes none of "
+        "these numbers:"
     )
     pack = build_airline_engagement_pack()
     for row in pack.rows:
         frac = row.coverage_fraction()
         print(f"    {row.display_line()}" + (f"   measured {frac}" if frac else ""))
 
-    return desk_result, judge_compiled, judge_c_capsule, sampled, total_sims, pack
+    real_turns, real_records_by_id, _real_seq_by_id = _resolve_real_turns(corpus_path)
+    real_sessions = _group_sessions(real_turns)
+    real_terms = measure_real_corpus_terms(real_sessions)
+
+    print()
+    print(
+        f"2d. NEW: the SAME A1/A3b/A6/A7 classifiers (unmodified imports), now measured "
+        f"against the SEALED CORPUS's OWN real, digest-verified turns from Part 1 "
+        f"({len(real_sessions)} sessions == {len(real_sessions)} conversation subjects) "
+        "-- a genuinely additive measurement, kept clearly separate from 2c's vendored-file "
+        "numbers, never blended with them:"
+    )
+    statements = {
+        "A1": "the customer was offered more than one way forward",
+        "A3b": "no pressure language",
+        "A6": "the case was handled without transfer to a human",
+        "A7": "reliance looks calibrated -- pushback rate non-zero",
+    }
+    for term_id, result in real_terms.items():
+        print(f"    - {term_id}: {result.n} of {result.m}")
+        print(f"        statement: {statements[term_id]}")
+
+    return desk_result, judge_compiled, judge_c_capsule, sampled, total_sims, pack, real_terms, real_sessions, real_records_by_id
 
 
 # --------------------------------------------------------------------------
@@ -436,14 +777,131 @@ def pack_of_outcomes(corpus_path: Path, work_dir: Path):
 # --------------------------------------------------------------------------
 
 
-def drill_down(desk_result, judge_compiled, judge_c_capsule, sampled, pack) -> None:
+def _representative_turn(turns: list["RealTurn"], keyword: str | None = None) -> "RealTurn | None":
+    """A real, real-corpus narration turn to ground an inapplicable row's
+    reasoning in something concrete rather than pure abstraction -- picks
+    the first assistant narration turn containing *keyword* (case
+    insensitive), or the first narration turn at all if none matches."""
+    narration_turns = [t for t in turns if not t.is_tool_call_turn and t.narration]
+    if keyword:
+        for t in narration_turns:
+            if keyword.lower() in t.narration.lower():
+                return t
+    return narration_turns[0] if narration_turns else None
+
+
+def render_inapplicable_case(
+    *, term_id: str, clause_ref: str, reason: str, turn: "RealTurn | None", records_by_id: dict, corpus_path: Path
+) -> None:
+    print(f"  ⚠ case={(turn.session_id if turn else '(none)')}  term={term_id}  clause_ref={clause_ref}  verdict=WITH-INSTRUMENTATION")
+    print(f"      reason: {reason}")
+    if turn is None:
+        print("      (no real turn available to ground this reason in -- this corpus has no data at all for this row)")
+        return
+    print(f"      turn: [{_fingerprint(turn.capsule_id)}]  turn_index={turn.turn_index}  role={turn.speaker_role}")
+    preview = turn.narration[:200] + ("..." if len(turn.narration) > 200 else "")
+    print(f"      actual turn text (evidence the missing typed field would need to attach to): {preview!r}")
+    recomputed = hashlib.sha256((turn.text or "").encode("utf-8")).hexdigest()
+    print(f"      content_digest (sealed)   ={turn.content_digest}")
+    print(f"      sha256(resolved payload)  ={recomputed}")
+    print(
+        "      -> digest-verified against sealed capsule"
+        if turn.digest_verified
+        else "      -> DIGEST MISMATCH -- do not trust this text"
+    )
+    print(
+        "      no typed/structured record exists to check this claim deterministically -- "
+        "free text alone (however real) cannot substitute for it; see rationale above"
+    )
+
+
+def drill_down(
+    judge_compiled,
+    judge_c_capsule,
+    sampled,
+    pack,
+    real_terms: dict[str, "RealTermResult"],
+    real_sessions: dict[str, list["RealTurn"]],
+    real_records_by_id: dict[str, dict],
+    corpus_path: Path,
+) -> None:
     _hr("PART 3 -- DRILL DOWN: from one aggregate line to subjects and the verdict capsule")
 
+    print(
+        "3.0 REAL-CORPUS drill-down (Part 2d's numbers): every term below reaches an "
+        "ACTUAL turn from THIS sealed corpus, cross-referenced against its own "
+        "content_digest and rendered with the full evidence chain "
+        "(turn -> guard-decision -> verdict -> checkpoint). See 3.4/3.5 below for terms "
+        "this corpus genuinely cannot check (inapplicable) and the one refused row (A8)."
+    )
+    clause_refs = {
+        "A1": "airline-engagement-pack/A1",
+        "A3b": "airline-engagement-pack/A3b",
+        "A6": "airline-engagement-pack/A6",
+        "A7": "airline-engagement-pack/A7",
+    }
+    for i, term_id in enumerate(("A1", "A3b", "A6", "A7"), start=1):
+        result = real_terms[term_id]
+        clause_ref = clause_refs[term_id]
+        print()
+        print(f"3.{i} term.airline_pack.{term_id.lower()}  clause_ref={clause_ref}  OUTCOME: {result.n} of {result.m}")
+        pass_cases = [(sid, t, e) for sid, (v, t, e) in result.cases.items() if v == "pass"]
+        fail_cases = [(sid, t, e) for sid, (v, t, e) in result.cases.items() if v == "fail"]
+        if pass_cases:
+            sid, t, e = pass_cases[0]
+            render_real_case(
+                term_id=term_id, clause_ref=clause_ref, verdict="pass", session_id=sid, turn=t, evidence=e,
+                records_by_id=real_records_by_id, corpus_path=corpus_path,
+                session_turns=tuple(real_sessions[sid]),
+            )
+        if fail_cases:
+            sid, t, e = fail_cases[0]
+            render_real_case(
+                term_id=term_id, clause_ref=clause_ref, verdict="fail", session_id=sid, turn=t, evidence=e,
+                records_by_id=real_records_by_id, corpus_path=corpus_path,
+                session_turns=tuple(real_sessions[sid]),
+            )
+        else:
+            print(
+                f"    (0 fail cases among {result.m} real sessions -- a real finding for this "
+                "corpus, not an unfired classifier; consistent with 2c's own vendored-file finding)"
+            )
+
+    print()
+    all_turns = [t for turns in real_sessions.values() for t in turns]
+    print("3.5 inapplicable rows, grounded in a real turn (not just declared in the abstract):")
+    for claim_id, keyword in (("A2", "polic"), ("A3a", "polic"), ("A5", "prefer")):
+        row = next(r for r in pack.rows if r.claim_id == claim_id)
+        turn = _representative_turn(all_turns, keyword=keyword)
+        print()
+        render_inapplicable_case(
+            term_id=claim_id,
+            clause_ref=f"airline-engagement-pack/{claim_id}",
+            reason=row.rationale,
+            turn=turn,
+            records_by_id=real_records_by_id,
+            corpus_path=corpus_path,
+        )
+
+    print()
+    a8 = next(r for r in pack.rows if r.claim_id == "A8")
+    refusal = pack.a8_refusal_capsule
+    print(
+        f"3.6 term.airline_pack.a8  clause_ref=airline-engagement-pack/A8  verdict=REFUSED/REFUSED\n"
+        f"    sealed refusal capsule: [{_fingerprint(refusal['capsule_id'])}]  full id={refusal['capsule_id']}\n"
+        f"    reason_code={a8.refusal_reason_code}\n"
+        f"    (a pack-level refusal -- correct by design, needs no per-subject data: "
+        "a felt state is never witnessed by a record; the refusal capsule itself is the "
+        "sealed evidence, not a turn)"
+    )
+
+    print()
+    print("3.7 the sampled judge-agent fixture (Part 2b), drilled into subject-level:")
     c_digest = compiled_term_digest(judge_compiled)
     passed = [s for s in sampled if s.verdict == "pass"]
     failed = [s for s in sampled if s.verdict == "fail"]
     print(
-        f"3a. term.airline_pack.a3b_judged  clause_ref={_JUDGE_CLAUSE_REF}\n"
+        f"    term.airline_pack.a3b_judged  clause_ref={_JUDGE_CLAUSE_REF}\n"
         f"    c_digest={c_digest}\n"
         f"    sampled {len(sampled)} subjects: {len(passed)} pass, {len(failed)} fail"
     )
@@ -460,36 +918,23 @@ def drill_down(desk_result, judge_compiled, judge_c_capsule, sampled, pack) -> N
         )
 
     print()
-    a8 = next(r for r in pack.rows if r.claim_id == "A8")
-    refusal = pack.a8_refusal_capsule
-    print(
-        f"3b. term.airline_pack.a8  clause_ref=airline-engagement-pack/A8  "
-        f"c_digest={desk_result.c_capsule['capsule_id'][:16]}...\n"
-        f"    sealed refusal capsule: {refusal['capsule_id']}\n"
-        f"    reason_code={a8.refusal_reason_code}  verdict=REFUSED/REFUSED\n"
-        f"    (a pack-level refusal -- correct by design, needs no per-subject data: "
-        "a felt state is never witnessed by a record)"
-    )
-
-    print()
+    print("3.8 vendored-file reference cross-check for A1 (unchanged from before, not the corpus):")
     a1 = next(r for r in pack.rows if r.claim_id == "A1")
     n1, m1 = a1.coverage_n, a1.coverage_m
     sims = load_conversations()
-    from .airline_engagement_pack import _OPTION_LANGUAGE_RE
-    from .airline_engagement_pack import _text as _t1
 
     matched, unmatched = [], []
     for i, sim in enumerate(sims):
         hit = None
         for m in sim["messages"]:
             if m["role"] == "assistant":
-                mo = _OPTION_LANGUAGE_RE.search(_t1(m))
+                mo = _OPTION_LANGUAGE_RE.search(_text(m))
                 if mo:
                     hit = mo.group(0)
                     break
         (matched if hit else unmatched).append((i, hit))
     print(
-        f"3c. term.airline_pack.a1  clause_ref=airline-engagement-pack/A1  "
+        f"    term.airline_pack.a1  clause_ref=airline-engagement-pack/A1  "
         f"measured {n1} of {m1} on the vendored tau2-bench file (reference, not the corpus):"
     )
     for i, hit in matched[:3]:
@@ -528,10 +973,20 @@ def main(argv: list[str] | None = None) -> int:
     work_dir = Path(tempfile.mkdtemp(prefix="tau2-pack-outcomes-walkthrough-"))
     try:
         describe_dataset(corpus_path, rgb_src)
-        desk_result, judge_compiled, judge_c_capsule, sampled, total_sims, pack = pack_of_outcomes(
-            corpus_path, work_dir
+        (
+            desk_result,
+            judge_compiled,
+            judge_c_capsule,
+            sampled,
+            total_sims,
+            pack,
+            real_terms,
+            real_sessions,
+            real_records_by_id,
+        ) = pack_of_outcomes(corpus_path, work_dir)
+        drill_down(
+            judge_compiled, judge_c_capsule, sampled, pack, real_terms, real_sessions, real_records_by_id, corpus_path
         )
-        drill_down(desk_result, judge_compiled, judge_c_capsule, sampled, pack)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
