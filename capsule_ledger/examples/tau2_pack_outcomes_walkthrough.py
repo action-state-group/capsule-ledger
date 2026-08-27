@@ -59,14 +59,19 @@ workspace's own multi-repo layout.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
+from agent_action_capsule import verify as verify_capsule
+
+from ..cli.bundle_cmd import DEFAULT_VERIFY_BASE_URL, _build_completeness_certificate, _collect_with_parents
 from ..compiler.compile import Declaration
 from ..compiler.terms_desk import (
     ApplicabilitySpec,
@@ -81,6 +86,7 @@ from ..compiler.terms_report import render_terms_report
 from ..guards import LocalSigner
 from ..guards.capsule import build_event_capsule
 from ..ledger import LedgerStore
+from ..ledger.api import ScanQuery
 from ..mmr.checkpoint import list_checkpoints, load_checkpoint
 from ..payload_store import PayloadStore
 from .airline_engagement_pack import (
@@ -123,6 +129,14 @@ def _load_rgb_corpus_verify(rgb_src: Path):
     return verify_corpus
 
 
+def _verify_dataset(corpus_path: Path, rgb_src: Path):
+    """The one ``corpus_verify.verify_corpus`` call both ``describe_dataset``
+    (PART 1's verbose narration) and ``--format ascii``'s condensed header
+    need -- factored out so ascii mode never re-derives it differently."""
+    verify_corpus = _load_rgb_corpus_verify(rgb_src)
+    return verify_corpus(corpus_path)
+
+
 def _load_rgb_turn_raw_content(rgb_src: Path):
     """The one function this module imports from rgb-src's own recorder
     (``recorders/capsule_pipeline.py``) to ground this module's digest
@@ -163,7 +177,10 @@ def _index_sealed_payloads_by_content_sha256(corpus_path: Path) -> dict[str, str
     return index
 
 
-def describe_dataset(corpus_path: Path, rgb_src: Path) -> None:
+def describe_dataset(corpus_path: Path, rgb_src: Path):
+    """Prints PART 1 and returns the ``corpus_verify.verify_corpus`` result,
+    so ``--format ascii``'s condensed header (below) can reuse the same
+    mechanically-verified numbers instead of re-scanning the corpus."""
     _hr("PART 1 -- THE DATASET: the real tau2-airline capsule corpus")
     print(f"corpus fixture : {corpus_path}")
     print("source         : record-grounding-bench, branch demo/chunk1-tau2-corpus")
@@ -173,8 +190,7 @@ def describe_dataset(corpus_path: Path, rgb_src: Path) -> None:
         "checkpointed shifts (seed101/102/103) plus one mid-shift, unsealed tail (seed104)"
     )
 
-    verify_corpus = _load_rgb_corpus_verify(rgb_src)
-    result = verify_corpus(corpus_path)
+    result = _verify_dataset(corpus_path, rgb_src)
     print()
     print(f"  mechanically verified (corpus_verify.verify_corpus): ok={result.ok}")
     print(f"  total capsule records     : {result.record_count}")
@@ -236,6 +252,7 @@ def describe_dataset(corpus_path: Path, rgb_src: Path) -> None:
         "PART 2b/3 use these real, digest-verified turns for A1/A3b/A6/A7's "
         "case-level drill-down."
     )
+    return result
 
 
 # --------------------------------------------------------------------------
@@ -676,8 +693,13 @@ def render_term_report_line(line) -> None:
         print(f"      CAVEAT[{caveat.get('caveat')}]: {caveat.get('detail')}")
 
 
-def pack_of_outcomes(corpus_path: Path, work_dir: Path):
-    _hr("PART 2 -- THE PACK OF OUTCOMES: airline-engagement-pack (A1-A8) read across the dataset")
+def pack_of_outcomes(corpus_path: Path, work_dir: Path, *, verbose: bool = True):
+    """Computes every PART 2 data structure unconditionally; the ``2a``-``2d``
+    narration prints only when *verbose* (``--format ascii`` sets this
+    False so it can render its own condensed summary from the same
+    returned data instead -- no number here is affected by the flag)."""
+    if verbose:
+        _hr("PART 2 -- THE PACK OF OUTCOMES: airline-engagement-pack (A1-A8) read across the dataset")
 
     signer = LocalSigner(key_id="tau2-walkthrough", secret=b"tau2-walkthrough-demo-key")
     desk_ledger = LedgerStore(work_dir / "desk-ledger")
@@ -687,9 +709,10 @@ def pack_of_outcomes(corpus_path: Path, work_dir: Path):
         declarations_root=work_dir / "declarations",
     )
 
-    print("2a. real pack-first desk flow, run against the REAL corpus from Part 1:")
-    print()
-    print(render_desk_report(desk_result))
+    if verbose:
+        print("2a. real pack-first desk flow, run against the REAL corpus from Part 1:")
+        print()
+        print(render_desk_report(desk_result))
 
     desk_ledger.close()
 
@@ -712,62 +735,59 @@ def pack_of_outcomes(corpus_path: Path, work_dir: Path):
         epoch_sampling_rates={_SAMPLED_EPOCH: _SAMPLE_RATE},
     )
 
-    print()
-    print(
-        "2b. the SAME renderer (compiler/terms_report.py: census + sampling-rate + "
-        "coverage-discrepancy), fed one additional term (A3b, judge-shaped) with a "
-        "small sealed-verdict fixture this script built -- see module docstring for "
-        "why A1-A8's own WITH-INSTRUMENTATION/REFUSED rows above are rendered by the "
-        "desk's own renderer instead (this renderer's rule-fold-replay path does not "
-        "cover a WITH-INSTRUMENTATION term). VERDICT SOURCE: deterministic keyword "
-        "stand-in (measure_a3b_pressure_language_absent's own regex, imported "
-        f"verbatim), sampled at rate {_SAMPLE_RATE} ({len(sampled)} of {total_sims} "
-        "vendored tau2-bench simulations) -- NOT a live LLM judge call, NOT this "
-        "corpus's own data (the vendored file is a separate, real tau2-bench "
-        "published benchmark transcript set)."
-    )
-    print()
-    for line in report.lines:
-        render_term_report_line(line)
+    if verbose:
         print()
-    if report.refusals:
-        print("  refusal rows (rendered exactly as prominently, per design):")
-        for r in report.refusals:
-            print(f"    ✗ {r.term_id}  clause_ref={r.clause_ref}  reason_code={r.reason_code}")
+        print(
+            "2b. the SAME renderer (compiler/terms_report.py: census + sampling-rate + "
+            "coverage-discrepancy), fed one additional term (A3b, judge-shaped) with a "
+            "small sealed-verdict fixture this script built -- see module docstring for "
+            "why A1-A8's own WITH-INSTRUMENTATION/REFUSED rows above are rendered by the "
+            "desk's own renderer instead (this renderer's rule-fold-replay path does not "
+            "cover a WITH-INSTRUMENTATION term). VERDICT SOURCE: deterministic keyword "
+            "stand-in (measure_a3b_pressure_language_absent's own regex, imported "
+            f"verbatim), sampled at rate {_SAMPLE_RATE} ({len(sampled)} of {total_sims} "
+            "vendored tau2-bench simulations) -- NOT a live LLM judge call, NOT this "
+            "corpus's own data (the vendored file is a separate, real tau2-bench "
+            "published benchmark transcript set)."
+        )
+        print()
+        for line in report.lines:
+            render_term_report_line(line)
+            print()
+        if report.refusals:
+            print("  refusal rows (rendered exactly as prominently, per design):")
+            for r in report.refusals:
+                print(f"    ✗ {r.term_id}  clause_ref={r.clause_ref}  reason_code={r.reason_code}")
 
-    print()
-    print(
-        "2c. cross-reference: real, measured N-of-M for A1/A3b/A4/A6/A7 over the SAME "
-        "vendored tau2-bench file (build_airline_engagement_pack() -- unmodified), "
-        "kept exactly as this pack already reports it -- this module changes none of "
-        "these numbers:"
-    )
+        print()
+        print(
+            "2c. cross-reference: real, measured N-of-M for A1/A3b/A4/A6/A7 over the SAME "
+            "vendored tau2-bench file (build_airline_engagement_pack() -- unmodified), "
+            "kept exactly as this pack already reports it -- this module changes none of "
+            "these numbers:"
+        )
     pack = build_airline_engagement_pack()
-    for row in pack.rows:
-        frac = row.coverage_fraction()
-        print(f"    {row.display_line()}" + (f"   measured {frac}" if frac else ""))
+    if verbose:
+        for row in pack.rows:
+            frac = row.coverage_fraction()
+            print(f"    {row.display_line()}" + (f"   measured {frac}" if frac else ""))
 
     real_turns, real_records_by_id, _real_seq_by_id = _resolve_real_turns(corpus_path)
     real_sessions = _group_sessions(real_turns)
     real_terms = measure_real_corpus_terms(real_sessions)
 
-    print()
-    print(
-        f"2d. NEW: the SAME A1/A3b/A6/A7 classifiers (unmodified imports), now measured "
-        f"against the SEALED CORPUS's OWN real, digest-verified turns from Part 1 "
-        f"({len(real_sessions)} sessions == {len(real_sessions)} conversation subjects) "
-        "-- a genuinely additive measurement, kept clearly separate from 2c's vendored-file "
-        "numbers, never blended with them:"
-    )
-    statements = {
-        "A1": "the customer was offered more than one way forward",
-        "A3b": "no pressure language",
-        "A6": "the case was handled without transfer to a human",
-        "A7": "reliance looks calibrated -- pushback rate non-zero",
-    }
-    for term_id, result in real_terms.items():
-        print(f"    - {term_id}: {result.n} of {result.m}")
-        print(f"        statement: {statements[term_id]}")
+    if verbose:
+        print()
+        print(
+            f"2d. NEW: the SAME A1/A3b/A6/A7 classifiers (unmodified imports), now measured "
+            f"against the SEALED CORPUS's OWN real, digest-verified turns from Part 1 "
+            f"({len(real_sessions)} sessions == {len(real_sessions)} conversation subjects) "
+            "-- a genuinely additive measurement, kept clearly separate from 2c's vendored-file "
+            "numbers, never blended with them:"
+        )
+        for term_id, result in real_terms.items():
+            print(f"    - {term_id}: {result.n} of {result.m}")
+            print(f"        statement: {_REAL_TERM_STATEMENTS[term_id]}")
 
     return desk_result, judge_compiled, judge_c_capsule, sampled, total_sims, pack, real_terms, real_sessions, real_records_by_id
 
@@ -815,6 +835,89 @@ def render_inapplicable_case(
     )
 
 
+_REAL_TERM_CLAUSE_REFS = {
+    "A1": "airline-engagement-pack/A1",
+    "A3b": "airline-engagement-pack/A3b",
+    "A6": "airline-engagement-pack/A6",
+    "A7": "airline-engagement-pack/A7",
+}
+
+
+def _render_term_drilldown_section(
+    *,
+    label: str,
+    term_id: str,
+    result: "RealTermResult",
+    clause_ref: str,
+    real_sessions: dict[str, list["RealTurn"]],
+    real_records_by_id: dict[str, dict],
+    corpus_path: Path,
+) -> None:
+    """One term's case+chain drill-down -- factored out of ``drill_down`` so
+    ``--format ascii`` (below) renders the identical case/chain evidence as
+    the verbose walkthrough, under a different (shorter) header only; no
+    second implementation of the drill-down itself."""
+    print(f"{label} term.airline_pack.{term_id.lower()}  clause_ref={clause_ref}  OUTCOME: {result.n} of {result.m}")
+    pass_cases = [(sid, t, e) for sid, (v, t, e) in result.cases.items() if v == "pass"]
+    fail_cases = [(sid, t, e) for sid, (v, t, e) in result.cases.items() if v == "fail"]
+    if pass_cases:
+        sid, t, e = pass_cases[0]
+        render_real_case(
+            term_id=term_id, clause_ref=clause_ref, verdict="pass", session_id=sid, turn=t, evidence=e,
+            records_by_id=real_records_by_id, corpus_path=corpus_path,
+            session_turns=tuple(real_sessions[sid]),
+        )
+    if fail_cases:
+        sid, t, e = fail_cases[0]
+        render_real_case(
+            term_id=term_id, clause_ref=clause_ref, verdict="fail", session_id=sid, turn=t, evidence=e,
+            records_by_id=real_records_by_id, corpus_path=corpus_path,
+            session_turns=tuple(real_sessions[sid]),
+        )
+    else:
+        print(
+            f"    (0 fail cases among {result.m} real sessions -- a real finding for this "
+            "corpus, not an unfired classifier; consistent with 2c's own vendored-file finding)"
+        )
+
+
+def _render_inapplicable_section(
+    *,
+    header: str,
+    pack,
+    real_sessions: dict[str, list["RealTurn"]],
+    real_records_by_id: dict[str, dict],
+    corpus_path: Path,
+) -> None:
+    print(header)
+    all_turns = [t for turns in real_sessions.values() for t in turns]
+    for claim_id, keyword in (("A2", "polic"), ("A3a", "polic"), ("A5", "prefer")):
+        row = next(r for r in pack.rows if r.claim_id == claim_id)
+        turn = _representative_turn(all_turns, keyword=keyword)
+        print()
+        render_inapplicable_case(
+            term_id=claim_id,
+            clause_ref=f"airline-engagement-pack/{claim_id}",
+            reason=row.rationale,
+            turn=turn,
+            records_by_id=real_records_by_id,
+            corpus_path=corpus_path,
+        )
+
+
+def _render_a8_refusal_section(*, label: str, pack) -> None:
+    a8 = next(r for r in pack.rows if r.claim_id == "A8")
+    refusal = pack.a8_refusal_capsule
+    print(
+        f"{label} term.airline_pack.a8  clause_ref=airline-engagement-pack/A8  verdict=REFUSED/REFUSED\n"
+        f"    sealed refusal capsule: [{_fingerprint(refusal['capsule_id'])}]  full id={refusal['capsule_id']}\n"
+        f"    reason_code={a8.refusal_reason_code}\n"
+        f"    (a pack-level refusal -- correct by design, needs no per-subject data: "
+        "a felt state is never witnessed by a record; the refusal capsule itself is the "
+        "sealed evidence, not a turn)"
+    )
+
+
 def drill_down(
     judge_compiled,
     judge_c_capsule,
@@ -834,66 +937,29 @@ def drill_down(
         "(turn -> guard-decision -> verdict -> checkpoint). See 3.4/3.5 below for terms "
         "this corpus genuinely cannot check (inapplicable) and the one refused row (A8)."
     )
-    clause_refs = {
-        "A1": "airline-engagement-pack/A1",
-        "A3b": "airline-engagement-pack/A3b",
-        "A6": "airline-engagement-pack/A6",
-        "A7": "airline-engagement-pack/A7",
-    }
     for i, term_id in enumerate(("A1", "A3b", "A6", "A7"), start=1):
-        result = real_terms[term_id]
-        clause_ref = clause_refs[term_id]
         print()
-        print(f"3.{i} term.airline_pack.{term_id.lower()}  clause_ref={clause_ref}  OUTCOME: {result.n} of {result.m}")
-        pass_cases = [(sid, t, e) for sid, (v, t, e) in result.cases.items() if v == "pass"]
-        fail_cases = [(sid, t, e) for sid, (v, t, e) in result.cases.items() if v == "fail"]
-        if pass_cases:
-            sid, t, e = pass_cases[0]
-            render_real_case(
-                term_id=term_id, clause_ref=clause_ref, verdict="pass", session_id=sid, turn=t, evidence=e,
-                records_by_id=real_records_by_id, corpus_path=corpus_path,
-                session_turns=tuple(real_sessions[sid]),
-            )
-        if fail_cases:
-            sid, t, e = fail_cases[0]
-            render_real_case(
-                term_id=term_id, clause_ref=clause_ref, verdict="fail", session_id=sid, turn=t, evidence=e,
-                records_by_id=real_records_by_id, corpus_path=corpus_path,
-                session_turns=tuple(real_sessions[sid]),
-            )
-        else:
-            print(
-                f"    (0 fail cases among {result.m} real sessions -- a real finding for this "
-                "corpus, not an unfired classifier; consistent with 2c's own vendored-file finding)"
-            )
-
-    print()
-    all_turns = [t for turns in real_sessions.values() for t in turns]
-    print("3.5 inapplicable rows, grounded in a real turn (not just declared in the abstract):")
-    for claim_id, keyword in (("A2", "polic"), ("A3a", "polic"), ("A5", "prefer")):
-        row = next(r for r in pack.rows if r.claim_id == claim_id)
-        turn = _representative_turn(all_turns, keyword=keyword)
-        print()
-        render_inapplicable_case(
-            term_id=claim_id,
-            clause_ref=f"airline-engagement-pack/{claim_id}",
-            reason=row.rationale,
-            turn=turn,
-            records_by_id=real_records_by_id,
+        _render_term_drilldown_section(
+            label=f"3.{i}",
+            term_id=term_id,
+            result=real_terms[term_id],
+            clause_ref=_REAL_TERM_CLAUSE_REFS[term_id],
+            real_sessions=real_sessions,
+            real_records_by_id=real_records_by_id,
             corpus_path=corpus_path,
         )
 
     print()
-    a8 = next(r for r in pack.rows if r.claim_id == "A8")
-    refusal = pack.a8_refusal_capsule
-    print(
-        f"3.6 term.airline_pack.a8  clause_ref=airline-engagement-pack/A8  verdict=REFUSED/REFUSED\n"
-        f"    sealed refusal capsule: [{_fingerprint(refusal['capsule_id'])}]  full id={refusal['capsule_id']}\n"
-        f"    reason_code={a8.refusal_reason_code}\n"
-        f"    (a pack-level refusal -- correct by design, needs no per-subject data: "
-        "a felt state is never witnessed by a record; the refusal capsule itself is the "
-        "sealed evidence, not a turn)"
+    _render_inapplicable_section(
+        header="3.5 inapplicable rows, grounded in a real turn (not just declared in the abstract):",
+        pack=pack,
+        real_sessions=real_sessions,
+        real_records_by_id=real_records_by_id,
+        corpus_path=corpus_path,
     )
+
+    print()
+    _render_a8_refusal_section(label="3.6", pack=pack)
 
     print()
     print("3.7 the sampled judge-agent fixture (Part 2b), drilled into subject-level:")
@@ -944,6 +1010,206 @@ def drill_down(
 
 
 # --------------------------------------------------------------------------
+# --format ascii -- a condensed, plain-text alternative to PART 1-3's long
+# narration above, same information (same numbers, same case+chain
+# evidence, reusing the exact same rendering calls), just without the
+# paragraph-length "why" prose -- meant to be read in a terminal, not
+# skimmed for an audit trail. Section/line convention ("## title", "- id: n
+# of m", indented "statement:") matches this package's other plain-text
+# report, audit_report/render.py's render_text -- not a new house style.
+# --------------------------------------------------------------------------
+
+_REAL_TERM_STATEMENTS = {
+    "A1": "the customer was offered more than one way forward",
+    "A3b": "no pressure language",
+    "A6": "the case was handled without transfer to a human",
+    "A7": "reliance looks calibrated -- pushback rate non-zero",
+}
+
+
+def render_ascii_report(
+    *,
+    corpus_path: Path,
+    dataset_result,
+    real_terms: dict[str, "RealTermResult"],
+    real_sessions: dict[str, list["RealTurn"]],
+    real_records_by_id: dict[str, dict],
+    pack,
+) -> None:
+    print(f"capsule demo report (ascii) · {corpus_path.name}")
+    print(
+        f"mechanically verified: ok={dataset_result.ok}  records={dataset_result.record_count}  "
+        f"sessions={len(real_sessions)}"
+    )
+    print()
+    print("## term outcomes (real, sealed corpus -- digest-verified turns)")
+    print()
+    for term_id, result in real_terms.items():
+        print(f"- {term_id}: {result.n} of {result.m}")
+        print(f"    statement: {_REAL_TERM_STATEMENTS[term_id]}")
+    print()
+
+    _render_inapplicable_section(
+        header="## inapplicable rows (WITH-INSTRUMENTATION, grounded in a real turn)",
+        pack=pack,
+        real_sessions=real_sessions,
+        real_records_by_id=real_records_by_id,
+        corpus_path=corpus_path,
+    )
+    print()
+    _render_a8_refusal_section(label="##", pack=pack)
+    print()
+
+    print("## drill-down: term -> case -> chain")
+    for term_id in ("A1", "A3b", "A6", "A7"):
+        print()
+        _render_term_drilldown_section(
+            label=f"### {term_id}",
+            term_id=term_id,
+            result=real_terms[term_id],
+            clause_ref=_REAL_TERM_CLAUSE_REFS[term_id],
+            real_sessions=real_sessions,
+            real_records_by_id=real_records_by_id,
+            corpus_path=corpus_path,
+        )
+
+    print()
+    print("---")
+    print(
+        "capsule demo report --format ascii: a condensed, plain-text view of the same "
+        "real, digest-verified data --format verbose (default) narrates at length above -- "
+        "no numbers differ between formats."
+    )
+
+
+# --------------------------------------------------------------------------
+# permalink mode -- `capsule bundle --with-viewer`'s own bundle shape and
+# offline HTML shell (cli/bundle_cmd.py, bundle_viewer/viewer.py), built
+# here by calling those modules' own helpers directly against exactly the
+# capsule ids PART 3's drill-down (or --format ascii's condensed version of
+# it) actually showed -- never a re-derivation of the bundle format, and
+# never a second HTML template.
+# --------------------------------------------------------------------------
+
+
+def _selected_drilldown_turns(result: "RealTermResult") -> list["RealTurn"]:
+    """The exact pass/fail cases ``_render_term_drilldown_section`` shows --
+    factored out so the permalink bundle below cites precisely the turns a
+    reader of PART 3 (or the ascii report) actually saw, not an arbitrary
+    slice of the ledger."""
+    pass_turns = [t for v, t, e in result.cases.values() if v == "pass" and t is not None]
+    fail_turns = [t for v, t, e in result.cases.values() if v == "fail" and t is not None]
+    turns: list[RealTurn] = []
+    if pass_turns:
+        turns.append(pass_turns[0])
+    if fail_turns:
+        turns.append(fail_turns[0])
+    return turns
+
+
+def _demo_drilldown_capsule_ids(
+    real_terms: dict[str, "RealTermResult"], real_records_by_id: dict[str, dict]
+) -> list[str]:
+    """Capsule ids behind every case PART 3 drills into: each shown turn,
+    plus whatever guard-decision/observation capsule that turn's own
+    ``conversation_turn_reference`` cites (the same lookup
+    ``_chain_for_turn`` does) -- order-preserving de-dup, no id twice."""
+    ids: list[str] = []
+    for term_id in ("A1", "A3b", "A6", "A7"):
+        for turn in _selected_drilldown_turns(real_terms[term_id]):
+            ids.append(turn.capsule_id)
+            ref = next(
+                (
+                    c
+                    for c in real_records_by_id.values()
+                    if c.get("asg_payload", {}).get("event") == "conversation_turn_reference"
+                    and c["asg_payload"]["detail"].get("turn_capsule_id") == turn.capsule_id
+                ),
+                None,
+            )
+            if ref is not None:
+                ids.extend(ref["asg_payload"]["detail"]["referenced_capsule_ids"])
+    seen: set[str] = set()
+    out: list[str] = []
+    for i in ids:
+        if i not in seen and i in real_records_by_id:
+            seen.add(i)
+            out.append(i)
+    return out
+
+
+def build_demo_permalink_bundle(
+    corpus_path: Path,
+    real_terms: dict[str, "RealTermResult"],
+    real_records_by_id: dict[str, dict],
+    *,
+    verify_base_url: str = DEFAULT_VERIFY_BASE_URL,
+) -> tuple[dict, str]:
+    """Returns ``(bundle, fragment)`` in the exact shape ``capsule bundle``
+    (``cli/bundle_cmd.py::run``) writes -- built by calling that module's
+    own ``_collect_with_parents``/``_build_completeness_certificate``
+    helpers against ``corpus_path``'s real ledger, scoped to
+    ``_demo_drilldown_capsule_ids`` instead of a ``--limit``/``--since``
+    query. Same verification pass, same fragment encoding, so
+    ``bundle_viewer.render_offline_viewer_html(fragment)`` opens it exactly
+    like any other ``capsule bundle --with-viewer`` output."""
+    ids = _demo_drilldown_capsule_ids(real_terms, real_records_by_id)
+    store = LedgerStore(str(corpus_path))
+    try:
+        matched = [r for r in (store.fetch(i) for i in ids) if r is not None]
+        records = _collect_with_parents(store, matched)
+        capsules = [r.capsule for r in records]
+        capsule_ids = [c["capsule_id"] for c in capsules]
+
+        verification: dict[str, dict] = {}
+        all_ok = True
+        for capsule in capsules:
+            result = verify_capsule(capsule, store=capsule_ids)
+            verification[capsule["capsule_id"]] = {
+                "ok": result.ok,
+                "findings": [{"code": f.code, "detail": f.detail, "severity": f.severity} for f in result.findings],
+            }
+            all_ok = all_ok and result.ok
+
+        tree_size = sum(1 for _ in store.scan(ScanQuery()))
+        completeness_certificate = _build_completeness_certificate(store, records, tree_size)
+    finally:
+        store.close()
+
+    bundle = {
+        "bundle_version": "1",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "query": {},
+        "cli_echo": "≡ tau2_pack_outcomes_walkthrough.py PART 3 drill-down selection (not a `capsule bundle` CLI query)",
+        "records": capsules,
+        "range": [records[0].seq, records[-1].seq] if records else [0, -1],
+        "checkpoint": {"tree_size": tree_size},
+        "verification": verification,
+        "completeness_certificate": completeness_certificate,
+    }
+    payload = json.dumps(bundle, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    fragment = base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+    print(
+        f"permalink: {len(records)} record(s) from PART 3's drill-down, records "
+        f"{bundle['range'][0]}–{bundle['range'][1]}, "
+        f"{'all verify' if all_ok else 'VERIFICATION FAILURE in this slice'}"
+    )
+    print(f"verify: {verify_base_url}#{fragment}")
+    return bundle, fragment
+
+
+def write_demo_permalink_viewer(bundle: dict, fragment: str, out_path: Path) -> None:
+    """Writes the self-contained offline HTML viewer for *fragment* --
+    ``bundle_viewer.render_offline_viewer_html`` unmodified, the same
+    function ``capsule bundle --with-viewer`` calls; this module never
+    forks or re-templates it."""
+    from ..bundle_viewer import render_offline_viewer_html
+
+    out_path.write_text(render_offline_viewer_html(fragment), encoding="utf-8")
+    print(f"wrote {out_path} (self-contained, opens with no network)")
+
+
+# --------------------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -958,6 +1224,33 @@ def main(argv: list[str] | None = None) -> int:
         default=str(Path(__file__).resolve().parents[3] / "record-grounding-bench" / "src"),
         help="path to record-grounding-bench's src/ (imported by path, never installed)",
     )
+    parser.add_argument(
+        "--format",
+        choices=("verbose", "ascii"),
+        default="verbose",
+        help=(
+            "'verbose' (default): PART 1/2/3's full narration. 'ascii': a condensed "
+            "per-term outcome summary + drill-into-case chain, same underlying data "
+            "and case/chain rendering, no prose (default: %(default)s)"
+        ),
+    )
+    parser.add_argument(
+        "--permalink-out",
+        dest="permalink_out",
+        default=None,
+        help=(
+            "also build a `capsule bundle --with-viewer`-shaped permalink bundle scoped to "
+            "exactly the capsules this walkthrough's drill-down showed, write it (plus a "
+            "self-contained offline HTML viewer alongside it) to this path, and print the "
+            "verify.agentactioncapsule.org/bundle#... permalink (default: not built)"
+        ),
+    )
+    parser.add_argument(
+        "--verify-base-url",
+        dest="verify_base_url",
+        default=DEFAULT_VERIFY_BASE_URL,
+        help="base URL the --permalink-out fragment is appended to (default: %(default)s)",
+    )
     args = parser.parse_args(argv)
 
     corpus_path = Path(args.corpus)
@@ -970,9 +1263,13 @@ def main(argv: list[str] | None = None) -> int:
     if not rgb_src.exists():
         parser.error(f"record-grounding-bench src/ not found at {rgb_src} -- pass --rgb-src")
 
+    verbose = args.format == "verbose"
     work_dir = Path(tempfile.mkdtemp(prefix="tau2-pack-outcomes-walkthrough-"))
     try:
-        describe_dataset(corpus_path, rgb_src)
+        if verbose:
+            describe_dataset(corpus_path, rgb_src)
+        else:
+            dataset_result = _verify_dataset(corpus_path, rgb_src)
         (
             desk_result,
             judge_compiled,
@@ -983,10 +1280,30 @@ def main(argv: list[str] | None = None) -> int:
             real_terms,
             real_sessions,
             real_records_by_id,
-        ) = pack_of_outcomes(corpus_path, work_dir)
-        drill_down(
-            judge_compiled, judge_c_capsule, sampled, pack, real_terms, real_sessions, real_records_by_id, corpus_path
-        )
+        ) = pack_of_outcomes(corpus_path, work_dir, verbose=verbose)
+        if verbose:
+            drill_down(
+                judge_compiled, judge_c_capsule, sampled, pack, real_terms, real_sessions, real_records_by_id, corpus_path
+            )
+        else:
+            render_ascii_report(
+                corpus_path=corpus_path,
+                dataset_result=dataset_result,
+                real_terms=real_terms,
+                real_sessions=real_sessions,
+                real_records_by_id=real_records_by_id,
+                pack=pack,
+            )
+
+        if args.permalink_out is not None:
+            print()
+            bundle, fragment = build_demo_permalink_bundle(
+                corpus_path, real_terms, real_records_by_id, verify_base_url=args.verify_base_url
+            )
+            out_path = Path(args.permalink_out)
+            out_path.write_text(json.dumps(bundle, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {out_path}")
+            write_demo_permalink_viewer(bundle, fragment, out_path.with_suffix(".html"))
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
