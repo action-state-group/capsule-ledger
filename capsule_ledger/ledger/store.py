@@ -27,6 +27,14 @@ from agent_action_capsule import Finding, VerificationResult, compute_capsule_id
 from agent_action_capsule import verify as _verify_capsule
 
 from ..guards.revocation import build_key_timeline, check_time_fenced_revocation
+from .admission import (
+    AUTHENTICITY_SIGNED,
+    AUTHENTICITY_UNSIGNED,
+    UNSIGNED,
+    AdmissionRequest,
+    ProducerEnvelope,
+    resolve_admission,
+)
 from .api import LedgerAPI, ScanQuery
 from .records import ChainGap, LedgerRecord
 
@@ -45,7 +53,8 @@ CREATE TABLE IF NOT EXISTS records (
     verdict_class TEXT,
     parent_capsule_id TEXT,
     chain_relation TEXT,
-    consequential INTEGER NOT NULL
+    consequential INTEGER NOT NULL,
+    authenticity TEXT NOT NULL DEFAULT 'unsigned'
 );
 CREATE INDEX IF NOT EXISTS idx_records_timestamp ON records(timestamp);
 CREATE INDEX IF NOT EXISTS idx_records_operator ON records(operator);
@@ -91,6 +100,16 @@ class LedgerStore(LedgerAPI):
         self._conn = sqlite3.connect(self._root / "index.sqlite3", check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
+        # Migrate an index built before the three-state admission contract: the
+        # CREATE TABLE IF NOT EXISTS above is a no-op on an existing table, so add
+        # the authenticity column here if it is absent. The JSONL segments remain
+        # the source of truth (see reindex), so the default 'unsigned' backfill is
+        # a safe lower bound that a reindex re-derives exactly.
+        cols = {row[1] for row in self._conn.execute("PRAGMA table_info(records)")}
+        if "authenticity" not in cols:
+            self._conn.execute(
+                "ALTER TABLE records ADD COLUMN authenticity TEXT NOT NULL DEFAULT 'unsigned'"
+            )
         self._conn.commit()
 
         self._write_fh = None
@@ -159,43 +178,90 @@ class LedgerStore(LedgerAPI):
 
     # -- write path -----------------------------------------------------
 
-    def append(self, capsule: dict, *, consequential: bool = True) -> LedgerRecord:
-        """Append a sealed capsule dict. Fsyncs the segment when ``consequential``.
+    def append(
+        self,
+        capsule: dict,
+        *,
+        consequential: bool = True,
+        admission: AdmissionRequest | None = None,
+    ) -> LedgerRecord:
+        """Append a sealed capsule dict under the three-state admission contract.
+        Fsyncs the segment when ``consequential``.
 
         ``consequential`` defaults to ``True`` — unclassified writes default to
         consequential (per the gating decisions); classification itself is a
         guard-layer concern, not this store's.
+
+        ``admission`` carries the EXPLICIT declared admission mode (see
+        :mod:`capsule_ledger.ledger.admission`). Dispatch is on the declared mode
+        ALONE — never inferred from whether a producer envelope is present, so
+        stripping an envelope off a declared-signed submission REJECTS rather than
+        silently downgrading to unsigned:
+
+          * ``mode="unsigned"`` (also the default when ``admission`` is omitted,
+            preserving the historical bare-capsule append) — admit and record an
+            explicit unsigned-authenticity state; no envelope consulted.
+          * ``mode="signed"`` — require ≥1 Producer Envelope verifying against the
+            recomputed ``capsule_id`` (via the published aac verifier — no
+            hand-rolled COSE); missing or invalid raises
+            :class:`~capsule_ledger.ledger.admission.AdmissionRejected` BEFORE any
+            segment write, so a rejected submission never reaches the ledger. The
+            verifying envelope is persisted bundled with the capsule (in the
+            preimage-excluded ``signature``/``key_id`` fields) so
+            re-verify-from-storage needs nothing but the stored record.
         """
-        capsule_id = capsule.get("capsule_id") or compute_capsule_id(capsule)
+        if admission is None:
+            admission = AdmissionRequest(mode=UNSIGNED)
+
+        # Resolve the contract FIRST — a declared-signed submission that fails
+        # authenticity must reject before we touch the segment or the index.
+        resolution = resolve_admission(capsule, admission)
+
+        # For a signed entry, persist bundled: embed the first verifying envelope
+        # in the preimage-excluded local-only fields, so the stored line carries
+        # its own proof. capsule_id is taken from the resolution (the canonical
+        # recomputed value the decision was made against). Unsigned entries keep
+        # the store's existing carried-or-recomputed id logic and are stored as-is.
+        if resolution.authenticity == AUTHENTICITY_SIGNED:
+            proof = resolution.verified_envelopes[0]
+            to_store = dict(capsule)
+            to_store["signature"] = proof.envelope
+            to_store["key_id"] = proof.key_id
+            capsule_id = resolution.capsule_id or compute_capsule_id(to_store)
+        else:
+            to_store = capsule
+            capsule_id = capsule.get("capsule_id") or compute_capsule_id(capsule)
 
         with self._lock:
             self._sync_write_segment()
             fh = self._write_fh
             offset = fh.tell()
-            line = json.dumps(capsule, separators=(",", ":"))
+            line = json.dumps(to_store, separators=(",", ":"))
             fh.write(line + "\n")
             fh.flush()
             if consequential:
                 os.fsync(fh.fileno())
 
-            chain = capsule.get("chain") or {}
-            disposition = capsule.get("disposition") or {}
+            chain = to_store.get("chain") or {}
+            disposition = to_store.get("disposition") or {}
             self._conn.execute(
                 "INSERT INTO records (capsule_id, segment, byte_offset, timestamp, operator, "
-                "developer, action_type, verdict_class, parent_capsule_id, chain_relation, consequential) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "developer, action_type, verdict_class, parent_capsule_id, chain_relation, "
+                "consequential, authenticity) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     capsule_id,
                     self._write_segment_name,
                     offset,
-                    capsule.get("timestamp"),
-                    capsule.get("operator"),
-                    capsule.get("developer"),
-                    capsule.get("action_type"),
+                    to_store.get("timestamp"),
+                    to_store.get("operator"),
+                    to_store.get("developer"),
+                    to_store.get("action_type"),
                     disposition.get("verdict_class"),
                     chain.get("parent_capsule_id"),
                     chain.get("relation"),
                     1 if consequential else 0,
+                    resolution.authenticity,
                 ),
             )
             self._conn.commit()
@@ -206,9 +272,11 @@ class LedgerStore(LedgerAPI):
             return LedgerRecord(
                 seq=seq,
                 capsule_id=capsule_id,
-                capsule=capsule,
+                capsule=to_store,
                 segment=self._write_segment_name,
                 consequential=consequential,
+                authenticity=resolution.authenticity,
+                envelopes=resolution.verified_envelopes,
             )
 
     def import_jsonl(self, path: str | os.PathLike, *, consequential: bool = False) -> int:
@@ -245,15 +313,17 @@ class LedgerStore(LedgerAPI):
                     capsule_id = capsule.get("capsule_id") or compute_capsule_id(capsule)
                     chain = capsule.get("chain") or {}
                     disposition = capsule.get("disposition") or {}
+                    authenticity = self._reindex_authenticity(capsule)
                     self._conn.execute(
                         "INSERT INTO records (capsule_id, segment, byte_offset, timestamp, operator, "
-                        "developer, action_type, verdict_class, parent_capsule_id, chain_relation, consequential) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "developer, action_type, verdict_class, parent_capsule_id, chain_relation, "
+                        "consequential, authenticity) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             capsule_id, segment, offset, capsule.get("timestamp"), capsule.get("operator"),
                             capsule.get("developer"), capsule.get("action_type"),
                             disposition.get("verdict_class"), chain.get("parent_capsule_id"),
-                            chain.get("relation"), 1,
+                            chain.get("relation"), 1, authenticity,
                         ),
                     )
                     offset += len(raw.encode("utf-8"))
@@ -261,17 +331,61 @@ class LedgerStore(LedgerAPI):
 
     # -- read path --------------------------------------------------------
 
+    @staticmethod
+    def _reindex_authenticity(capsule: dict) -> str:
+        """Re-derive the recorded authenticity state of an already-admitted entry
+        from the segment (the source of truth), for :meth:`reindex`.
+
+        This is NOT admission-time inference (which the contract forbids): the
+        entry was already admitted, and a signed entry was persisted bundled with
+        a producer envelope that verified against its recomputed ``capsule_id``.
+        Re-confirming that same envelope still verifies reconstructs the state
+        losslessly; anything else is ``unsigned``. Reuses the published aac
+        verifier — no hand-rolled COSE. Never raises.
+        """
+        sig = capsule.get("signature")
+        kid = capsule.get("key_id")
+        if not (isinstance(sig, str) and isinstance(kid, str)):
+            return AUTHENTICITY_UNSIGNED
+        from agent_action_capsule.producer_envelope import verify_producer_envelope
+
+        try:
+            capsule_id = compute_capsule_id(capsule)
+            result = verify_producer_envelope(capsule_id, bytes.fromhex(sig))
+            if result.ok and result.public_key == bytes.fromhex(kid):
+                return AUTHENTICITY_SIGNED
+        except (ValueError, TypeError):
+            return AUTHENTICITY_UNSIGNED
+        return AUTHENTICITY_UNSIGNED
+
+    @staticmethod
+    def _bundled_envelopes(capsule: dict, authenticity: str) -> tuple[ProducerEnvelope, ...]:
+        """Rehydrate the verifying Producer Envelope(s) a signed entry was
+        persisted bundled with, from the preimage-excluded ``signature``/
+        ``key_id`` fields on the stored capsule. Empty for unsigned entries."""
+        if authenticity != AUTHENTICITY_SIGNED:
+            return ()
+        sig = capsule.get("signature")
+        kid = capsule.get("key_id")
+        if isinstance(sig, str) and isinstance(kid, str):
+            return (ProducerEnvelope(envelope=sig, key_id=kid),)
+        return ()
+
     def _row_to_record(self, row: sqlite3.Row) -> LedgerRecord:
         fh = self._get_fh(row["segment"], mode="r")
         fh.seek(row["byte_offset"])
         line = fh.readline()
         capsule = json.loads(line)
+        keys = row.keys()
+        authenticity = row["authenticity"] if "authenticity" in keys else AUTHENTICITY_UNSIGNED
         return LedgerRecord(
             seq=row["seq"],
             capsule_id=row["capsule_id"],
             capsule=capsule,
             segment=row["segment"],
             consequential=bool(row["consequential"]),
+            authenticity=authenticity,
+            envelopes=self._bundled_envelopes(capsule, authenticity),
         )
 
     def scan(self, query: ScanQuery | None = None) -> Iterator[LedgerRecord]:

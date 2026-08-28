@@ -2,7 +2,9 @@
 """Public value types returned by the ledger query API."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from .admission import AUTHENTICITY_UNSIGNED, ProducerEnvelope
 
 __all__ = ["LedgerRecord", "ChainGap"]
 
@@ -13,6 +15,15 @@ class LedgerRecord:
 
     ``seq`` is the record's position in this ledger's append order (1-indexed) —
     it is ledger-internal bookkeeping, not part of the capsule envelope itself.
+
+    ``authenticity`` is the per-entry state the three-state admission contract
+    recorded (see :mod:`capsule_ledger.ledger.admission`): ``"unsigned"`` for an
+    entry admitted under declared-unsigned mode (no producer envelope was
+    required), or ``"signed"`` for one whose producer envelope verified against
+    the recomputed ``capsule_id``. It is an EXPLICIT recorded state, never
+    re-derived from whether ``envelopes`` is populated. ``envelopes`` carries the
+    verifying Producer Envelope(s) bundled with a signed entry (empty for
+    unsigned entries) so re-verify-from-storage needs nothing but the record.
     """
 
     seq: int
@@ -20,6 +31,8 @@ class LedgerRecord:
     capsule: dict
     segment: str
     consequential: bool
+    authenticity: str = AUTHENTICITY_UNSIGNED
+    envelopes: tuple[ProducerEnvelope, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
