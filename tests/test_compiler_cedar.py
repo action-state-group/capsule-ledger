@@ -101,8 +101,15 @@ def test_export_never_leaks_precondition_or_window_content():
     )
     compiled = compile_declaration(d)
     text = export_authorization_subset(compiled.forward.plan, policy_id="remediation_policy")
-    assert "incident_ticket" not in text
-    assert "7d" not in text
+    # The window/precondition content must not leak into the exported policy.
+    # Check against the policy body only, not the provenance comment: that line
+    # carries the plan's opaque hex digest, and a short window token like "7d"
+    # can appear inside it purely as coincidental hex (e.g. "...01557a7dbe7c..."),
+    # which is not a content leak. Excluding the digest line keeps the check
+    # about what is actually exported rather than the digest's random hex.
+    body = "\n".join(line for line in text.splitlines() if "digest" not in line)
+    assert "incident_ticket" not in body
+    assert "7d" not in body
 
 
 def test_export_rejects_a_non_identifier_policy_id():

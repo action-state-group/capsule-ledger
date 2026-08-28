@@ -150,6 +150,44 @@ def _seeded_uuid(seed: int, label: str) -> uuid.UUID:
 
 
 @contextmanager
+def _seeded_capsule_emit_sink(seed: int, label: str) -> Iterator[dict[str, str]]:
+    """Give one ``capsule_emit.seal()`` call a writable, throwaway ledger sink
+    and a seed-derived signing key, so the returned capsule is byte-identical
+    across runs of the same ``--seed``.
+
+    capsule-emit 0.5.1 always signs the capsule and always writes it to a
+    side ledger (creating a ``<ledger>.lock`` and, for the default local
+    signer, a ``<ledger>.signing_key.pem`` next to it) -- so the old
+    ``ledger=os.devnull`` sink no longer works (``/dev/null.lock`` /
+    ``/dev/null.signing_key.pem`` are not writable). The real ledger is the
+    caller's ``LedgerStore``; this side file is discarded. Determinism comes
+    from a fixed Ed25519 key derived from ``--seed`` (Ed25519 signatures are
+    deterministic, RFC 8032), the same seed source the guard signers use."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    key = Ed25519PrivateKey.from_private_bytes(_seeded_secret(seed, label))
+    pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    sink_dir = tempfile.mkdtemp(prefix="capsule-ledger-two-agents-emit-sink-")
+    try:
+        key_path = os.path.join(sink_dir, "signing_key.pem")
+        with open(key_path, "wb") as fh:
+            fh.write(pem)
+        os.chmod(key_path, 0o600)
+        yield {
+            "ledger": os.path.join(sink_dir, "side_ledger.jsonl"),
+            "signing_key_path": key_path,
+            "witness": False,
+        }
+    finally:
+        shutil.rmtree(sink_dir, ignore_errors=True)
+
+
+@contextmanager
 def _pinned_capsule_emit_clock(timestamp: str, fixed_uuid: uuid.UUID) -> Iterator[None]:
     """Pin the clock/uuid source ``agent_action_capsule.emit()`` reads for the
     duration of one ``capsule_emit.seal()`` call. See the module docstring's
@@ -288,7 +326,10 @@ def _run_scenarios(ledger: LedgerAPI, *, seed: int) -> SimulationResult:
 
     # -- Scenario 4: declared-intent -> action chain --
     intent_ts = clock.next()
-    with _pinned_capsule_emit_clock(intent_ts, _seeded_uuid(seed, "intent-declare-alpha")):
+    with (
+        _pinned_capsule_emit_clock(intent_ts, _seeded_uuid(seed, "intent-declare-alpha")),
+        _seeded_capsule_emit_sink(seed, "intent-declare-alpha-signer") as emit_sink,
+    ):
         intent_result = capsule_emit.seal(
             {
                 "intent": "renew annual vendor contract with Forge Supplies",
@@ -304,7 +345,10 @@ def _run_scenarios(ledger: LedgerAPI, *, seed: int) -> SimulationResult:
             decision="accept",
             action_type="fyi",
             anchor=False,  # no network I/O in a deterministic fixture generator
-            ledger=os.devnull,  # capsule-emit always writes a side JSONL; the real one is `ledger`
+            # capsule-emit 0.5.1 signs and side-writes every capsule; the real
+            # ledger is `ledger` (LedgerStore) -- this discarded sink + seeded
+            # key keep the returned capsule byte-identical across runs.
+            **emit_sink,
         )
     intent_capsule = intent_result.capsule
     ledger.append(intent_capsule, consequential=False)

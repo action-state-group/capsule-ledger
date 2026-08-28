@@ -22,12 +22,13 @@ from capsule_ledger.examples.two_agents import DEFAULT_SEED, run_simulation
 from capsule_ledger.guards import ALLOW, DENY, ESCALATE
 from capsule_ledger.ledger import LedgerStore, ScanQuery
 
-# LOAD-BEARING PIN: this fixture was generated with capsule-emit==0.3.2 and
-# agent-action-capsule==0.1.0.  Any version change to either sibling will
+# LOAD-BEARING PIN: this fixture was generated with capsule-emit==0.5.1 and
+# agent-action-capsule==0.2.0.  Any version change to either sibling will
 # change capsule bytes and break test_committed_fixture_matches_freshly_regenerated_output.
-# Before bumping either pin: update requirements.txt, regenerate the fixture
-# with `python -m capsule_ledger.examples.two_agents --out <path>`, confirm
-# the byte-match test passes, and commit fixture + requirements.txt together.
+# Before bumping either pin: update the capsule-emit floor in pyproject.toml,
+# regenerate the fixture with `python -m capsule_ledger.examples.two_agents
+# --out <path>`, confirm the byte-match test passes, and commit fixture +
+# pyproject.toml together.
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "two_agents_sim_ledger.jsonl"
 
 
