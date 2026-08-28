@@ -25,15 +25,15 @@ classifiers = [
 # docs/oss-project-scope.md). Required, not optional: capsule_ledger.cli.
 # bundle_cmd's completeness certificate, capsule_ledger.conversation.merkle's
 # session digest, and capsule_ledger.mmr.checkpoint's sign/register/verify
-# path all depend on it directly, not just the examples path. PENDING:
-# 0.4.0 is on capsule-emit's `main` (version bumped, checkpoint subpackage
-# present, requires scitt-cose>=0.2.0 which is on scitt-cose's `main` at
-# 0.2.1) but neither is released to PyPI yet -- this floor will not resolve
-# via `pip install` until those releases are cut. See
-# ledger/outbox.md [ldg-release-train-cll] for the tracking decision.
+# path all depend on it directly, not just the examples path. Floor is
+# >=0.5.1 (explicit, not >=0.4.0): capsule-emit 0.5.1's format-4/jcs
+# capsules produce different capsule_id/digest bytes than 0.4.x, so the
+# committed fixtures and format-dependent assertions in this repo are
+# generated against 0.5.1. Pinning the floor at the exact released version
+# prevents silent resolution back to an incompatible 0.4.x.
 dependencies = [
     "agent-action-capsule>=0.1.0",
-    "capsule-emit[checkpoint]>=0.4.0",
+    "capsule-emit[checkpoint]>=0.5.1",
     "pyyaml>=6.0",
 ]
 

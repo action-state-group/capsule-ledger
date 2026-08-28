@@ -79,6 +79,8 @@ import os
 import shutil
 import sys
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -236,6 +238,43 @@ def _iter_task_events(path: Path):
                 current_task, current_events = None, []
 
 
+@contextmanager
+def _capsule_emit_sink(developer: str) -> Iterator[dict[str, str]]:
+    """Give one ``capsule_emit.seal()`` call a writable, throwaway ledger sink
+    plus a stable per-developer signing key.
+
+    capsule-emit 0.5.1 always signs the capsule and always writes it to a
+    side ledger (creating ``<ledger>.lock`` and, for the default local signer,
+    ``<ledger>.signing_key.pem`` next to it), so the old ``ledger=os.devnull``
+    sink no longer works. The real ledger is the caller's ``LedgerStore``;
+    this side file is discarded. The signing key is derived from the dataset's
+    ``developer`` identity so each dataset keeps "its own signing key" (module
+    docstring) rather than sharing one persisted default keypair."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    seed = hashlib.sha256(f"tau2-airline-reference/{developer}".encode()).digest()
+    key = Ed25519PrivateKey.from_private_bytes(seed)
+    pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    sink_dir = tempfile.mkdtemp(prefix="capsule-ledger-tau2-emit-sink-")
+    try:
+        key_path = os.path.join(sink_dir, "signing_key.pem")
+        with open(key_path, "wb") as fh:
+            fh.write(pem)
+        os.chmod(key_path, 0o600)
+        yield {
+            "ledger": os.path.join(sink_dir, "side_ledger.jsonl"),
+            "signing_key_path": key_path,
+            "witness": False,
+        }
+    finally:
+        shutil.rmtree(sink_dir, ignore_errors=True)
+
+
 def _mandate_capsule_id(
     ledger: LedgerAPI, *, operator: str, developer: str, tool_name: str, action_class: str,
     task_id: str, call_seq: int, verdict: PredicateVerdict,
@@ -245,19 +284,20 @@ def _mandate_capsule_id(
         # returns None for this id, which is what actually denies the
         # action -- this module never denies unilaterally.
         return f"policy-check-failed/{action_class}/{task_id}/{call_seq}"
-    result = capsule_emit.emit(
-        action=f"policy_check.{action_class}",
-        operator=operator,
-        developer=developer,
-        agent_input={"tool_name": tool_name, "tau2_task_id": task_id, "tau2_call_seq": call_seq},
-        agent_output={"policy_check_passed": True, "reason": verdict.reason},
-        verdict="confirmed",
-        effect={"type": f"policy_check.{action_class}", "status": "confirmed"},
-        decision="accept",
-        action_type="fyi",
-        anchor=False,
-        ledger=os.devnull,
-    ).capsule
+    with _capsule_emit_sink(developer) as emit_sink:
+        result = capsule_emit.seal(
+            {"tool_name": tool_name, "tau2_task_id": task_id, "tau2_call_seq": call_seq},
+            action=f"policy_check.{action_class}",
+            operator=operator,
+            developer=developer,
+            agent_output={"policy_check_passed": True, "reason": verdict.reason},
+            verdict="confirmed",
+            effect={"type": f"policy_check.{action_class}", "status": "confirmed"},
+            decision="accept",
+            action_type="fyi",
+            anchor=False,
+            **emit_sink,
+        ).capsule
     ledger.append(result, consequential=False)
     return result["capsule_id"]
 

@@ -94,16 +94,15 @@ def test_in_browser_recompute_actually_matches_via_node(tmp_path):
     """Not a string-presence check: this actually RUNS the embedded
     recompute JS (the same jsonDigest() the page calls in a real browser)
     against Run B's real evidence and asserts it lands on the digest the
-    sealed capsule actually committed to. Regression coverage for a real
-    bug caught by opening this page in a browser: the JS recompute was
-    hashing the evidence object directly, while ``json_digest`` on the
-    Python side hashes ``JCS(normalize(v))`` -- normalize() drops the
-    null-valued ``step_index`` field first. Recomputing without that
-    normalization step silently produced a MISMATCH on every real refusal
-    evidence object (any departure with no step index), i.e. it would have
-    made this page assert "the evidence doesn't match" about honestly
-    unmodified data -- the opposite of what the recompute trick exists to
-    prove."""
+    sealed capsule actually committed to. As of agent-action-capsule 0.2.0,
+    ``json_digest`` is SHA-256 of plain ``JCS(v)`` with NO absent-field
+    normalization (the old ``JCS(normalize(v))`` null/empty-drop is reserved
+    for vintage Capsule-ID verification and no longer applies to newly
+    produced digests). The evidence here carries a null-valued ``step_index``
+    on a departure, so this exercises exactly the field whose treatment
+    changed: the in-browser recompute must hash plain JCS (keeping the null)
+    to land on the digest the sealed capsule committed to, and this test
+    would go red if the JS harness drifted back to dropping it."""
     results = {"run-b": run_b(str(tmp_path / "b"))}
     result = results["run-b"]
     capsule_id = result.capsule_ids["write_export_user_list"]

@@ -203,30 +203,16 @@ function sha256(bytes){
     H[4]=(H[4]+e)>>>0;H[5]=(H[5]+f)>>>0;H[6]=(H[6]+g)>>>0;H[7]=(H[7]+h)>>>0;}
   return Array.from(H).map(function(x){return ("00000000"+x.toString(16)).slice(-8);}).join("");
 }
-function normalize(v){
-  // Mirrors agent_action_capsule.canonical.normalize exactly: remove
-  // members whose value is null, an empty array, or an empty object,
-  // bottom-up -- json_digest is SHA-256(JCS(normalize(v))), never
-  // SHA-256(JCS(v)) directly, so recompute must normalize too or a
-  // null-valued field (e.g. plan_containment's own step_index on a
-  // departure) makes an honest recompute look like a mismatch.
-  if(Array.isArray(v)) return v.map(normalize);
-  if(v && typeof v==="object"){
-    var out = {};
-    for(var k in v){
-      if(!Object.prototype.hasOwnProperty.call(v,k)) continue;
-      var nv = normalize(v[k]);
-      if(nv===null||nv===undefined) continue;
-      if(Array.isArray(nv) && nv.length===0) continue;
-      if(!Array.isArray(nv) && typeof nv==="object" && Object.keys(nv).length===0) continue;
-      out[k]=nv;
-    }
-    return out;
-  }
-  return v;
-}
 function jsonDigest(value){
-  var s = jcsValue(normalize(value));
+  // Mirrors agent_action_capsule.canonical.json_digest: SHA-256 of plain
+  // JCS, with NO absent-field normalization. As of agent-action-capsule
+  // 0.2.0, json_digest is SHA-256(JCS(v)) directly -- the old
+  // normalize()-then-JCS step (dropping null/empty members like
+  // plan_containment's null step_index on a departure) is reserved for
+  // vintage Capsule-ID verification and is not used for newly produced
+  // digests. Recomputing over plain JCS is what keeps this in-browser check
+  // matching the digest the sealed capsule committed to.
+  var s = jcsValue(value);
   return sha256(new TextEncoder().encode(s));
 }
 """
