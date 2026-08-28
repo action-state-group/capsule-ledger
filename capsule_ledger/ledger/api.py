@@ -23,6 +23,7 @@ from typing import Protocol, runtime_checkable
 
 from agent_action_capsule import VerificationResult
 
+from .admission import AdmissionRequest
 from .records import ChainGap, LedgerRecord
 
 __all__ = ["ScanQuery", "LedgerAPI"]
@@ -51,7 +52,20 @@ class ScanQuery:
 class LedgerAPI(Protocol):
     """The read/append surface every ledger binding (in-process or remote) implements."""
 
-    def append(self, capsule: dict, *, consequential: bool = True) -> LedgerRecord: ...
+    def append(
+        self,
+        capsule: dict,
+        *,
+        consequential: bool = True,
+        admission: AdmissionRequest | None = None,
+    ) -> LedgerRecord:
+        """Append under the three-state admission contract (see
+        :mod:`capsule_ledger.ledger.admission`). ``admission`` carries the
+        EXPLICIT declared mode admission dispatches on; omitting it is
+        equivalent to declared-unsigned. A declared-signed submission whose
+        producer envelope is missing or does not verify against the recomputed
+        ``capsule_id`` raises ``AdmissionRejected`` and is never persisted."""
+        ...
 
     def scan(self, query: ScanQuery | None = None) -> Iterator[LedgerRecord]: ...
 
