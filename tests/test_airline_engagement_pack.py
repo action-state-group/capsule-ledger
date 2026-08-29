@@ -85,9 +85,9 @@ def test_a4_and_a6_statements_do_not_overclaim(pack):
     silently revert to the overclaiming statement."""
     by_id = {r.claim_id: r for r in pack.rows}
     assert "always" not in by_id["A4"].statement.lower()
-    assert by_id["A4"].statement == "a human was reachable when asked"
+    assert by_id["A4"].statement == "A human on request: when the customer asked for a person, one was reachable."
     assert "resolved" not in by_id["A6"].statement.lower()
-    assert by_id["A6"].statement == "the case was handled without transfer to a human"
+    assert by_id["A6"].statement == "Handled, not offloaded: the case was handled without transfer to a human."
 
 
 def test_an_invalid_verdict_pair_is_rejected():
