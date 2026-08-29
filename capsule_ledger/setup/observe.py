@@ -1,8 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 """``capsule setup observe`` (design §3.3/§6b): dry-run mode. Wraps an
 adapter's raw event stream and records everything at the EMIT LAYER ONLY --
-conversation turns, tool dispatches, offer/response, and external
-confirmations -- enforcing nothing, declaring nothing.
+conversation turns, reads/observations, tool dispatches, offer/response, and
+external confirmations -- enforcing nothing, declaring nothing.
+
+**Reads are capsuled too (backward-judge design §12).** A ``read`` event
+records what the agent fetched (a ticket, its comments, its timeline) as a
+non-gated ``fyi`` observation carrying the digest of what was fetched -- not
+the content itself, matching every other digest-only detail this module
+records. A later ``dispatch`` (the write) can then carry ``chain_parent``
+back to that read via ``read_ref``, so "the agent acted on what it actually
+read" becomes a provable chain instead of an unrecorded claim. Mirrors
+``record_grounding_bench.recorders.capsule_pipeline.CapsuleRecorder``'s
+READ/THINK -> WRITE ``chain_parent`` pattern, non-gated the same way.
 
 **Trap 1 (schema drift eats your traces).** Every capsule this module
 appends is a passive ``fyi`` record of something that already happened;
@@ -30,6 +40,7 @@ from ..guards.signing import Signer
 from ..ledger.api import LedgerAPI
 
 __all__ = [
+    "EVENT_READ",
     "EVENT_DISPATCH",
     "EVENT_CONFIRMATION",
     "KNOWN_KINDS",
@@ -40,12 +51,13 @@ __all__ = [
 
 # Emit-layer event names this module mints itself (conversation turns and
 # offer/response reuse their own home modules' event names -- this module
-# adds only the two record kinds neither of those already covers: a tool
-# dispatch, and an external system's confirmation of one).
+# adds only the record kinds neither of those already covers: a read/poll
+# observation, a tool dispatch, and an external system's confirmation of one).
+EVENT_READ = "setup.observe.read"
 EVENT_DISPATCH = "setup.observe.dispatch"
 EVENT_CONFIRMATION = "setup.observe.confirmation"
 
-KNOWN_KINDS = frozenset({"turn", "session_close", "dispatch", "offer", "response", "confirmation"})
+KNOWN_KINDS = frozenset({"turn", "session_close", "read", "dispatch", "offer", "response", "confirmation"})
 
 
 @dataclass(frozen=True)
@@ -65,6 +77,7 @@ class UnmappedEvent:
 class ObserveSummary:
     session_id: str | None = None
     turns_recorded: int = 0
+    reads_recorded: int = 0
     dispatches_recorded: int = 0
     offers_recorded: int = 0
     responses_recorded: int = 0
@@ -75,6 +88,7 @@ class ObserveSummary:
     def total_recorded(self) -> int:
         return (
             self.turns_recorded
+            + self.reads_recorded
             + self.dispatches_recorded
             + self.offers_recorded
             + self.responses_recorded
@@ -97,7 +111,8 @@ class ObserveRecorder:
 
         {"kind": "turn", "session_id": ..., "turn_index": ..., "speaker_role": ..., "content_digest": ...}
         {"kind": "session_close", "session_id": ...}
-        {"kind": "dispatch", "action_class": ..., "tool": ..., "dispatch_id": ...(optional), "target_digest": ...(optional), "chain_parent": ...(optional)}
+        {"kind": "read", "read_digest": ..., "read_id": ...(optional), "source": ...(optional), "chain_parent": ...(optional)}
+        {"kind": "dispatch", "action_class": ..., "tool": ..., "dispatch_id": ...(optional), "target_digest": ...(optional), "chain_parent": ...(optional), "read_ref": ...(optional, a prior read_id)}
         {"kind": "offer", "offer_id": ..., "offer_digest": ...}
         {"kind": "response", "offer_id": ..., "response_class": ..., "response_digest": ...(optional)}
         {"kind": "confirmation", "commitment_ref": ...(a prior dispatch_id) | "commitment_capsule_id": ..., "status": ..., "external_ref": ...(optional)}
@@ -127,6 +142,11 @@ class ObserveRecorder:
         self._turn_capsule_ids: list[str] = []
         self._offer_capsule_ids: dict[str, str] = {}
         self._dispatch_capsule_ids: dict[str, str] = {}
+        # ``read_id`` -> capsule_id, same trace-file correlation role as
+        # ``_dispatch_capsule_ids`` plays for ``dispatch_id`` -- a later
+        # "dispatch" event resolves its ``read_ref`` against this to find
+        # the read capsule its write should chain back to.
+        self._read_capsule_ids: dict[str, str] = {}
         self.summary = ObserveSummary()
 
     def _heartbeat(self, index: int) -> None:
@@ -174,21 +194,61 @@ class ObserveRecorder:
         self._ledger.append(capsule, consequential=False)
         return capsule
 
-    def _record_dispatch(self, raw: dict[str, Any]) -> dict:
+    def _record_read(self, raw: dict[str, Any]) -> dict:
+        # Non-gated ``fyi`` observation of a read/poll (the agent fetching a
+        # ticket, its comments, its timeline) -- carries the DIGEST of what
+        # was fetched, never the content itself, same discipline as every
+        # other detail this module records (``content_digest``,
+        # ``offer_digest``, ``target_digest``). A later "dispatch" event's
+        # ``read_ref`` resolves back to this capsule via ``_read_capsule_ids``
+        # so the write can chain to exactly the read that grounded it.
+        detail = {"read_digest": raw["read_digest"]}
+        if raw.get("source") is not None:
+            detail["source"] = raw["source"]
+        capsule = build_event_capsule(
+            operator=self._operator,
+            developer=self._developer,
+            signer=self._signer,
+            event=EVENT_READ,
+            detail=detail,
+            chain_parent=raw.get("chain_parent"),
+            chain_relation="follows" if raw.get("chain_parent") else None,
+        )
+        self._ledger.append(capsule, consequential=False)
+        read_id = raw.get("read_id")
+        if read_id is not None:
+            self._read_capsule_ids[read_id] = capsule["capsule_id"]
+        self.summary.reads_recorded += 1
+        return capsule
+
+    def _record_dispatch(self, raw: dict[str, Any], index: int) -> dict | None:
         detail = {
             "action_class": raw["action_class"],
             "tool": raw.get("tool", raw["action_class"]),
         }
         if raw.get("target_digest") is not None:
             detail["target_digest"] = raw["target_digest"]
+        # ``chain_parent`` is for a live/programmatic caller that already
+        # holds the real capsule_id of the read it's grounded in (e.g. an
+        # in-process adapter chaining immediately after recording the read);
+        # ``read_ref`` is the trace-file form, resolved against ``read_id``s
+        # already seen -- same two-sided shape as ``commitment_capsule_id``/
+        # ``commitment_ref`` for confirmation.
+        chain_parent = raw.get("chain_parent")
+        read_ref = raw.get("read_ref")
+        if chain_parent is None and read_ref is not None:
+            chain_parent = self._read_capsule_ids.get(read_ref)
+            if chain_parent is None:
+                self._unmap(index, "dispatch", "dispatch_cites_unknown_read_ref", raw)
+                return None
         capsule = build_event_capsule(
             operator=self._operator,
             developer=self._developer,
             signer=self._signer,
             event=EVENT_DISPATCH,
             detail=detail,
-            chain_parent=raw.get("chain_parent"),
-            chain_relation="follows" if raw.get("chain_parent") else None,
+            chain_parent=chain_parent,
+            chain_relation="follows" if chain_parent else None,
         )
         self._ledger.append(capsule, consequential=False)
         # ``dispatch_id`` is a trace-author-chosen correlation key (unlike a
@@ -271,8 +331,10 @@ class ObserveRecorder:
                 self._record_turn(raw)
             elif kind == "session_close":
                 self._record_session_close(raw)
+            elif kind == "read":
+                self._record_read(raw)
             elif kind == "dispatch":
-                self._record_dispatch(raw)
+                self._record_dispatch(raw, index)
             elif kind == "offer":
                 self._record_offer(raw)
             elif kind == "response":
