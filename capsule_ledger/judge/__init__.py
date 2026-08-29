@@ -29,6 +29,7 @@ from .errors import JudgeError
 from .harness import JudgeHarness
 from .loader import load_prompt_file, load_prompt_text
 from .prompt import JudgePromptDefinition, parse_prompt_definition
+from .prompt_compiler import PackContextBlock, compile_judge_prompt
 from .scorer import JudgeEvidence, Scorer, ScoreResult
 
 __all__ = [
@@ -42,12 +43,14 @@ __all__ = [
     "JudgeEvidence",
     "JudgeHarness",
     "JudgePromptDefinition",
+    "PackContextBlock",
     "ScoreResult",
     "Scorer",
     "build_adjudication_capsule",
     "build_judge_drift_check_capsule",
     "build_judge_prompt_activation_capsule",
     "build_judgment_capsule",
+    "compile_judge_prompt",
     "compute_judge_calibration_stats",
     "find_adjudications_for_judgment",
     "find_drift_checks_for_judgment",
