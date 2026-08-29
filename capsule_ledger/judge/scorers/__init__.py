@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 from .deepeval_scorer import DeepEvalScorer
 from .static import StaticScorer
+from .vertex import VertexScorer
 
-__all__ = ["DeepEvalScorer", "StaticScorer"]
+__all__ = ["DeepEvalScorer", "StaticScorer", "VertexScorer"]

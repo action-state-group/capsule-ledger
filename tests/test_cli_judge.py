@@ -221,6 +221,57 @@ def test_judge_adjudicate_unknown_capsule_id(tmp_path, monkeypatch):
     assert rc == 1
 
 
+def test_judge_run_vertex_scorer_appends_a_judgment(tmp_path, capsys, monkeypatch):
+    import json
+
+    from capsule_ledger.judge.scorers import vertex as vertex_module
+
+    monkeypatch.setenv("CAPSULE_MCP_SIGNING_KEY_ID", "cli-key")
+    monkeypatch.setenv("CAPSULE_MCP_SIGNING_SECRET", "cli-secret")
+    monkeypatch.setattr(vertex_module, "default_access_token", lambda: "fake-adc-token")
+    calls = []
+
+    def fake_http_post(url, payload, headers):
+        calls.append((url, payload, dict(headers)))
+        return {"candidates": [{"content": {"parts": [{"text": json.dumps({"label": "agreement_reached", "confidence": 0.81})}]}}]}
+
+    monkeypatch.setattr(vertex_module, "default_http_post", fake_http_post)
+
+    ledger_dir = tmp_path / "ledger"
+    _seed_session(ledger_dir)
+    prompt_path = tmp_path / "prompt.yaml"
+    prompt_path.write_text(PROMPT_YAML)
+
+    rc = main(
+        [
+            "judge", "run",
+            "--ledger", str(ledger_dir),
+            "--prompt", str(prompt_path),
+            "--session", "sess-cli",
+            "--evidence-text", "they agreed to a fix",
+            "--scorer", "vertex",
+            "--vertex-project", "fluxxom",
+        ]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "judgment recorded:" in out
+    assert "vertex_ai/gemini-2.5-flash" in out
+
+    assert len(calls) == 1
+    url, _payload, headers = calls[0]
+    assert "publishers/google/models/gemini-2.5-flash:generateContent" in url
+    assert headers["x-goog-user-project"] == "fluxxom"
+
+    store = LedgerStore(ledger_dir)
+    try:
+        records = [r for r in store.scan() if r.capsule["asg_payload"]["event"] == EVENT_JUDGMENT]
+    finally:
+        store.close()
+    assert len(records) == 1
+    assert records[0].capsule["asg_payload"]["detail"]["label"] == "agreement_reached"
+
+
 def test_judge_no_subcommand_prints_help(capsys):
     rc = main(["judge"])
     assert rc == 0

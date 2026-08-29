@@ -11,6 +11,10 @@ needs an API key configured however DeepEval's own model backend expects
 (e.g. ``OPENAI_API_KEY``), same as any DeepEval user. ``--scorer static``
 is the no-network, no-key deterministic reference (``judge/scorers/static.py``)
 -- useful for demos and scripted runs where the label is already known.
+``--scorer vertex`` (``judge/scorers/vertex.py``) calls Gemini on Vertex AI
+directly over REST via the caller's own ``gcloud`` ADC session -- no API
+key, no optional dependency, but a REAL model call and REAL spend on
+whatever GCP project ``--vertex-project`` names.
 """
 from __future__ import annotations
 
@@ -43,6 +47,7 @@ def _cmd_judge_run(args: argparse.Namespace) -> int:
     from ..judge.errors import JudgeError
     from ..judge.loader import load_prompt_file
     from ..judge.scorers.static import StaticScorer
+    from ..judge.scorers.vertex import VertexCallError
 
     try:
         prompt = load_prompt_file(args.prompt)
@@ -65,6 +70,10 @@ def _cmd_judge_run(args: argparse.Namespace) -> int:
         scorer = StaticScorer(
             responses={evidence_text: (args.static_label, args.static_confidence)}, model_id="cli-static-scorer"
         )
+    elif args.scorer == "vertex":
+        from ..judge.scorers.vertex import VertexScorer
+
+        scorer = VertexScorer(project=args.vertex_project, region=args.vertex_region, model=args.model or "gemini-2.5-flash")
     else:
         from ..judge.scorers.deepeval_scorer import DeepEvalScorer
 
@@ -108,6 +117,9 @@ def _cmd_judge_run(args: argparse.Namespace) -> int:
             record = harness.run(evidence=evidence, session_digest=session_digest, chain_parent=chain_parent)
         except JudgeError as exc:
             print(f"capsule judge run: {exc.reason}: {exc}", file=sys.stderr)
+            return 1
+        except VertexCallError as exc:
+            print(f"capsule judge run: vertex call failed: {exc}", file=sys.stderr)
             return 1
     finally:
         ledger.close()
@@ -174,10 +186,15 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     p_run.add_argument("--speaker-role", default=None, help="target one declared speaker role (user/assistant/human-agent); default: whole session")
     p_run.add_argument("--evidence-text", default=None, help="evidence content, given directly")
     p_run.add_argument("--evidence-file", default=None, help="evidence content, read from a file")
-    p_run.add_argument("--scorer", choices=["deepeval", "static"], default="deepeval", help="Scorer backend (default: deepeval)")
-    p_run.add_argument("--model", default=None, help="model id override passed to the deepeval scorer")
+    p_run.add_argument("--scorer", choices=["deepeval", "static", "vertex"], default="deepeval", help="Scorer backend (default: deepeval)")
+    p_run.add_argument("--model", default=None, help="model id override passed to the deepeval/vertex scorer (vertex default: gemini-2.5-flash)")
     p_run.add_argument("--static-label", default=None, help="--scorer static: the label to emit")
     p_run.add_argument("--static-confidence", type=float, default=None, help="--scorer static: the confidence (0.0-1.0) to emit")
+    p_run.add_argument(
+        "--vertex-project", default="fluxxom",
+        help="--scorer vertex: GCP project for ADC auth + the x-goog-user-project header (default: fluxxom)",
+    )
+    p_run.add_argument("--vertex-region", default="us-central1", help="--scorer vertex: Vertex AI region (default: us-central1)")
     p_run.add_argument("--operator", default="local", help="operator identity for the judgment capsule")
     p_run.add_argument("--developer", default="capsule-judge-tool", help="developer identity for the judgment capsule")
     p_run.add_argument("--key-id", default=None, help="signing key id")
