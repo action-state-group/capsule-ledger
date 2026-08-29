@@ -61,6 +61,7 @@ from .errors import (
     INVALID_FOLD_REF,
     INVALID_HOLDS_INTEGRATION,
     INVALID_MEASURABILITY,
+    INVALID_MODE,
     INVALID_OUTCOME,
     INVALID_PACK_ID,
     INVALID_RE_DERIVABILITY_GRADE,
@@ -87,6 +88,7 @@ from .schema import (
     HOLDS_INTEGRATION_VALUES,
     KNOWN_SCOPE_DIMENSIONS,
     MEASURABILITY_VALUES,
+    MODE_VALUES,
     NORMALIZED_ACTION_FIELDS,
     PACK_ID_RE,
     TIER_VALUES,
@@ -660,6 +662,14 @@ def _parse_outcomes(raw: Any) -> tuple[Outcome, ...]:
                 "(defaults to 'informational')",
             )
 
+        mode = entry.get("mode", "structural")
+        if mode not in MODE_VALUES:
+            raise PackDefinitionError(
+                INVALID_MODE,
+                f"outcomes[{outcome_id!r}].mode={mode!r} must be one of {sorted(MODE_VALUES)}, or omitted "
+                "(defaults to 'structural')",
+            )
+
         outcomes.append(
             Outcome(
                 id=outcome_id,
@@ -679,6 +689,7 @@ def _parse_outcomes(raw: Any) -> tuple[Outcome, ...]:
                 measurability=measurability,
                 evidence_instrument=evidence_instrument,
                 tier=tier,
+                mode=mode,
             )
         )
     return tuple(outcomes)

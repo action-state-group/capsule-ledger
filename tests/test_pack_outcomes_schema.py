@@ -473,3 +473,46 @@ def test_must_have_tier_loads_clean_and_renders_in_the_digest(tmp_path):
     pack = load_pack_dir(pack_dir)
     assert pack.outcomes[0].tier == "must_have"
     assert pack.canonical_dict()["outcomes"][0]["tier"] == "must_have"
+
+
+# --- mode ([ldg-bp-mode-tag], standard-outcome-pack design §3) ------------
+#
+# Which of the seven ways an outcome is judged (structural/value/judged/
+# fold_rollup/fold_counterparty/fold_agent/fold_cohort). Additive, closed-
+# set, same optional-with-default backward-compat pattern as tier (#93) --
+# lets a report group by judgment mode and lets propose route grading.
+
+
+def test_default_mode_is_structural_and_omitted_from_the_digest(tmp_path):
+    """An outcome that doesn't mention mode at all -- the ordinary case for
+    every pre-existing outcome -- parses as 'structural' and the digest
+    renders identically to before this field existed (no 'mode' key at
+    all), so no already-sealed pack pin moves."""
+    pack_dir = _write_pack(tmp_path, {"outcomes": [_outcome()]})
+    pack = load_pack_dir(pack_dir)
+    assert pack.outcomes[0].mode == "structural"
+    assert "mode" not in pack.canonical_dict()["outcomes"][0]
+
+
+def test_invalid_mode_value_is_rejected(tmp_path):
+    pack_dir = _write_pack(tmp_path, {"outcomes": [_outcome(mode="vibes")]})
+    with pytest.raises(PackDefinitionError) as exc:
+        load_pack_dir(pack_dir)
+    assert exc.value.reason == "invalid_mode"
+
+
+def test_judged_mode_loads_clean_and_renders_in_the_digest(tmp_path):
+    pack_dir = _write_pack(tmp_path, {"outcomes": [_outcome(mode="judged")]})
+    pack = load_pack_dir(pack_dir)
+    assert pack.outcomes[0].mode == "judged"
+    assert pack.canonical_dict()["outcomes"][0]["mode"] == "judged"
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["structural", "value", "judged", "fold_rollup", "fold_counterparty", "fold_agent", "fold_cohort"],
+)
+def test_every_closed_set_mode_loads_clean(tmp_path, mode):
+    pack_dir = _write_pack(tmp_path, {"outcomes": [_outcome(mode=mode)]})
+    pack = load_pack_dir(pack_dir)
+    assert pack.outcomes[0].mode == mode

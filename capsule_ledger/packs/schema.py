@@ -58,6 +58,7 @@ __all__ = [
     "MEASURABILITY_VALUES",
     "EVIDENCE_INSTRUMENT_KINDS",
     "TIER_VALUES",
+    "MODE_VALUES",
     "Obligation",
     "ActionSemantic",
     "ProposerStub",
@@ -140,6 +141,25 @@ EVIDENCE_INSTRUMENT_KINDS = frozenset({"structured_field", "tool_call_name"})
 # every pack written before this field existed keeps its current (gate-free)
 # behavior and digests identically.
 TIER_VALUES = frozenset({"must_have", "informational"})
+
+# The seven ways a ledger gets judged (standard-outcome-pack design §3) --
+# every standard outcome is tagged with exactly one. "structural" (presence/
+# absence over emitted fields, no model) is the default for an outcome with
+# no ``mode`` declared, because it's what every pre-``mode`` outcome already
+# was in practice (design §8.1: "the deterministic set is structural checks
+# over emitted fields -- nothing else"), so a pack written before this field
+# existed parses and digests identically to before.
+MODE_VALUES = frozenset(
+    {
+        "structural",
+        "value",
+        "judged",
+        "fold_rollup",
+        "fold_counterparty",
+        "fold_agent",
+        "fold_cohort",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -282,6 +302,10 @@ class Outcome:
     ``tier`` (backward-judge design §8.2) says whether this outcome gates a
     session's job-success (``"must_have"``) or is reported without gating
     (``"informational"``, the default) -- see ``TIER_VALUES``.
+
+    ``mode`` (standard-outcome-pack design §3) says which of the seven ways
+    this outcome is judged -- see ``MODE_VALUES``. Lets a report group by
+    judgment mode and lets ``propose`` route grading.
     """
 
     id: str
@@ -311,6 +335,12 @@ class Outcome:
     # omits it whenever it's the default, same convention measurability
     # already follows).
     tier: str = "informational"
+    # mode -- optional, additive ([ldg-bp-mode-tag], standard-outcome-pack
+    # design §3); default "structural" so an outcome declared before this
+    # field existed parses and DIGESTS identically to before (canonical_dict
+    # below omits it whenever it's the default, same convention tier already
+    # follows).
+    mode: str = "structural"
 
 
 @dataclass(frozen=True)
@@ -419,6 +449,7 @@ class PackDefinition:
                     **({"retention_check": o.retention_check} if o.retention_check else {}),
                     **({"measurability": o.measurability} if o.measurability != "measured" else {}),
                     **({"tier": o.tier} if o.tier != "informational" else {}),
+                    **({"mode": o.mode} if o.mode != "structural" else {}),
                     **(
                         {"evidence_instrument": o.evidence_instrument.to_dict()}
                         if o.evidence_instrument is not None

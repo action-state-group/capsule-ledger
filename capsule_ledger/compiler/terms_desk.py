@@ -64,7 +64,7 @@ from ..folds.engine import EvaluationTrace, evaluate_all
 from ..folds.paths import get_path
 from ..guards.capsule import build_event_capsule
 from ..guards.signing import Signer
-from ..packs.schema import TIER_VALUES
+from ..packs.schema import MODE_VALUES, TIER_VALUES
 from ..setup.compile_bridge import compiled_declaration_for
 from ..setup.declarations import StoredCandidate
 from .compile import (
@@ -250,6 +250,10 @@ class TermDeclaration:
     this term gates a session's job-success (``"must_have"``) or is reported
     without gating (``"informational"``, the default) -- mirrors ``packs.
     schema.Outcome.tier``; see ``TIER_VALUES``.
+
+    ``mode`` ([ldg-bp-mode-tag], standard-outcome-pack design §3) says which
+    of the seven ways this term is judged, default ``"structural"`` --
+    mirrors ``packs.schema.Outcome.mode``; see ``MODE_VALUES``.
     """
 
     term_id: str
@@ -262,6 +266,7 @@ class TermDeclaration:
     judge_spec: JudgeOrRuleSpec | None = None
     rule_kind: str | None = None
     tier: str = "informational"
+    mode: str = "structural"
 
     def __post_init__(self) -> None:
         if not self.verdict_schema:
@@ -275,6 +280,11 @@ class TermDeclaration:
             raise CompilerError(
                 f"term {self.term_id!r}.tier={self.tier!r} must be one of {sorted(TIER_VALUES)}, or omitted "
                 "(defaults to 'informational')"
+            )
+        if self.mode not in MODE_VALUES:
+            raise CompilerError(
+                f"term {self.term_id!r}.mode={self.mode!r} must be one of {sorted(MODE_VALUES)}, or omitted "
+                "(defaults to 'structural')"
             )
 
         if self.stored is not None:
@@ -328,6 +338,8 @@ def _term_to_canonical_dict(t: TermDeclaration) -> dict:
         out["rule_kind"] = t.rule_kind
     if t.tier != "informational":
         out["tier"] = t.tier
+    if t.mode != "structural":
+        out["mode"] = t.mode
     return out
 
 
