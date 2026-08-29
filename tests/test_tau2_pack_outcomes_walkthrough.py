@@ -95,14 +95,16 @@ def test_ascii_format_reports_the_same_numbers_as_verbose(capsys):
     assert "subjective_state_unattestable" in ascii_out
 
     # the real, digest-verified corpus terms are numerically identical between formats
-    # (verbose indents these one level deeper under "2d. NEW: ..."). A3b
-    # carries no N-of-M here -- [remove-keyword-scorers] removed its keyword
-    # regex, so it is absent from both formats' term-outcome lists (A3b's
-    # NAME can still legitimately appear elsewhere, e.g. A3a's own rationale
-    # cross-referencing it -- this only checks the term-outcome list itself).
-    for term_line in ("A1: 23 of 73", "A6: 47 of 73", "A7: 4 of 73"):
+    # (verbose indents these one level deeper under "2d. NEW: ..."). A1 and
+    # A3b carry no N-of-M here -- [ldg-bj-91-a1-to-llm-judge] and
+    # [remove-keyword-scorers] respectively removed each row's keyword
+    # regex, so both are absent from both formats' term-outcome lists (their
+    # NAMEs can still legitimately appear elsewhere, e.g. rationale text --
+    # this only checks the term-outcome list itself).
+    for term_line in ("A6: 47 of 73", "A7: 4 of 73"):
         assert f"- {term_line}" in ascii_out
         assert f"- {term_line}" in verbose_out
+    assert "- A1:" not in ascii_out
     assert "- A3b:" not in ascii_out
 
 

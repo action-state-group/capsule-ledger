@@ -21,6 +21,15 @@ against this pack; A3b now renders its honest WITH-INSTRUMENTATION /
 pending-judge state (see PART 2's own per-row printout), and the real-corpus
 drill-down (PART 3) no longer measures A3b at all, for the same reason.
 
+**``[ldg-bj-91-a1-to-llm-judge]`` (2026-08-29, review bounce B2) removed
+this module's A1 real-corpus drill-down (was 3.1) and its vendored-file
+cross-check (was 3.6) the same way**: A1's ``_OPTION_LANGUAGE_RE`` regex
+(``airline_engagement_pack.py``) is retired for the identical reason A3b's
+was -- a prose-quality read reported as though it were a structural fact.
+A1 now renders its own honest WITH-INSTRUMENTATION / pending-judge state
+(see PART 2's per-row printout), with a real, digest-pinned
+``JudgePromptDefinition`` already compiled and cited in its rationale.
+
 **The honest finding, printed plainly, not hidden (task's own instruction:
 "HONEST numbers ... do not tune")**: the real, sealed tau2-airline capsule
 corpus (record-grounding-bench's ``demo/chunk1-tau2-corpus``) commits each
@@ -44,7 +53,7 @@ scan every ``payloads/*.json`` file, hash each with the corpus's OWN
 ``sha256(turn_raw_content)`` scheme (not ``json_digest``), and match against
 each turn's stored ``content_digest`` -- verified below to resolve **every**
 turn in this corpus (959 of 959 distinct digests), not zero. PART 3 uses
-these real, digest-verified turns for A1/A6/A7's case-level drill-down
+these real, digest-verified turns for A6/A7's case-level drill-down
 against the sealed corpus itself. Separately (kept clearly labelled, never
 blended into the corpus's own numbers), PART 2c cross-references
 tau2-bench's own vendored, committed trajectory file (same airline domain,
@@ -86,12 +95,9 @@ from ..mmr.checkpoint import list_checkpoints, load_checkpoint
 from ..payload_store import PayloadStore
 from .airline_engagement_pack import (
     _AGENT_LIMITATION_RE,
-    _OPTION_LANGUAGE_RE,
     _PUSHBACK_RE,
     _TRANSFER_TOOL,
-    _text,
     build_airline_engagement_pack,
-    load_conversations,
 )
 from .airline_pack_desk import render_report as render_desk_report
 from .airline_pack_desk import run_airline_pack_through_desk
@@ -238,7 +244,7 @@ def describe_dataset(corpus_path: Path, rgb_src: Path):
         f"sha256(payload) index (the corpus's OWN digest scheme -- see rgb-src's "
         f"turn_raw_content/_digest_message): {workaround_resolvable} of {len(digests)} "
         "resolve -- the turn text IS sealed in this corpus's own payload store; "
-        "PART 3 uses these real, digest-verified turns for A1/A6/A7's "
+        "PART 3 uses these real, digest-verified turns for A6/A7's "
         "case-level drill-down."
     )
     return result
@@ -247,7 +253,7 @@ def describe_dataset(corpus_path: Path, rgb_src: Path):
 # --------------------------------------------------------------------------
 # REAL-CORPUS DRILL-DOWN INFRASTRUCTURE -- turns resolved from the sealed
 # corpus's own payload store (see module docstring), grouped into sessions,
-# and read by A1/A6/A7's OWN unmodified classifiers (imported from
+# and read by A6/A7's OWN unmodified classifiers (imported from
 # airline_engagement_pack, never re-implemented) -- so PART 3 can drill from
 # an aggregate line down to a REAL turn from THIS corpus, not only the
 # vendored reference file.
@@ -344,15 +350,6 @@ def _group_sessions(turns: list[RealTurn]) -> dict[str, list[RealTurn]]:
     return sessions
 
 
-def _case_a1(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
-    for t in turns:
-        if t.speaker_role == "assistant":
-            m = _OPTION_LANGUAGE_RE.search(t.narration)
-            if m:
-                return "pass", t, m.group(0)
-    return "fail", None, None
-
-
 def _case_a6(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
     for t in turns:
         if _TRANSFER_TOOL in t.tool_call_names:
@@ -381,7 +378,7 @@ def _case_a7(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
     return "fail", None, None
 
 
-_REAL_CORPUS_CASE_FNS = {"A1": _case_a1, "A6": _case_a6, "A7": _case_a7}
+_REAL_CORPUS_CASE_FNS = {"A6": _case_a6, "A7": _case_a7}
 
 
 @dataclass(frozen=True)
@@ -393,12 +390,14 @@ class RealTermResult:
 
 
 def measure_real_corpus_terms(sessions: dict[str, list[RealTurn]]) -> dict[str, RealTermResult]:
-    """A1/A6/A7 measured against the SEALED CORPUS's own real,
+    """A6/A7 measured against the SEALED CORPUS's own real,
     digest-verified turns -- not the vendored reference file (PART 2c,
     unchanged). A genuinely new, additive measurement; does not alter any
-    number PART 2c already reports. (A3b is not measured here --
-    ``[remove-keyword-scorers]`` removed its keyword regex; see
-    ``airline_engagement_pack.declare_a3b_pressure_language_pending_judge``.)"""
+    number PART 2c already reports. (A1/A3b are not measured here -- each
+    had its keyword regex retired (``[ldg-bj-91-a1-to-llm-judge]`` for A1,
+    ``[remove-keyword-scorers]`` for A3b); see
+    ``airline_engagement_pack.declare_a1_option_language_pending_judge`` /
+    ``.declare_a3b_pressure_language_pending_judge``.)"""
     results: dict[str, RealTermResult] = {}
     for term_id, case_fn in _REAL_CORPUS_CASE_FNS.items():
         cases = {sid: case_fn(turns) for sid, turns in sessions.items()}
@@ -591,12 +590,13 @@ def pack_of_outcomes(corpus_path: Path, work_dir: Path, *, verbose: bool = True)
     if verbose:
         print()
         print(
-            "2c. cross-reference: real, measured N-of-M for A1/A4/A6/A7 over the SAME "
+            "2c. cross-reference: real, measured N-of-M for A4/A6/A7 over the SAME "
             "vendored tau2-bench file (build_airline_engagement_pack() -- unmodified), "
             "kept exactly as this pack already reports it -- this module changes none of "
-            "these numbers. A3b carries no N-of-M here: [remove-keyword-scorers] removed "
-            "its keyword regex, so this row renders WITH-INSTRUMENTATION, pending a real "
-            "judge run, same as the desk's own 2a printout above:"
+            "these numbers. A1 and A3b carry no N-of-M here: [ldg-bj-91-a1-to-llm-judge] "
+            "and [remove-keyword-scorers] respectively removed each row's keyword regex, "
+            "so both rows render WITH-INSTRUMENTATION, pending a real judge run, same as "
+            "the desk's own 2a printout above:"
         )
     pack = build_airline_engagement_pack()
     if verbose:
@@ -611,12 +611,12 @@ def pack_of_outcomes(corpus_path: Path, work_dir: Path, *, verbose: bool = True)
     if verbose:
         print()
         print(
-            f"2d. NEW: the SAME A1/A6/A7 classifiers (unmodified imports), now measured "
+            f"2d. NEW: the SAME A6/A7 classifiers (unmodified imports), now measured "
             f"against the SEALED CORPUS's OWN real, digest-verified turns from Part 1 "
             f"({len(real_sessions)} sessions == {len(real_sessions)} conversation subjects) "
             "-- a genuinely additive measurement, kept clearly separate from 2c's vendored-file "
-            "numbers, never blended with them. A3b is not measured here either, for the same "
-            "reason as 2c:"
+            "numbers, never blended with them. A1 and A3b are not measured here either, for "
+            "the same reason as 2c:"
         )
         for term_id, result in real_terms.items():
             print(f"    - {term_id}: {result.n} of {result.m}")
@@ -669,7 +669,6 @@ def render_inapplicable_case(
 
 
 _REAL_TERM_CLAUSE_REFS = {
-    "A1": "airline-engagement-pack/A1",
     "A6": "airline-engagement-pack/A6",
     "A7": "airline-engagement-pack/A7",
 }
@@ -763,13 +762,14 @@ def drill_down(
         "3.0 REAL-CORPUS drill-down (Part 2d's numbers): every term below reaches an "
         "ACTUAL turn from THIS sealed corpus, cross-referenced against its own "
         "content_digest and rendered with the full evidence chain "
-        "(turn -> guard-decision -> verdict -> checkpoint). See 3.4/3.5 below for terms "
+        "(turn -> guard-decision -> verdict -> checkpoint). See 3.3/3.4 below for terms "
         "this corpus genuinely cannot check (inapplicable) and the one refused row (A8). "
-        "A3b is not drilled into here -- [remove-keyword-scorers] removed its keyword "
-        "regex, so it carries no N-of-M to drill into; see 2a/2c above for its honest "
+        "A1 and A3b are not drilled into here -- both had a keyword regex retired "
+        "([remove-keyword-scorers] for A3b, [ldg-bj-91-a1-to-llm-judge] for A1), so "
+        "neither carries an N-of-M to drill into; see 2a/2c above for their honest "
         "WITH-INSTRUMENTATION state."
     )
-    for i, term_id in enumerate(("A1", "A6", "A7"), start=1):
+    for i, term_id in enumerate(("A6", "A7"), start=1):
         print()
         _render_term_drilldown_section(
             label=f"3.{i}",
@@ -783,7 +783,7 @@ def drill_down(
 
     print()
     _render_inapplicable_section(
-        header="3.4 inapplicable rows, grounded in a real turn (not just declared in the abstract):",
+        header="3.3 inapplicable rows, grounded in a real turn (not just declared in the abstract):",
         pack=pack,
         real_sessions=real_sessions,
         real_records_by_id=real_records_by_id,
@@ -791,32 +791,7 @@ def drill_down(
     )
 
     print()
-    _render_a8_refusal_section(label="3.5", pack=pack)
-
-    print()
-    print("3.6 vendored-file reference cross-check for A1 (unchanged from before, not the corpus):")
-    a1 = next(r for r in pack.rows if r.claim_id == "A1")
-    n1, m1 = a1.coverage_n, a1.coverage_m
-    sims = load_conversations()
-
-    matched, unmatched = [], []
-    for i, sim in enumerate(sims):
-        hit = None
-        for m in sim["messages"]:
-            if m["role"] == "assistant":
-                mo = _OPTION_LANGUAGE_RE.search(_text(m))
-                if mo:
-                    hit = mo.group(0)
-                    break
-        (matched if hit else unmatched).append((i, hit))
-    print(
-        f"    term.airline_pack.a1  clause_ref=airline-engagement-pack/A1  "
-        f"measured {n1} of {m1} on the vendored tau2-bench file (reference, not the corpus):"
-    )
-    for i, hit in matched[:3]:
-        print(f"      ✓ sim#{i}  evidence={hit!r}")
-    for i, _ in unmatched[:3]:
-        print(f"      ✗ sim#{i}  no option-shaped phrasing found in the agent's messages")
+    _render_a8_refusal_section(label="3.4", pack=pack)
 
 
 # --------------------------------------------------------------------------
@@ -830,7 +805,6 @@ def drill_down(
 # --------------------------------------------------------------------------
 
 _REAL_TERM_STATEMENTS = {
-    "A1": "Choice, not ultimatum: the agent presented the customer more than one viable path to resolution, never a single take-it-or-leave-it.",
     "A6": "Handled, not offloaded: the case was handled without transfer to a human.",
     "A7": "Calibrated deference: the agent pushed back where the facts warranted (a non-zero rate), rather than deferring by default.",
 }
@@ -870,7 +844,7 @@ def render_ascii_report(
     print()
 
     print("## drill-down: term -> case -> chain")
-    for term_id in ("A1", "A6", "A7"):
+    for term_id in ("A6", "A7"):
         print()
         _render_term_drilldown_section(
             label=f"### {term_id}",
@@ -924,7 +898,7 @@ def _demo_drilldown_capsule_ids(
     ``conversation_turn_reference`` cites (the same lookup
     ``_chain_for_turn`` does) -- order-preserving de-dup, no id twice."""
     ids: list[str] = []
-    for term_id in ("A1", "A6", "A7"):
+    for term_id in ("A6", "A7"):
         for turn in _selected_drilldown_turns(real_terms[term_id]):
             ids.append(turn.capsule_id)
             ref = next(

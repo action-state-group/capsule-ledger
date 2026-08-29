@@ -1,29 +1,31 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``[ldg-airline-pack-semantics-tuning]``: precision/recall of the A1, A4
+"""``[ldg-airline-pack-semantics-tuning]``: precision/recall of the A4
 and A7 classifiers against a hand-labelled sample of >=20 conversations per
 row, per the task's acceptance line.
 
 This is the replacement for the old, too-weak
 ``test_measured_rows_report_a_real_n_of_200``'s bare ``0 < n < m``: that
 assertion could not tell a genuine hand-verified count apart from a
-heuristic that never fires at all, and a regex edit that halved A1's count
-would still have shipped green. Here, ``predicted`` is recomputed LIVE
-against the current regex for every hand-labelled sim_id in
-``hand_labels.json`` -- a regression in any of the three classifiers
-changes a ``predicted`` value and fails the matching case immediately, not
-just a coarse count.
+heuristic that never fires at all, and a regex edit that halved a
+classifier's count would still have shipped green. Here, ``predicted`` is
+recomputed LIVE against the current regex for every hand-labelled sim_id in
+``hand_labels.json`` -- a regression in either classifier changes a
+``predicted`` value and fails the matching case immediately, not just a
+coarse count.
 
-``[remove-keyword-scorers]`` (2026-08-29) dropped A3b from this module: its
-keyword regex was never a classifier standing in for a structural check
-(unlike A1/A4/A7, which each detect a concrete, structural event -- an
-offer, a transfer request, a pushback -- in the record) -- it was a
-deterministic stand-in reported as if it were a live judge's prose-quality
-finding. ``hand_labels.json`` still carries its historical "A3b" section
-(the hand-labelling that found the regex's 41-of-45 false-positive rate,
-[ldg-airline-pack-semantics-tuning]) as a record of why it was retuned and
-then removed, but nothing here reads it anymore -- see
-``airline_engagement_pack.declare_a3b_pressure_language_pending_judge``
-for the row's current, honest state."""
+``[remove-keyword-scorers]`` (2026-08-29) dropped A3b from this module, and
+``[ldg-bj-91-a1-to-llm-judge]`` (2026-08-29, review bounce B2) dropped A1 the
+same way: each row's keyword regex was never a classifier standing in for a
+structural check (unlike A4/A7, which each detect a concrete, structural
+event -- a transfer request, a pushback -- in the record) -- both were
+deterministic stand-ins reported as if they were a live judge's
+prose-quality finding. ``hand_labels.json`` still carries its historical
+"A1"/"A3b" sections (the hand-labelling that found each regex's
+false-positive rate, [ldg-airline-pack-semantics-tuning]) as a record of why
+they were retuned and then removed, but nothing here reads either anymore --
+see ``airline_engagement_pack.declare_a1_option_language_pending_judge`` /
+``.declare_a3b_pressure_language_pending_judge`` for each row's current,
+honest state."""
 from __future__ import annotations
 
 import json
@@ -33,7 +35,6 @@ import pytest
 
 from capsule_ledger.examples.airline_engagement_pack import (
     _AGENT_LIMITATION_RE,
-    _OPTION_LANGUAGE_RE,
     _PUSHBACK_RE,
     DATA_FILE,
     _asks_for_human,
@@ -52,10 +53,6 @@ def sims_by_id():
 @pytest.fixture(scope="module")
 def hand_labels():
     return json.loads(Path(HAND_LABELS_FILE).read_text())
-
-
-def _predict_a1(sim):
-    return any(m["role"] == "assistant" and _OPTION_LANGUAGE_RE.search(_text(m)) for m in sim["messages"])
 
 
 def _predict_a4_asked(sim):
@@ -79,7 +76,6 @@ def _predict_a7(sim):
 
 
 _PREDICTORS = {
-    "A1": _predict_a1,
     "A4": _predict_a4_asked,
     "A7": _predict_a7,
 }
@@ -89,17 +85,17 @@ _PREDICTORS = {
 # that meaningfully degrades a classifier fails here; the floors are not set
 # at 100% because A7's gating is documented as imperfect on purpose (see its
 # docstring), not because this test tolerates drift.
-_MIN_PRECISION = {"A1": 0.95, "A4": 0.95, "A7": 0.80}
-_MIN_RECALL = {"A1": 0.95, "A4": 0.95, "A7": 0.70}
+_MIN_PRECISION = {"A4": 0.95, "A7": 0.80}
+_MIN_RECALL = {"A4": 0.95, "A7": 0.70}
 
 
 def test_hand_labels_file_exists_and_has_at_least_20_cases_per_row():
     data = json.loads(Path(HAND_LABELS_FILE).read_text())
-    for claim_id in ("A1", "A4", "A7"):
+    for claim_id in ("A4", "A7"):
         assert len(data[claim_id]["cases"]) >= 20, f"{claim_id} has fewer than 20 hand-labelled cases"
 
 
-@pytest.mark.parametrize("claim_id", ["A1", "A4", "A7"])
+@pytest.mark.parametrize("claim_id", ["A4", "A7"])
 def test_predicted_matches_hand_label_for_every_case(claim_id, sims_by_id, hand_labels):
     """Recompute ``predicted`` live for every hand-labelled sim_id and prove
     it still matches what was recorded when the fixture was built -- the
@@ -116,7 +112,7 @@ def test_predicted_matches_hand_label_for_every_case(claim_id, sims_by_id, hand_
         )
 
 
-@pytest.mark.parametrize("claim_id", ["A1", "A4", "A7"])
+@pytest.mark.parametrize("claim_id", ["A4", "A7"])
 def test_precision_meets_floor(claim_id, hand_labels):
     cases = hand_labels[claim_id]["cases"]
     tp = sum(1 for c in cases if c["hand_label"] and c["predicted"])
@@ -126,7 +122,7 @@ def test_precision_meets_floor(claim_id, hand_labels):
     assert precision >= _MIN_PRECISION[claim_id], f"{claim_id} precision {precision:.2%} fell below floor"
 
 
-@pytest.mark.parametrize("claim_id", ["A1", "A4", "A7"])
+@pytest.mark.parametrize("claim_id", ["A4", "A7"])
 def test_recall_meets_floor(claim_id, hand_labels):
     cases = hand_labels[claim_id]["cases"]
     tp = sum(1 for c in cases if c["hand_label"] and c["predicted"])

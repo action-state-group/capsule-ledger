@@ -26,14 +26,12 @@ from capsule_ledger.compiler.offer_response import (
 from capsule_ledger.compiler.refusal import EVENT_REFUSAL
 from capsule_ledger.compiler.vocabulary import RESERVED_VERDICT_WORDS
 from capsule_ledger.examples.airline_engagement_pack import (
-    _OPTION_LANGUAGE_RE,
     DATA_FILE,
     AirlineClaimResult,
     _asks_for_human,
     build_a8_satisfaction_refusal,
     build_airline_engagement_pack,
     load_conversations,
-    measure_a1_option_shaped_language,
     measure_a4_human_reachable_when_asked,
     measure_a6_resolved_without_transfer,
     measure_a7_pushback_present,
@@ -71,10 +69,15 @@ def test_a6_and_a7_declare_no_forward_verdict(pack):
     assert by_id["A7"].forward_verdict is None
 
 
-def test_a1_is_deterministic_both_sides(pack):
+def test_a1_forward_stays_deterministic_backward_is_with_instrumentation(pack):
+    """``[ldg-bj-91-a1-to-llm-judge]`` (review bounce B2): A1's backward
+    verdict used to render DETERMINISTIC off a regex grepping free text --
+    that was the mislabel this bounce fixes. Forward is untouched: the
+    ``ChoiceClaimRequiresMultipleOptions`` guard is a real, separate
+    mechanism this bounce does not touch."""
     by_id = {r.claim_id: r for r in pack.rows}
     assert by_id["A1"].forward_verdict == "DETERMINISTIC"
-    assert by_id["A1"].backward_verdict == "DETERMINISTIC"
+    assert by_id["A1"].backward_verdict == "WITH-INSTRUMENTATION"
 
 
 def test_a4_and_a6_statements_do_not_overclaim(pack):
@@ -170,6 +173,63 @@ def test_a3a_forward_verdict_matches_a2_and_a5_missing_instrument_pattern(pack):
     a2, a3a, a5 = by_id["A2"], by_id["A3a"], by_id["A5"]
     assert a3a.forward_verdict == "UNAVAILABLE-STATE-REQUIRED"
     assert a3a.forward_verdict == a2.forward_verdict == a5.forward_verdict
+
+
+# --- A1: the keyword stand-in was removed; renders WITH-INSTRUMENTATION ----
+# [ldg-bj-91-a1-to-llm-judge] (review bounce B2 on [remove-keyword-scorers]):
+# A1's backward side used to report a deterministic keyword regex's count as
+# if it were a structural fact. "More than one viable path" is a
+# prose-quality judgment, the same shape as A3b's "no pressure" -- the row
+# now renders pending a real judge run, with a real compiled prompt digest
+# already pinned, never a fabricated number.
+
+
+def test_a1_no_longer_reports_a_measured_count(pack):
+    by_id = {r.claim_id: r for r in pack.rows}
+    a1 = by_id["A1"]
+    assert a1.forward_verdict == "DETERMINISTIC"
+    assert a1.backward_verdict == "WITH-INSTRUMENTATION"
+    assert a1.coverage_n is None
+    assert a1.coverage_m is None
+    assert a1.coverage_fraction() is None
+    assert a1.missing_instrument == "llm_judge_verdict_a1_option_language"
+    assert a1.needs_instrumentation is True
+
+
+def test_a1_carries_a_real_compiled_judge_prompt_digest(pack):
+    """The differentiator from A3b's plainer pending state (Steven's
+    ruling, inbox.md): A1's row cites a REAL, compiled
+    ``JudgePromptDefinition.prompt_digest()`` (``compile_judge_prompt``, PR
+    #90), not merely a rationale describing what would eventually run."""
+    by_id = {r.claim_id: r for r in pack.rows}
+    a1 = by_id["A1"]
+    assert a1.judge_prompt_digest is not None
+    assert len(a1.judge_prompt_digest) == 64  # sha256 hex digest
+    assert all(c in "0123456789abcdef" for c in a1.judge_prompt_digest)
+    assert a1.judge_prompt_digest in a1.rationale
+
+
+def test_a1_rationale_names_the_removed_mechanism_not_a_number():
+    """Mutant proof: a regression that reintroduces a coverage_n/coverage_m
+    pair for A1 (e.g. someone re-wires the old regex back in) would make
+    this row's coverage_fraction() non-None again, which the test above
+    catches; this test separately locks that the rationale text itself
+    never carries a bare 'N of M' shape a reader could mistake for a real
+    measurement."""
+    pack = build_airline_engagement_pack()
+    by_id = {r.claim_id: r for r in pack.rows}
+    rationale = by_id["A1"].rationale
+    assert "MISSING INSTRUMENT" in rationale
+    assert not re.search(r"\b\d+ of \d+\b", rationale)
+
+
+def test_module_no_longer_exposes_the_a1_keyword_regex():
+    """[ldg-bj-91-a1-to-llm-judge] acceptance: the keyword stand-in this row
+    used to render is gone from the module entirely, not merely unused."""
+    import capsule_ledger.examples.airline_engagement_pack as mod
+
+    assert not hasattr(mod, "_OPTION_LANGUAGE_RE")
+    assert not hasattr(mod, "measure_a1_option_shaped_language")
 
 
 # --- A3b: the keyword stand-in was removed; renders WITH-INSTRUMENTATION ---
@@ -276,34 +336,9 @@ def test_a1_guard_is_GREEN_once_a_second_option_exists(signer):
 # [ldg-airline-pack-semantics-tuning]: fast regression tests for the exact
 # false-positive/false-negative shapes the adversarial re-evaluation found,
 # independent of the vendored file (so they still catch a regex regression
-# even if the corpus is ever re-vendored).
-
-
-def test_a1_option_definition_excludes_independently_combinable_fields():
-    """'You can modify: flights / cabin / bags' is not an offer of mutually
-    exclusive options -- those fields are independently combinable, not
-    alternatives to pick between -- even though it was one of the phrasings
-    the OLD regex happened to miss for an unrelated reason (no count word)."""
-    text = "What changes would you like to make? You can modify:\n- Flight dates/times\n- Cabin class\n- Add baggage"
-    assert not _OPTION_LANGUAGE_RE.search(text)
-
-
-def test_a1_option_definition_catches_enumerated_alternatives():
-    text = "Your options at this point would be:\n1. Keep your current reservation\n2. Cancel without a refund"
-    assert _OPTION_LANGUAGE_RE.search(text)
-
-
-def test_a1_option_language_no_longer_fires_on_attribute_either_or():
-    """13 of 14 bare either/or hits in the vendored corpus were the agent
-    describing an existing attribute or restating the customer's own
-    stated flexibility, not offering a choice."""
-    assert not _OPTION_LANGUAGE_RE.search("Your reservations are either in basic economy or economy class.")
-    assert not _OPTION_LANGUAGE_RE.search("I see you're open to either Philadelphia or Newark as your destination.")
-
-
-def test_a1_option_language_still_fires_on_a_genuine_either_or_offer():
-    text = "Would you like me to proceed with either of these options, or do you have any other questions?"
-    assert _OPTION_LANGUAGE_RE.search(text)
+# even if the corpus is ever re-vendored). A1's own regex tests were removed
+# by [ldg-bj-91-a1-to-llm-judge] along with ``_OPTION_LANGUAGE_RE`` itself --
+# see ``test_module_no_longer_exposes_the_a1_keyword_regex`` above.
 
 
 def test_a4_negation_guard_excludes_a_declined_transfer():
@@ -334,18 +369,20 @@ def test_vendored_conversation_file_has_200_simulations():
         # are the actual measured, hand-verified counts on the vendored
         # file today -- NOT a target. Pinned exactly (not a range) because
         # a bare "0 < n < m" is exactly what let a regex edit that halved
-        # A1's count ship green before: it cannot distinguish a genuine
-        # hand-verified count from a heuristic that stopped firing, nor can
-        # it catch a count that moved but stayed in-range. A real change to
-        # a classifier's precision/recall SHOULD move this number and
-        # SHOULD fail this test -- that is the point. When it's a genuine,
-        # deliberate retune: re-run the hand-labelling in
+        # a classifier's count ship green before: it cannot distinguish a
+        # genuine hand-verified count from a heuristic that stopped firing,
+        # nor can it catch a count that moved but stayed in-range. A real
+        # change to a classifier's precision/recall SHOULD move this number
+        # and SHOULD fail this test -- that is the point. When it's a
+        # genuine, deliberate retune: re-run the hand-labelling in
         # tests/test_airline_engagement_pack_hand_labels.py, update
         # hand_labels.json, and update the expected value here together,
         # not this number alone. (A3b's own keyword stand-in and its pinned
-        # 200-of-200 were removed entirely, [remove-keyword-scorers] -- see
-        # test_a3b_no_longer_reports_a_measured_count above.)
-        (measure_a1_option_shaped_language, 111),
+        # 200-of-200 were removed entirely, [remove-keyword-scorers]; A1's
+        # own stand-in and its pinned 111-of-200 were removed the same way,
+        # [ldg-bj-91-a1-to-llm-judge] -- see
+        # test_a3b_no_longer_reports_a_measured_count /
+        # test_a1_no_longer_reports_a_measured_count above.)
         (measure_a6_resolved_without_transfer, 160),
         (measure_a7_pushback_present, 26),
     ],
@@ -368,12 +405,12 @@ def test_a4_measures_reachability_conditioned_on_having_asked():
 
 def test_pack_rows_carry_their_measured_coverage(pack):
     by_id = {r.claim_id: r for r in pack.rows}
-    for claim_id in ("A1", "A4", "A6", "A7"):
+    for claim_id in ("A4", "A6", "A7"):
         row = by_id[claim_id]
         assert row.coverage_n is not None
         assert row.coverage_m is not None
         assert row.coverage_fraction() == f"{row.coverage_n} of {row.coverage_m}"
-    for claim_id in ("A2", "A3b", "A5", "A8"):
+    for claim_id in ("A1", "A2", "A3b", "A5", "A8"):
         row = by_id[claim_id]
         assert row.coverage_n is None
         assert row.coverage_fraction() is None
