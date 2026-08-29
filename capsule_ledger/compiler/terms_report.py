@@ -82,6 +82,7 @@ from typing import Any
 
 from ..folds.definition import FilterClause, FoldDefinition, ReadField, Reduce
 from ..folds.engine import evaluate_all
+from ..judge.evidence_completeness import INSUFFICIENT_EVIDENCE
 from .epoch_registry import EpochOpen, same_family_epoch_pairs
 from .terms_desk import CompiledTerm, compiled_term_digest, evaluate_term_fold
 
@@ -89,6 +90,7 @@ __all__ = [
     "EVENT_SATELLITE_VERDICT",
     "EVENT_RUN_SUMMARY",
     "ABSTAIN",
+    "INSUFFICIENT_EVIDENCE",
     "FoldEnvelope",
     "TermReportLine",
     "RefusalRow",
@@ -155,9 +157,14 @@ class TermReportLine:
     """One rendered line: one term, one compiled version (``c_digest``),
     one epoch (or ``None`` for a deterministic-rule term, which has no
     judge epoch to partition by). ``verdict_counts`` carries the full
-    breakdown (e.g. ``{"pass": 12, "fail": 3, "ABSTAIN": 1}``) rather than
-    hard-coded pass/fail fields -- a term's ``verdict_schema`` is a closed
-    enum or bounded scalar, never fixed to boolean (design §1)."""
+    breakdown (e.g. ``{"pass": 12, "fail": 3, "ABSTAIN": 1,
+    "insufficient_evidence": 2}``) rather than hard-coded pass/fail fields --
+    a term's ``verdict_schema`` is a closed enum or bounded scalar, never
+    fixed to boolean (design §1). ``insufficient_evidence_fields`` (design
+    §11) is the distinct, sorted set of missing-evidence labels named by
+    this partition's ``insufficient_evidence`` rows -- present here so the
+    aggregate line itself names what to emit, not only the per-session
+    rollup (``compiler.session_rollup``)."""
 
     term_id: str
     clause_ref: str | None
@@ -177,12 +184,20 @@ class TermReportLine:
     # its `units_in_range` disagrees with `verdict_rows_n`.
     verdict_rows_n: int | None = None
     coverage_discrepancy: bool = False
+    insufficient_evidence_fields: tuple[str, ...] = ()
 
     @property
     def coverage_n(self) -> int:
-        """judged_units -- applicable rows that got a real verdict, never
-        an ABSTAIN (design §3: "coverage = judged_units / units_in_range")."""
-        return self.applicable_n - self.verdict_counts.get(ABSTAIN, 0)
+        """judged_units -- applicable rows that got a real verdict, never an
+        ABSTAIN and never an insufficient_evidence (design §3: "coverage =
+        judged_units / units_in_range"; design §11: insufficient_evidence
+        "must never render as a fail" -- nor be laundered into a pass by
+        counting toward judged coverage)."""
+        return (
+            self.applicable_n
+            - self.verdict_counts.get(ABSTAIN, 0)
+            - self.verdict_counts.get(INSUFFICIENT_EVIDENCE, 0)
+        )
 
     @property
     def coverage_m(self) -> int:
@@ -202,6 +217,7 @@ class TermReportLine:
             "verdict_rows_n": self.verdict_rows_n,
             "coverage_discrepancy": self.coverage_discrepancy,
             "coverage": {"n": self.coverage_n, "m": self.coverage_m},
+            "insufficient_evidence_fields": list(self.insufficient_evidence_fields),
             "envelope": self.envelope.to_dict(),
             "caveats": [dict(c) for c in self.caveats],
         }
@@ -290,6 +306,31 @@ def _verdict_breakdown(
     )
     traces = evaluate_all(definition, list(records), range_start=range_start, as_of=as_of)
     return {str(k): t.result for k, t in traces.items()}
+
+
+def _missing_evidence_fields(records: Sequence[dict], term_id: str, c_digest: str, epoch: str | None) -> tuple[str, ...]:
+    """The distinct, sorted set of ``detail.missing_evidence`` labels named
+    by this partition's ``insufficient_evidence`` rows (design §11: "the
+    verdict names the missing field") -- structural discovery of which
+    labels to render, same "plain iteration, not the fold engine" reasoning
+    as ``_verdict_partitions`` (this is a set of names, not a count)."""
+    seen: dict[str, None] = {}
+    for record in records:
+        payload = record.get("asg_payload") or {}
+        if payload.get("event") != EVENT_SATELLITE_VERDICT:
+            continue
+        detail = payload.get("detail") or {}
+        if detail.get("verdict") != INSUFFICIENT_EVIDENCE or not detail.get("applicable", False):
+            continue
+        term = detail.get("term") or {}
+        if term.get("term_id") != term_id or term.get("c_digest") != c_digest:
+            continue
+        if epoch is not None and detail.get("epoch") != epoch:
+            continue
+        label = detail.get("missing_evidence")
+        if label:
+            seen.setdefault(label, None)
+    return tuple(sorted(seen))
 
 
 def _inapplicable_count(
@@ -449,6 +490,7 @@ def render_terms_report(
                         caveats=tuple(caveats),
                         verdict_rows_n=verdict_rows_n,
                         coverage_discrepancy=coverage_discrepancy,
+                        insufficient_evidence_fields=_missing_evidence_fields(records, ct.term_id, c_digest, epoch),
                     )
                 )
             continue

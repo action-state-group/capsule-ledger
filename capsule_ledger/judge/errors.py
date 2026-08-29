@@ -35,6 +35,10 @@ SCORER_DEPENDENCY_MISSING = "scorer_dependency_missing"
 # Outcomes -> judge-prompt compiler reasons ([outcomes-to-judgeprompt-compiler-t3]).
 REFUSED_OUTCOME_NO_JUDGE_PROMPT = "refused_outcome_no_judge_prompt"
 
+# Evidence-completeness (insufficient_evidence, design §11) build-time reasons.
+MISSING_EVIDENCE_LABEL_REQUIRED = "missing_evidence_label_required"
+MISSING_EVIDENCE_LABEL_NOT_ALLOWED = "missing_evidence_label_not_allowed"
+
 
 class JudgeError(ValueError):
     """A judge-harness object fails to parse, validate, or build. Carries a
