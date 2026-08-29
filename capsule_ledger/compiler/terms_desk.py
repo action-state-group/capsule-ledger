@@ -64,6 +64,7 @@ from ..folds.engine import EvaluationTrace, evaluate_all
 from ..folds.paths import get_path
 from ..guards.capsule import build_event_capsule
 from ..guards.signing import Signer
+from ..packs.schema import TIER_VALUES
 from ..setup.compile_bridge import compiled_declaration_for
 from ..setup.declarations import StoredCandidate
 from .compile import (
@@ -244,6 +245,11 @@ class TermDeclaration:
     Whether ``judge_spec`` is required is decided by ``compile_term`` from
     the term's *compiled* backward verdict, not by which path built it --
     a term is never asked to pre-declare what the compiler will conclude.
+
+    ``tier`` ([ldg-bj-tier-field], backward-judge design §8.2) says whether
+    this term gates a session's job-success (``"must_have"``) or is reported
+    without gating (``"informational"``, the default) -- mirrors ``packs.
+    schema.Outcome.tier``; see ``TIER_VALUES``.
     """
 
     term_id: str
@@ -255,6 +261,7 @@ class TermDeclaration:
     declaration: Declaration | None = None
     judge_spec: JudgeOrRuleSpec | None = None
     rule_kind: str | None = None
+    tier: str = "informational"
 
     def __post_init__(self) -> None:
         if not self.verdict_schema:
@@ -264,6 +271,11 @@ class TermDeclaration:
             )
         if (self.stored is None) == (self.declaration is None):
             raise CompilerError(f"term {self.term_id!r} must set exactly one of stored/declaration")
+        if self.tier not in TIER_VALUES:
+            raise CompilerError(
+                f"term {self.term_id!r}.tier={self.tier!r} must be one of {sorted(TIER_VALUES)}, or omitted "
+                "(defaults to 'informational')"
+            )
 
         if self.stored is not None:
             if self.stored.candidate.outcome_id != self.term_id:
@@ -314,6 +326,8 @@ def _term_to_canonical_dict(t: TermDeclaration) -> dict:
         out["judge_spec"] = t.judge_spec.canonical_dict()
     if t.rule_kind is not None:
         out["rule_kind"] = t.rule_kind
+    if t.tier != "informational":
+        out["tier"] = t.tier
     return out
 
 

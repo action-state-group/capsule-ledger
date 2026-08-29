@@ -66,6 +66,7 @@ from .errors import (
     INVALID_RE_DERIVABILITY_GRADE,
     INVALID_SCOPE_CENSUS,
     INVALID_SCOPE_DIMENSION,
+    INVALID_TIER,
     INVALID_VERDICT,
     MALFORMED_PACK,
     MISSING_CONSTRAINT_SCOPE,
@@ -88,6 +89,7 @@ from .schema import (
     MEASURABILITY_VALUES,
     NORMALIZED_ACTION_FIELDS,
     PACK_ID_RE,
+    TIER_VALUES,
     ActionSemantic,
     EvidenceInstrument,
     FixtureScenario,
@@ -650,6 +652,14 @@ def _parse_outcomes(raw: Any) -> tuple[Outcome, ...]:
             else None
         )
 
+        tier = entry.get("tier", "informational")
+        if tier not in TIER_VALUES:
+            raise PackDefinitionError(
+                INVALID_TIER,
+                f"outcomes[{outcome_id!r}].tier={tier!r} must be one of {sorted(TIER_VALUES)}, or omitted "
+                "(defaults to 'informational')",
+            )
+
         outcomes.append(
             Outcome(
                 id=outcome_id,
@@ -668,6 +678,7 @@ def _parse_outcomes(raw: Any) -> tuple[Outcome, ...]:
                 retention_check=entry.get("retention_check"),
                 measurability=measurability,
                 evidence_instrument=evidence_instrument,
+                tier=tier,
             )
         )
     return tuple(outcomes)

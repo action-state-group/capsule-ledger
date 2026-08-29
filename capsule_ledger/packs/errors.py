@@ -42,6 +42,11 @@ UNKNOWN_EFFECT_CLAIM = "unknown_effect_claim"
 INVALID_RE_DERIVABILITY_GRADE = "invalid_re_derivability_grade"
 INVALID_SCOPE_CENSUS = "invalid_scope_census"
 
+# tier ([ldg-bj-tier-field], backward-judge design §8.2): whether an outcome
+# gates a session's job-success (must_have) or is reported without gating
+# (informational, the default).
+INVALID_TIER = "invalid_tier"
+
 # measurability / evidence_instrument (pack-harden-tau2-oracle: closes the
 # adversarial-review finding that a term's "declared, not measured on this
 # corpus" claim was an unchecked, hand-authored lambda -- see
