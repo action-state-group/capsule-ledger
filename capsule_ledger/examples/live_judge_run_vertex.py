@@ -158,7 +158,13 @@ def compile_and_accept(
         if answer != "approve":
             raise SystemExit("not approved at T1 -- nothing sealed")
 
-    from ..compiler.terms_desk import ApplicabilitySpec, TermDeclaration, TermsDocument, build_terms_compilation_record_capsule, compile_terms_document
+    from ..compiler.terms_desk import (
+        ApplicabilitySpec,
+        TermDeclaration,
+        TermsDocument,
+        build_terms_compilation_record_capsule,
+        compile_terms_document,
+    )
     from .airline_pack_desk import AIRLINE_PACK_CLAUSE_REFS
 
     terms = []
