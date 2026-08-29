@@ -32,6 +32,11 @@ Public surface:
   the Merkle session-digest primitives (``.merkle``).
 - ``ConversationSession`` -- the stateful recorder: seals and appends each
   turn immediately, then ``close()``s the session.
+- ``build_conversation_exchange_capsule`` / ``digest_conversation_exchange``
+  -- one capsule per exchange, in the mesh inference capsule shape
+  (``model_attestation.compute_attestation`` with ``agent_input_digest``/
+  ``agent_output_digest`` plus the labeled ``reasoning_digest``/
+  ``tool_calls_digest`` sub-digests, ``.exchange``).
 """
 from __future__ import annotations
 
@@ -48,6 +53,11 @@ from .capsules import (
     find_session_turns,
     find_turn_reference,
 )
+from .exchange import (
+    EVENT_CONVERSATION_EXCHANGE,
+    build_conversation_exchange_capsule,
+    digest_conversation_exchange,
+)
 from .merkle import session_root, turn_inclusion_proof, verify_turn_inclusion
 from .session import ConversationSession, SessionAlreadyClosedError
 
@@ -56,10 +66,13 @@ __all__ = [
     "EVENT_CONVERSATION_TURN",
     "EVENT_SESSION_CLOSE",
     "EVENT_TURN_REFERENCE",
+    "EVENT_CONVERSATION_EXCHANGE",
     "InvalidSpeakerRole",
     "build_turn_capsule",
     "build_session_close_capsule",
     "build_turn_reference_capsule",
+    "build_conversation_exchange_capsule",
+    "digest_conversation_exchange",
     "find_session_turns",
     "find_session_close",
     "find_turn_reference",
