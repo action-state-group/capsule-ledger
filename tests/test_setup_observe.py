@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import io
 
-from capsule_ledger.setup.observe import EVENT_CONFIRMATION, EVENT_DISPATCH, ObserveRecorder
+from capsule_ledger.setup.observe import EVENT_CONFIRMATION, EVENT_DISPATCH, EVENT_READ, ObserveRecorder
 
 
 def _recorder(store, signer, **kwargs):
@@ -39,6 +39,51 @@ def test_dispatch_and_confirmation_chain_via_dispatch_id(store, signer):
     dispatch_records = [r for r in store.scan() if (r.capsule.get("asg_payload") or {}).get("event") == EVENT_DISPATCH]
     assert confirmation["chain"]["parent_capsule_id"] == dispatch_records[0].capsule["capsule_id"]
     assert confirmation["chain"]["relation"] == "confirms"
+
+
+def test_read_recorded_as_non_gated_fyi_observation_with_digest(store, signer):
+    recorder = _recorder(store, signer)
+    summary = recorder.run([{"kind": "read", "read_id": "r1", "read_digest": "c" * 64, "source": "issue#80599"}])
+    assert summary.reads_recorded == 1
+    assert summary.unmapped == []
+
+    record = next(iter(store.scan()))
+    capsule = record.capsule
+    assert capsule["asg_payload"]["event"] == EVENT_READ
+    assert capsule["asg_payload"]["detail"] == {"read_digest": "c" * 64, "source": "issue#80599"}
+    assert capsule["action_type"] == "fyi"
+    assert "chain" not in capsule or capsule.get("chain") is None
+
+
+def test_dispatch_chains_to_read_via_read_ref(store, signer):
+    """Design §12: the write carries chain_parent back to the read that
+    grounded it, so "the agent acted on what it actually read" is a
+    provable chain instead of an unrecorded claim."""
+    recorder = _recorder(store, signer)
+    events = [
+        {"kind": "read", "read_id": "r1", "read_digest": "c" * 64},
+        {"kind": "dispatch", "action_class": "comment", "tool": "post_comment", "read_ref": "r1"},
+    ]
+    summary = recorder.run(events)
+    assert summary.reads_recorded == 1
+    assert summary.dispatches_recorded == 1
+    assert summary.unmapped == []
+
+    read_records = [r for r in store.scan() if (r.capsule.get("asg_payload") or {}).get("event") == EVENT_READ]
+    dispatch_records = [r for r in store.scan() if (r.capsule.get("asg_payload") or {}).get("event") == EVENT_DISPATCH]
+    dispatch = dispatch_records[0].capsule
+    assert dispatch["chain"]["parent_capsule_id"] == read_records[0].capsule["capsule_id"]
+    assert dispatch["chain"]["relation"] == "follows"
+
+
+def test_dispatch_citing_unknown_read_ref_is_surfaced(store, signer):
+    recorder = _recorder(store, signer)
+    summary = recorder.run(
+        [{"kind": "dispatch", "action_class": "comment", "tool": "post_comment", "read_ref": "no-such-read"}]
+    )
+    assert summary.dispatches_recorded == 0
+    assert len(summary.unmapped) == 1
+    assert summary.unmapped[0].reason == "dispatch_cites_unknown_read_ref"
 
 
 def test_offer_and_response_chain_via_offer_id(store, signer):
