@@ -579,3 +579,31 @@ def test_must_have_tier_renders_in_the_digest():
     term = _declaration_term(tier="must_have")
     doc = TermsDocument(terms=(term,))
     assert doc.canonical_dict()["terms"][0]["tier"] == "must_have"
+
+
+# --- mode ([ldg-bp-mode-tag], standard-outcome-pack design §3) ------------
+#
+# Mirrors ``packs.schema.Outcome.mode``: which of the seven ways a term is
+# judged, default 'structural'. Additive and closed-set.
+
+
+def test_default_mode_is_structural_and_omitted_from_the_digest():
+    """A term that doesn't mention mode at all -- the ordinary case for
+    every pre-existing term -- parses as 'structural' and the digest
+    renders identically to before this field existed (no 'mode' key at
+    all), so no already-sealed T pin moves."""
+    term = _declaration_term()
+    assert term.mode == "structural"
+    doc = TermsDocument(terms=(term,))
+    assert "mode" not in doc.canonical_dict()["terms"][0]
+
+
+def test_invalid_mode_value_is_rejected():
+    with pytest.raises(CompilerError, match="mode"):
+        _declaration_term(mode="vibes")
+
+
+def test_judged_mode_renders_in_the_digest():
+    term = _declaration_term(mode="judged")
+    doc = TermsDocument(terms=(term,))
+    assert doc.canonical_dict()["terms"][0]["mode"] == "judged"

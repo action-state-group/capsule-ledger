@@ -47,6 +47,11 @@ INVALID_SCOPE_CENSUS = "invalid_scope_census"
 # (informational, the default).
 INVALID_TIER = "invalid_tier"
 
+# mode ([ldg-bp-mode-tag], standard-outcome-pack design §3): which of the
+# seven ways an outcome is judged (structural/value/judged/fold_rollup/
+# fold_counterparty/fold_agent/fold_cohort).
+INVALID_MODE = "invalid_mode"
+
 # measurability / evidence_instrument (pack-harden-tau2-oracle: closes the
 # adversarial-review finding that a term's "declared, not measured on this
 # corpus" claim was an unchecked, hand-authored lambda -- see
