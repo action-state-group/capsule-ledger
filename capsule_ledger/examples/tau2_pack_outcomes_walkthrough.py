@@ -5,13 +5,21 @@ load the real tau2-airline capsule corpus, read the airline-engagement-pack
 the individual subjects and the sealed verdict capsule behind it.
 
 **Every step below is real, unmodified machinery** (``examples/
-airline_pack_desk.py``'s pack-first desk flow, ``compiler/terms_report.py``'s
-census+sampling-rate+coverage-discrepancy renderer, ``examples/
+airline_pack_desk.py``'s pack-first desk flow, ``examples/
 airline_engagement_pack.py``'s lexical/tool-trail measurements) -- this
-module adds only the orchestration script and one small, clearly-labeled
-sealed-verdict fixture (see "PART 2b" below) for the one term whose real
-backward verdict is judge-shaped (A3b, MODEL-ASSISTED), since no
-``judge_agent`` epoch has actually been run against this pack yet.
+module adds only the orchestration script.
+
+**``[remove-keyword-scorers]`` (2026-08-29) removed this module's PART 2b**,
+a small sealed-verdict fixture that fed ``compiler/terms_report.py``'s
+census+sampling-rate+coverage-discrepancy renderer a "judge-shaped" A3b term.
+That fixture's verdicts came from a deterministic keyword regex
+(``measure_a3b_pressure_language_absent``, itself removed from
+``airline_engagement_pack.py``), not a live judge call -- reporting it next
+to a renderer built for real ``judge_agent`` output made a keyword sweep
+look like a judgment. No ``judge_agent`` epoch has actually been run
+against this pack; A3b now renders its honest WITH-INSTRUMENTATION /
+pending-judge state (see PART 2's own per-row printout), and the real-corpus
+drill-down (PART 3) no longer measures A3b at all, for the same reason.
 
 **The honest finding, printed plainly, not hidden (task's own instruction:
 "HONEST numbers ... do not tune")**: the real, sealed tau2-airline capsule
@@ -35,8 +43,8 @@ anyway, honestly labelled as a workaround for that missing index: brute-force
 scan every ``payloads/*.json`` file, hash each with the corpus's OWN
 ``sha256(turn_raw_content)`` scheme (not ``json_digest``), and match against
 each turn's stored ``content_digest`` -- verified below to resolve **every**
-turn in this corpus (959 of 959 distinct digests), not zero. PART 2b/3 use
-these real, digest-verified turns for A1/A3b/A6/A7's case-level drill-down
+turn in this corpus (959 of 959 distinct digests), not zero. PART 3 uses
+these real, digest-verified turns for A1/A6/A7's case-level drill-down
 against the sealed corpus itself. Separately (kept clearly labelled, never
 blended into the corpus's own numbers), PART 2c cross-references
 tau2-bench's own vendored, committed trajectory file (same airline domain,
@@ -72,19 +80,6 @@ from pathlib import Path
 from agent_action_capsule import verify as verify_capsule
 
 from ..cli.bundle_cmd import DEFAULT_VERIFY_BASE_URL, _build_completeness_certificate, _collect_with_parents
-from ..compiler.compile import Declaration
-from ..compiler.terms_desk import (
-    ApplicabilitySpec,
-    JudgeOrRuleSpec,
-    TermDeclaration,
-    TermsDocument,
-    build_terms_compilation_record_capsule,
-    compile_terms_document,
-    compiled_term_digest,
-)
-from ..compiler.terms_report import render_terms_report
-from ..guards import LocalSigner
-from ..guards.capsule import build_event_capsule
 from ..ledger import LedgerStore
 from ..ledger.api import ScanQuery
 from ..mmr.checkpoint import list_checkpoints, load_checkpoint
@@ -92,7 +87,6 @@ from ..payload_store import PayloadStore
 from .airline_engagement_pack import (
     _AGENT_LIMITATION_RE,
     _OPTION_LANGUAGE_RE,
-    _PRESSURE_LANGUAGE_RE,
     _PUSHBACK_RE,
     _TRANSFER_TOOL,
     _text,
@@ -103,11 +97,6 @@ from .airline_pack_desk import render_report as render_desk_report
 from .airline_pack_desk import run_airline_pack_through_desk
 
 __all__ = ["main"]
-
-_SAMPLED_EPOCH = "epoch-demo-sample-1"
-_SAMPLE_RATE = 0.25  # every 4th simulation -- deterministic, disclosed, not tuned
-_JUDGE_TERM_ID = "term.airline_pack.a3b_judged"
-_JUDGE_CLAUSE_REF = "airline-engagement-pack/A3b (sampled judge-agent demo)"
 
 
 def _hr(title: str) -> None:
@@ -249,7 +238,7 @@ def describe_dataset(corpus_path: Path, rgb_src: Path):
         f"sha256(payload) index (the corpus's OWN digest scheme -- see rgb-src's "
         f"turn_raw_content/_digest_message): {workaround_resolvable} of {len(digests)} "
         "resolve -- the turn text IS sealed in this corpus's own payload store; "
-        "PART 2b/3 use these real, digest-verified turns for A1/A3b/A6/A7's "
+        "PART 3 uses these real, digest-verified turns for A1/A6/A7's "
         "case-level drill-down."
     )
     return result
@@ -258,7 +247,7 @@ def describe_dataset(corpus_path: Path, rgb_src: Path):
 # --------------------------------------------------------------------------
 # REAL-CORPUS DRILL-DOWN INFRASTRUCTURE -- turns resolved from the sealed
 # corpus's own payload store (see module docstring), grouped into sessions,
-# and read by A1/A3b/A6/A7's OWN unmodified classifiers (imported from
+# and read by A1/A6/A7's OWN unmodified classifiers (imported from
 # airline_engagement_pack, never re-implemented) -- so PART 3 can drill from
 # an aggregate line down to a REAL turn from THIS corpus, not only the
 # vendored reference file.
@@ -364,15 +353,6 @@ def _case_a1(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
     return "fail", None, None
 
 
-def _case_a3b(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
-    for t in turns:
-        if t.speaker_role == "assistant":
-            m = _PRESSURE_LANGUAGE_RE.search(t.narration)
-            if m:
-                return "fail", t, m.group(0)
-    return "pass", None, None
-
-
 def _case_a6(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
     for t in turns:
         if _TRANSFER_TOOL in t.tool_call_names:
@@ -401,7 +381,7 @@ def _case_a7(turns: list[RealTurn]) -> tuple[str, RealTurn | None, str | None]:
     return "fail", None, None
 
 
-_REAL_CORPUS_CASE_FNS = {"A1": _case_a1, "A3b": _case_a3b, "A6": _case_a6, "A7": _case_a7}
+_REAL_CORPUS_CASE_FNS = {"A1": _case_a1, "A6": _case_a6, "A7": _case_a7}
 
 
 @dataclass(frozen=True)
@@ -413,10 +393,12 @@ class RealTermResult:
 
 
 def measure_real_corpus_terms(sessions: dict[str, list[RealTurn]]) -> dict[str, RealTermResult]:
-    """A1/A3b/A6/A7 measured against the SEALED CORPUS's own real,
+    """A1/A6/A7 measured against the SEALED CORPUS's own real,
     digest-verified turns -- not the vendored reference file (PART 2c,
     unchanged). A genuinely new, additive measurement; does not alter any
-    number PART 2c already reports."""
+    number PART 2c already reports. (A3b is not measured here --
+    ``[remove-keyword-scorers]`` removed its keyword regex; see
+    ``airline_engagement_pack.declare_a3b_pressure_language_pending_judge``.)"""
     results: dict[str, RealTermResult] = {}
     for term_id, case_fn in _REAL_CORPUS_CASE_FNS.items():
         cases = {sid: case_fn(turns) for sid, turns in sessions.items()}
@@ -531,8 +513,8 @@ def render_real_case(
     glyph = "✓" if verdict == "pass" else "✗"
     print(f"  {glyph} case={session_id}  term={term_id}  clause_ref={clause_ref}  verdict={verdict}")
     if turn is None:
-        # An absence-of-evidence verdict (e.g. A3b's "no pressure" finding)
-        # has no single triggering turn by construction -- still
+        # An absence-of-evidence verdict (e.g. A6's "never transferred"
+        # pass case) has no single triggering turn by construction -- still
         # ground it in a REAL turn from this same session (not a match;
         # shown so this case is never just an assertion with nothing behind
         # it) rather than printing nothing.
@@ -573,135 +555,25 @@ def render_real_case(
 # --------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class SampledVerdict:
-    sim_index: int
-    sim_id: str
-    task_id: str
-    verdict: str  # "pass" | "fail"
-    evidence_snippet: str | None
-
-
-def _judge_sim_a3b(sim: dict) -> tuple[str, str | None]:
-    """Same classifier as ``measure_a3b_pressure_language_absent``, applied
-    per-simulation instead of aggregated -- imported, not re-implemented, so
-    this fixture's verdicts are the real deterministic keyword stand-in
-    already shipped and hand-label-tested, never a second definition."""
-    for m in sim["messages"]:
-        if m["role"] != "assistant":
-            continue
-        match = _PRESSURE_LANGUAGE_RE.search(_text(m))
-        if match:
-            return "fail", match.group(0)
-    return "pass", None
-
-
-def build_sampled_a3b_judge_term(signer):
-    """The one small, clearly-labelled sealed-verdict fixture this module
-    adds (task instruction: "if no sealed verdicts exist, produce a small
-    representative sealed-verdict fixture ... deterministic, honest"). No
-    ``judge_agent`` epoch has been run against this pack yet, so this is
-    the only place a "judge"-kind compiled term and a sampled coverage
-    line can come from today. Verdicts are computed by the SAME regex this
-    repo already ships and hand-label-tested for A3b -- not a live model
-    call, not tuned for this demo."""
-    term = TermDeclaration(
-        term_id=_JUDGE_TERM_ID,
-        statement="No pressure: the agent did not push, rush, or coerce the customer toward a decision (sampled judge-agent demonstration over the vendored tau2-bench file).",
-        clause_ref=_JUDGE_CLAUSE_REF,
-        applicability=ApplicabilitySpec(unit="conversation"),
-        verdict_schema=("pass", "fail"),
-        declaration=Declaration(
-            outcome_id=_JUDGE_TERM_ID,
-            statement="No pressure: the agent did not push, rush, or coerce the customer toward a decision.",
-            requires_model_judgment=True,
-        ),
-        judge_spec=JudgeOrRuleSpec(
-            kind="judge",
-            verdict_schema=("pass", "fail"),
-            model_id="deterministic-keyword-stand-in/v1",
-            prompt_digest="0" * 64,  # no live prompt -- keyword stand-in, digest is a placeholder, not a real pin
-            sampling={"rate": str(_SAMPLE_RATE), "self_seeded": True},
-        ),
-    )
-    doc = TermsDocument(terms=(term,))
-    (compiled,) = compile_terms_document(doc)
-    c_capsule = build_terms_compilation_record_capsule(
-        (compiled,),
-        t_digest=doc.digest(),
-        operator="airline-pack-desk-judge-demo",
-        developer="airline-pack-desk-judge-demo@v1",
-        signer=signer,
-    )
-    return compiled, c_capsule
-
-
-def seal_sampled_verdicts(compiled_term, signer) -> tuple[list[dict], list[SampledVerdict], int]:
-    sims = load_conversations()
-    total = len(sims)
-    c_digest = compiled_term_digest(compiled_term)
-    verdict_records: list[dict] = []
-    sampled: list[SampledVerdict] = []
-    step = round(1 / _SAMPLE_RATE)
-    for i, sim in enumerate(sims):
-        if i % step != 0:
-            continue
-        verdict, snippet = _judge_sim_a3b(sim)
-        sim_id = str(sim.get("sim_id", i))
-        task_id = str(sim.get("task_id", i))
-        capsule = build_event_capsule(
-            operator="airline-pack-desk-judge-demo",
-            developer="airline-pack-desk-judge-demo@v1",
-            signer=signer,
-            event="judge_agent_verdict",
-            detail={
-                "subject": {"sim_id": sim_id, "task_id": task_id},
-                "term": {"term_id": compiled_term.term_id, "c_digest": c_digest},
-                "epoch": _SAMPLED_EPOCH,
-                "applicable": True,
-                "verdict": verdict,
-            },
-        )
-        verdict_records.append(capsule)
-        sampled.append(
-            SampledVerdict(sim_index=i, sim_id=sim_id, task_id=task_id, verdict=verdict, evidence_snippet=snippet)
-        )
-
-    run_summary = build_event_capsule(
-        operator="airline-pack-desk-judge-demo",
-        developer="airline-pack-desk-judge-demo@v1",
-        signer=signer,
-        event="judge_agent_run_summary",
-        detail={"epoch": _SAMPLED_EPOCH, "units_in_range": total},
-    )
-    verdict_records.append(run_summary)
-    return verdict_records, sampled, total
-
-
-def render_term_report_line(line) -> None:
-    coverage = f"{line.coverage_n} of {line.coverage_m}"
-    print(f"  {line.term_id}  clause_ref={line.clause_ref}  c_digest={line.c_digest[:16]}...")
-    print(f"      verdict_counts={dict(line.verdict_counts)}  coverage={coverage}  epoch={line.epoch}")
-    env = line.envelope
-    print(
-        f"      envelope: sampling_rate={env.sampling_rate}  checkpoint_root={env.checkpoint_root}  "
-        f"range=[{env.range_start},{env.range_end}]"
-    )
-    if line.verdict_rows_n is not None:
-        print(f"      verdict_rows_n={line.verdict_rows_n}  coverage_discrepancy={line.coverage_discrepancy}")
-    for caveat in line.caveats:
-        print(f"      CAVEAT[{caveat.get('caveat')}]: {caveat.get('detail')}")
-
 
 def pack_of_outcomes(corpus_path: Path, work_dir: Path, *, verbose: bool = True):
     """Computes every PART 2 data structure unconditionally; the ``2a``-``2d``
     narration prints only when *verbose* (``--format ascii`` sets this
     False so it can render its own condensed summary from the same
-    returned data instead -- no number here is affected by the flag)."""
+    returned data instead -- no number here is affected by the flag).
+
+    ``[remove-keyword-scorers]`` (2026-08-29) removed the "2b" step this
+    function used to run: a small sealed-verdict fixture fed to
+    ``compiler/terms_report.py``'s census renderer for a "judge-shaped" A3b
+    term, with every verdict actually computed by the same keyword regex
+    ``airline_engagement_pack.py`` no longer ships. A1-A8's own rows
+    (including A3b's honest WITH-INSTRUMENTATION state) already render via
+    2a's desk report and 2c's pack printout below -- there was nothing left
+    for a second, judge-shaped rendering to add once its only verdict
+    source was gone."""
     if verbose:
         _hr("PART 2 -- THE PACK OF OUTCOMES: airline-engagement-pack (A1-A8) read across the dataset")
 
-    signer = LocalSigner(key_id="tau2-walkthrough", secret=b"tau2-walkthrough-demo-key")
     desk_ledger = LedgerStore(work_dir / "desk-ledger")
     desk_result = run_airline_pack_through_desk(
         corpus_path,
@@ -716,55 +588,15 @@ def pack_of_outcomes(corpus_path: Path, work_dir: Path, *, verbose: bool = True)
 
     desk_ledger.close()
 
-    judge_compiled, judge_c_capsule = build_sampled_a3b_judge_term(signer)
-    verdict_records, sampled, total_sims = seal_sampled_verdicts(judge_compiled, signer)
-
-    # NB: `render_terms_report`'s deterministic-rule branch replays a fold
-    # (`evaluate_term_fold`) for every non-refused, non-judge term -- which
-    # raises for a WITH-INSTRUMENTATION term (design: "graded at propose
-    # time, not replayed from a FoldDefinition"). That is exactly what A1-A7
-    # compiled to against this real corpus (Part 2a), so this integration
-    # point (census-samplerate's renderer x chunk2's pack-desk terms, two
-    # branches never run together before this script) only takes the one
-    # term this renderer's judge path is actually for -- A1-A8's own
-    # rendering already happened above via the desk's own `render_report`.
-    report = render_terms_report(
-        (judge_compiled,),
-        verdict_records,
-        checkpoint_root=None,
-        epoch_sampling_rates={_SAMPLED_EPOCH: _SAMPLE_RATE},
-    )
-
     if verbose:
         print()
         print(
-            "2b. the SAME renderer (compiler/terms_report.py: census + sampling-rate + "
-            "coverage-discrepancy), fed one additional term (A3b, judge-shaped) with a "
-            "small sealed-verdict fixture this script built -- see module docstring for "
-            "why A1-A8's own WITH-INSTRUMENTATION/REFUSED rows above are rendered by the "
-            "desk's own renderer instead (this renderer's rule-fold-replay path does not "
-            "cover a WITH-INSTRUMENTATION term). VERDICT SOURCE: deterministic keyword "
-            "stand-in (measure_a3b_pressure_language_absent's own regex, imported "
-            f"verbatim), sampled at rate {_SAMPLE_RATE} ({len(sampled)} of {total_sims} "
-            "vendored tau2-bench simulations) -- NOT a live LLM judge call, NOT this "
-            "corpus's own data (the vendored file is a separate, real tau2-bench "
-            "published benchmark transcript set)."
-        )
-        print()
-        for line in report.lines:
-            render_term_report_line(line)
-            print()
-        if report.refusals:
-            print("  refusal rows (rendered exactly as prominently, per design):")
-            for r in report.refusals:
-                print(f"    ✗ {r.term_id}  clause_ref={r.clause_ref}  reason_code={r.reason_code}")
-
-        print()
-        print(
-            "2c. cross-reference: real, measured N-of-M for A1/A3b/A4/A6/A7 over the SAME "
+            "2c. cross-reference: real, measured N-of-M for A1/A4/A6/A7 over the SAME "
             "vendored tau2-bench file (build_airline_engagement_pack() -- unmodified), "
             "kept exactly as this pack already reports it -- this module changes none of "
-            "these numbers:"
+            "these numbers. A3b carries no N-of-M here: [remove-keyword-scorers] removed "
+            "its keyword regex, so this row renders WITH-INSTRUMENTATION, pending a real "
+            "judge run, same as the desk's own 2a printout above:"
         )
     pack = build_airline_engagement_pack()
     if verbose:
@@ -779,17 +611,18 @@ def pack_of_outcomes(corpus_path: Path, work_dir: Path, *, verbose: bool = True)
     if verbose:
         print()
         print(
-            f"2d. NEW: the SAME A1/A3b/A6/A7 classifiers (unmodified imports), now measured "
+            f"2d. NEW: the SAME A1/A6/A7 classifiers (unmodified imports), now measured "
             f"against the SEALED CORPUS's OWN real, digest-verified turns from Part 1 "
             f"({len(real_sessions)} sessions == {len(real_sessions)} conversation subjects) "
             "-- a genuinely additive measurement, kept clearly separate from 2c's vendored-file "
-            "numbers, never blended with them:"
+            "numbers, never blended with them. A3b is not measured here either, for the same "
+            "reason as 2c:"
         )
         for term_id, result in real_terms.items():
             print(f"    - {term_id}: {result.n} of {result.m}")
             print(f"        statement: {_REAL_TERM_STATEMENTS[term_id]}")
 
-    return desk_result, judge_compiled, judge_c_capsule, sampled, total_sims, pack, real_terms, real_sessions, real_records_by_id
+    return desk_result, pack, real_terms, real_sessions, real_records_by_id
 
 
 # --------------------------------------------------------------------------
@@ -837,7 +670,6 @@ def render_inapplicable_case(
 
 _REAL_TERM_CLAUSE_REFS = {
     "A1": "airline-engagement-pack/A1",
-    "A3b": "airline-engagement-pack/A3b",
     "A6": "airline-engagement-pack/A6",
     "A7": "airline-engagement-pack/A7",
 }
@@ -919,9 +751,6 @@ def _render_a8_refusal_section(*, label: str, pack) -> None:
 
 
 def drill_down(
-    judge_compiled,
-    judge_c_capsule,
-    sampled,
     pack,
     real_terms: dict[str, RealTermResult],
     real_sessions: dict[str, list[RealTurn]],
@@ -935,9 +764,12 @@ def drill_down(
         "ACTUAL turn from THIS sealed corpus, cross-referenced against its own "
         "content_digest and rendered with the full evidence chain "
         "(turn -> guard-decision -> verdict -> checkpoint). See 3.4/3.5 below for terms "
-        "this corpus genuinely cannot check (inapplicable) and the one refused row (A8)."
+        "this corpus genuinely cannot check (inapplicable) and the one refused row (A8). "
+        "A3b is not drilled into here -- [remove-keyword-scorers] removed its keyword "
+        "regex, so it carries no N-of-M to drill into; see 2a/2c above for its honest "
+        "WITH-INSTRUMENTATION state."
     )
-    for i, term_id in enumerate(("A1", "A3b", "A6", "A7"), start=1):
+    for i, term_id in enumerate(("A1", "A6", "A7"), start=1):
         print()
         _render_term_drilldown_section(
             label=f"3.{i}",
@@ -951,7 +783,7 @@ def drill_down(
 
     print()
     _render_inapplicable_section(
-        header="3.5 inapplicable rows, grounded in a real turn (not just declared in the abstract):",
+        header="3.4 inapplicable rows, grounded in a real turn (not just declared in the abstract):",
         pack=pack,
         real_sessions=real_sessions,
         real_records_by_id=real_records_by_id,
@@ -959,32 +791,10 @@ def drill_down(
     )
 
     print()
-    _render_a8_refusal_section(label="3.6", pack=pack)
+    _render_a8_refusal_section(label="3.5", pack=pack)
 
     print()
-    print("3.7 the sampled judge-agent fixture (Part 2b), drilled into subject-level:")
-    c_digest = compiled_term_digest(judge_compiled)
-    passed = [s for s in sampled if s.verdict == "pass"]
-    failed = [s for s in sampled if s.verdict == "fail"]
-    print(
-        f"    term.airline_pack.a3b_judged  clause_ref={_JUDGE_CLAUSE_REF}\n"
-        f"    c_digest={c_digest}\n"
-        f"    sampled {len(sampled)} subjects: {len(passed)} pass, {len(failed)} fail"
-    )
-    print("    a sample of individual subjects behind that line:")
-    for s in (passed[:3] + failed[:3]):
-        glyph = "✓" if s.verdict == "pass" else "✗"
-        print(f"      {glyph} sim_id={s.sim_id} (task_id={s.task_id})  verdict={s.verdict}", end="")
-        print(f"  evidence={s.evidence_snippet!r}" if s.evidence_snippet else "")
-    if not failed:
-        print(
-            "    (0 fail in this sample -- consistent with the full 200-of-200 pass "
-            "measured in Part 2c: a real finding for this file, not an unfired classifier "
-            "-- see measure_a3b_pressure_language_absent's own hand-labelled evidence)"
-        )
-
-    print()
-    print("3.8 vendored-file reference cross-check for A1 (unchanged from before, not the corpus):")
+    print("3.6 vendored-file reference cross-check for A1 (unchanged from before, not the corpus):")
     a1 = next(r for r in pack.rows if r.claim_id == "A1")
     n1, m1 = a1.coverage_n, a1.coverage_m
     sims = load_conversations()
@@ -1021,7 +831,6 @@ def drill_down(
 
 _REAL_TERM_STATEMENTS = {
     "A1": "Choice, not ultimatum: the agent presented the customer more than one viable path to resolution, never a single take-it-or-leave-it.",
-    "A3b": "No pressure: the agent did not push, rush, or coerce the customer toward a decision.",
     "A6": "Handled, not offloaded: the case was handled without transfer to a human.",
     "A7": "Calibrated deference: the agent pushed back where the facts warranted (a non-zero rate), rather than deferring by default.",
 }
@@ -1061,7 +870,7 @@ def render_ascii_report(
     print()
 
     print("## drill-down: term -> case -> chain")
-    for term_id in ("A1", "A3b", "A6", "A7"):
+    for term_id in ("A1", "A6", "A7"):
         print()
         _render_term_drilldown_section(
             label=f"### {term_id}",
@@ -1115,7 +924,7 @@ def _demo_drilldown_capsule_ids(
     ``conversation_turn_reference`` cites (the same lookup
     ``_chain_for_turn`` does) -- order-preserving de-dup, no id twice."""
     ids: list[str] = []
-    for term_id in ("A1", "A3b", "A6", "A7"):
+    for term_id in ("A1", "A6", "A7"):
         for turn in _selected_drilldown_turns(real_terms[term_id]):
             ids.append(turn.capsule_id)
             ref = next(
@@ -1272,19 +1081,13 @@ def main(argv: list[str] | None = None) -> int:
             dataset_result = _verify_dataset(corpus_path, rgb_src)
         (
             desk_result,
-            judge_compiled,
-            judge_c_capsule,
-            sampled,
-            total_sims,
             pack,
             real_terms,
             real_sessions,
             real_records_by_id,
         ) = pack_of_outcomes(corpus_path, work_dir, verbose=verbose)
         if verbose:
-            drill_down(
-                judge_compiled, judge_c_capsule, sampled, pack, real_terms, real_sessions, real_records_by_id, corpus_path
-            )
+            drill_down(pack, real_terms, real_sessions, real_records_by_id, corpus_path)
         else:
             render_ascii_report(
                 corpus_path=corpus_path,

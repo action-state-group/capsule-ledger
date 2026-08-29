@@ -103,30 +103,39 @@ class DeclarationDrafter(Protocol):
     def draft(self, statement: str, *, outcome_id: str) -> DraftedDeclaration: ...
 
 
-# Static reference drafter's tiny inline-hint grammar: `action_class:<id>`
-# or `offer_namespace:<id>`, matching the open, registry-resolved naming
-# convention `candidates.py`'s own DEFAULT_CANDIDATES uses (e.g.
-# "remediation", "advisory"). This is a wiring-proof stand-in, not real
-# language understanding -- same role as `StaticRationaleDrafter`/judge's
+# Static reference drafter's inline-hint grammar: `kind:<attainment|
+# offer_response|decision>` plus `action_class:<id>` or `offer_namespace:
+# <id>`, matching the open, registry-resolved naming convention
+# `candidates.py`'s own DEFAULT_CANDIDATES uses (e.g. "remediation",
+# "advisory"). This is a wiring-proof stand-in, not real language
+# understanding -- same role as `StaticRationaleDrafter`/judge's
 # `StaticScorer`: a real deployment drafts declarations with
 # `DeepEvalDeclarationDrafter`, which reads free text with a model instead.
-_PARAM_RE = re.compile(r"\b(action_class|offer_namespace):([a-z][a-z0-9_.]*)\b")
-
-_KIND_TRIGGER_WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("decision", ("authorized", "authorization")),
-    ("offer_response", ("offer",)),  # matches "offer", "offered", "offering"
-    ("attainment", ("confirmed",)),
-)
+#
+# ``[remove-keyword-scorers]`` (2026-08-29) removed this drafter's PRIOR
+# classification path: it used to guess `kind` from whether a fixed list of
+# ordinary English words ("authorized", "offer", "confirmed") appeared
+# anywhere in the statement -- a keyword scorer masquerading as a
+# structural parser, exactly the anti-pattern this task targets. `kind` is
+# now itself an explicit hint, same shape and same regex as
+# `action_class`/`offer_namespace` -- this drafter no longer infers
+# anything from ordinary prose, it only reads annotations a human
+# deliberately embedded (the same closed vocabulary
+# `DeepEvalDeclarationDrafter`'s own prompt already asks a live model to
+# emit via its `kind=...` output line).
+_PARAM_RE = re.compile(r"\b(action_class|offer_namespace|kind):([a-z][a-z0-9_.]*)\b")
 
 
 def _strip_hints(statement: str) -> str:
     """The persisted ``Outcome.statement`` is a disclosable field an auditor
     reads (design §3.6) -- it must never carry this reference drafter's own
-    inline ``action_class:``/``offer_namespace:`` extraction syntax. Strips
-    the hint token and any now-empty enclosing parens, leaving the plain
-    English sentence a human actually wrote."""
+    inline ``kind:``/``action_class:``/``offer_namespace:`` extraction
+    syntax. Strips each hint token and any now-empty enclosing parens (now
+    possibly carrying nothing but whitespace and the ``; `` separator
+    between two or more stripped hints, e.g. ``(kind:x; action_class:y)`` ->
+    ``(; )``), leaving the plain English sentence a human actually wrote."""
     cleaned = _PARAM_RE.sub("", statement)
-    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\([\s;]*\)", "", cleaned)
     return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
@@ -134,11 +143,13 @@ def _strip_hints(statement: str) -> str:
 class StaticDeclarationDrafter:
     """No-network deterministic reference (``--drafter static``): proves the
     ``draft_declaration`` plumbing end to end without a model call or
-    nondeterminism. Classifies by a fixed, tiny keyword+hint grammar --
-    NOT real natural-language understanding, same disclaimer
-    ``StaticRationaleDrafter`` carries for prose. Statements that don't
-    carry an explicit ``action_class:``/``offer_namespace:`` hint, or match
-    none of the three trigger-word groups, are honestly reported as
+    nondeterminism. Classifies by a fixed, tiny STRUCTURED hint grammar --
+    an explicit ``kind:<attainment|offer_response|decision>`` annotation
+    plus ``action_class:``/``offer_namespace:``, never a guess from ordinary
+    prose (see the module comment above ``_PARAM_RE``). Statements that
+    don't carry an explicit ``kind:`` hint, or whose ``kind:`` names
+    something other than the three known evidence-rule kinds, or that are
+    missing the param hint their kind requires, are honestly reported as
     unmappable rather than guessed at."""
 
     model_id: str = "static-drafter/deterministic"
@@ -147,7 +158,7 @@ class StaticDeclarationDrafter:
         prompt_digest = _prompt_digest(model_id=self.model_id, statement=statement, outcome_id=outcome_id)
         lowered = statement.lower()
         params = dict(_PARAM_RE.findall(lowered))
-        kind = next((k for k, triggers in _KIND_TRIGGER_WORDS if any(t in lowered for t in triggers)), None)
+        kind = params.get("kind")
         clean_statement = _strip_hints(statement)
 
         candidate: Candidate

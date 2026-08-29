@@ -48,10 +48,10 @@ def test_walkthrough_runs_clean_and_prints_all_three_parts(capsys):
     # this module's brute-force sha256 workaround recovers every turn's text
     assert "0 of 959 resolve via a direct PayloadStore.resolve" in out
     assert "959 of 959 resolve -- the turn text IS sealed" in out
-    # census + sampling-rate + coverage-discrepancy, exercised for the one
-    # judge-shaped term this walkthrough seals a sampled verdict fixture for
-    assert "sampling_rate=0.25" in out
-    assert "coverage_discrepancy=True" in out
+    # A3b's keyword scorer was removed ([remove-keyword-scorers]) -- it now
+    # renders its honest pending-judge state alongside the rest of the pack,
+    # never a fabricated sampled-judge-fixture census
+    assert "WITH-INSTRUMENTATION" in out
     # refusal rows render, never dropped
     assert "subjective_state_unattestable" in out
 
@@ -95,10 +95,15 @@ def test_ascii_format_reports_the_same_numbers_as_verbose(capsys):
     assert "subjective_state_unattestable" in ascii_out
 
     # the real, digest-verified corpus terms are numerically identical between formats
-    # (verbose indents these one level deeper under "2d. NEW: ...")
-    for term_line in ("A1: 23 of 73", "A3b: 73 of 73", "A6: 47 of 73", "A7: 4 of 73"):
+    # (verbose indents these one level deeper under "2d. NEW: ..."). A3b
+    # carries no N-of-M here -- [remove-keyword-scorers] removed its keyword
+    # regex, so it is absent from both formats' term-outcome lists (A3b's
+    # NAME can still legitimately appear elsewhere, e.g. A3a's own rationale
+    # cross-referencing it -- this only checks the term-outcome list itself).
+    for term_line in ("A1: 23 of 73", "A6: 47 of 73", "A7: 4 of 73"):
         assert f"- {term_line}" in ascii_out
         assert f"- {term_line}" in verbose_out
+    assert "- A3b:" not in ascii_out
 
 
 def test_permalink_out_builds_a_verifiable_bundle_and_offline_viewer(tmp_path, capsys):

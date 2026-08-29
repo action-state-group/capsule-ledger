@@ -33,7 +33,7 @@ instance ready: .capsule-setup
 $ export CAPSULE_SETUP_SIGNING_KEY_ID=capsule-setup-key   # from above
 $ export CAPSULE_SETUP_SIGNING_SECRET=<paste the secret from above>
 $ capsule setup propose \
-    --statement "a refund action_class:refund_issued was confirmed by the billing system" \
+    --statement "a refund was confirmed by the billing system (kind:attainment; action_class:refund_issued)" \
     --outcome-id acme.refund_confirmed \
     --drafter static
 
@@ -55,20 +55,24 @@ pair](#the-verdict-pair-what-youre-actually-being-told) below).
 
 `--drafter static` is a deterministic, no-network reference implementation, not
 real language understanding — it exists so you can try the whole path with zero
-setup and zero API key. It looks for one inline hint plus one trigger word:
+setup and zero API key. It never guesses from ordinary words in your sentence
+(an earlier version did, matching words like "confirmed" or "offer" anywhere in
+the prose — that was a keyword scorer masquerading as a parser, and it's gone).
+It looks for one explicit `kind:` hint, plus the param hint that kind needs:
 
-| you want a...        | trigger word (anywhere in the sentence) | required hint                    |
-|-----------------------|------------------------------------------|-----------------------------------|
-| **attainment** claim (`X was confirmed`) | `confirmed`                    | `action_class:<your_id>`          |
-| **offer/response** claim (`someone was offered a choice`) | `offer`, `offered`, `offering` | `offer_namespace:<your_id>` (optional; defaults to `advisory`) |
-| **decision** claim (`X was authorized`) | `authorized`, `authorization`  | `action_class:<your_id>`          |
+| you want a...        | required `kind:` hint | required param hint               |
+|-----------------------|------------------------|-----------------------------------|
+| **attainment** claim (`X was confirmed`) | `kind:attainment`  | `action_class:<your_id>`          |
+| **offer/response** claim (`someone was offered a choice`) | `kind:offer_response` | `offer_namespace:<your_id>` (optional; defaults to `advisory`) |
+| **decision** claim (`X was authorized`) | `kind:decision`  | `action_class:<your_id>`          |
 
-The hint is stripped before the statement is stored — it never appears in the
+Both hints are stripped before the statement is stored — neither appears in the
 persisted, disclosable `statement` field, only in what you type on the command
-line. A statement matching none of these is **not an error** — it's reported as
+line. A statement missing the `kind:` hint, naming an unrecognized kind, or
+missing the param hint its kind needs, is **not an error** — it's reported as
 `REFUSED -- no known evidence rule can check this statement at all`, honestly,
-because the static drafter's grammar really is this small. For real free text with
-no hint syntax, use `--drafter deepeval` instead (requires `pip install
+because the static drafter never guesses at what you meant. For real free text
+with no hint syntax, use `--drafter deepeval` instead (requires `pip install
 capsule-ledger[judge]` and a model; see `docs/judge-harness.md` for the BYOM
 pattern this reuses) — same command, same output shape, same deterministic verdict
 computation underneath; only the *rationale prose* and how the candidate structure

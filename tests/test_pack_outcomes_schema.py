@@ -426,18 +426,20 @@ def test_measured_outcome_may_still_declare_an_evidence_instrument(tmp_path):
 
 def test_the_real_airline_engagement_pack_loads_clean_with_expected_measurability_split():
     """The real, committed catalog pack this task templatizes -- not a
-    synthetic fixture. 5 measured (A1, A3b, A4, A6, A7), 3 declared_not_measured
-    (A2, A3a, A5), matching the exact split
-    ``record_grounding_bench.judge_run.airline_terms`` judges over the tau2
-    airline corpus."""
+    synthetic fixture. 4 measured (A1, A4, A6, A7), 4 declared_not_measured
+    (A2, A3a, A3b, A5). ``[remove-keyword-scorers]`` moved A3b from measured
+    (a keyword regex reported as a finding) to declared_not_measured (honest
+    pending-judge state) -- it no longer matches
+    ``record_grounding_bench.judge_run.airline_terms``'s split over the tau2
+    airline corpus for exactly that row."""
     pack_dir = Path(__file__).parent.parent / "capsule_ledger" / "packs" / "catalog" / "airline-engagement"
     pack = load_pack_dir(pack_dir)
     by_id = {o.id: o for o in pack.outcomes}
     assert set(by_id) == {"A1", "A2", "A3a", "A3b", "A4", "A5", "A6", "A7"}
     measured = {oid for oid, o in by_id.items() if o.measurability == "measured"}
     declared_not_measured = {oid for oid, o in by_id.items() if o.measurability == "declared_not_measured"}
-    assert measured == {"A1", "A3b", "A4", "A6", "A7"}
-    assert declared_not_measured == {"A2", "A3a", "A5"}
+    assert measured == {"A1", "A4", "A6", "A7"}
+    assert declared_not_measured == {"A2", "A3a", "A3b", "A5"}
     for oid in declared_not_measured:
         assert by_id[oid].evidence_instrument is not None
 

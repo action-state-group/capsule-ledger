@@ -45,7 +45,7 @@ def test_statement_not_mappable_is_registered_in_the_closed_vocabulary():
 def test_static_drafter_maps_hinted_statement_to_attainment_candidate():
     drafter = StaticDeclarationDrafter()
     drafted = drafter.draft(
-        "a remediation action was confirmed by an external system (action_class:remediation)",
+        "a remediation action was confirmed by an external system (kind:attainment; action_class:remediation)",
         outcome_id="outcome.custom_remediation",
     )
     assert isinstance(drafted.candidate, AttainmentCandidate)
@@ -53,6 +53,7 @@ def test_static_drafter_maps_hinted_statement_to_attainment_candidate():
     assert drafted.candidate.outcome_id == "outcome.custom_remediation"
     # the hint syntax never survives into the disclosable statement text
     assert "action_class:" not in drafted.candidate.statement
+    assert "kind:" not in drafted.candidate.statement
     assert drafted.model_id == "static-drafter/deterministic"
     assert _HEX64.match(drafted.prompt_digest)
 
@@ -60,7 +61,7 @@ def test_static_drafter_maps_hinted_statement_to_attainment_candidate():
 def test_static_drafter_maps_offer_hint_to_offer_response_candidate():
     drafter = StaticDeclarationDrafter()
     drafted = drafter.draft(
-        "a person was offered a choice and their response is on record (offer_namespace:advisory)",
+        "a person was offered a choice and their response is on record (kind:offer_response; offer_namespace:advisory)",
         outcome_id="outcome.custom_choice",
     )
     assert isinstance(drafted.candidate, OfferResponseCandidate)
@@ -69,7 +70,7 @@ def test_static_drafter_maps_offer_hint_to_offer_response_candidate():
 
 def test_static_drafter_offer_hint_defaults_namespace_when_omitted():
     drafter = StaticDeclarationDrafter()
-    drafted = drafter.draft("a person was offered a choice", outcome_id="outcome.custom_choice")
+    drafted = drafter.draft("a person was offered a choice (kind:offer_response)", outcome_id="outcome.custom_choice")
     assert isinstance(drafted.candidate, OfferResponseCandidate)
     assert drafted.candidate.offer_namespace == "advisory"
 
@@ -77,7 +78,7 @@ def test_static_drafter_offer_hint_defaults_namespace_when_omitted():
 def test_static_drafter_maps_hinted_statement_to_decision_candidate():
     drafter = StaticDeclarationDrafter()
     drafted = drafter.draft(
-        "a change request was authorized by policy rather than blocked (action_class:booking.modify)",
+        "a change request was authorized by policy rather than blocked (kind:decision; action_class:booking.modify)",
         outcome_id="outcome.custom_change",
     )
     assert isinstance(drafted.candidate, DecisionCandidate)
@@ -91,15 +92,46 @@ def test_static_drafter_refuses_a_statement_with_no_matching_kind():
     assert drafted.candidate.reason_code == STATEMENT_NOT_MAPPABLE
 
 
-def test_static_drafter_refuses_when_kind_matched_but_no_param_hint():
-    """RED-before-green for the drop-not-guess discipline: 'confirmed' alone
-    triggers the attainment kind-word, but with no action_class hint there
-    is nothing to grade evidence against, so this must refuse -- not invent
-    a placeholder action_class."""
+def test_static_drafter_refuses_an_unrecognized_kind_hint():
     drafter = StaticDeclarationDrafter()
-    drafted = drafter.draft("a remediation action was confirmed by an external system", outcome_id="outcome.x")
+    drafted = drafter.draft(
+        "the interaction increased the counterparty's trust in the system (kind:sentiment)", outcome_id="outcome.x"
+    )
     assert isinstance(drafted.candidate, RefusedCandidate)
     assert drafted.candidate.reason_code == STATEMENT_NOT_MAPPABLE
+
+
+def test_static_drafter_refuses_when_kind_hinted_but_no_param_hint():
+    """RED-before-green for the drop-not-guess discipline: an explicit
+    kind:attainment hint alone, with no action_class hint, has nothing to
+    grade evidence against, so this must refuse -- not invent a placeholder
+    action_class."""
+    drafter = StaticDeclarationDrafter()
+    drafted = drafter.draft(
+        "a remediation action was confirmed by an external system (kind:attainment)", outcome_id="outcome.x"
+    )
+    assert isinstance(drafted.candidate, RefusedCandidate)
+    assert drafted.candidate.reason_code == STATEMENT_NOT_MAPPABLE
+
+
+def test_static_drafter_no_longer_infers_kind_from_ordinary_prose():
+    """[remove-keyword-scorers] mutant proof: this exact statement carries
+    'confirmed' and an action_class hint -- under the OLD keyword-trigger
+    mechanism this mapped to an AttainmentCandidate purely because the word
+    'confirmed' appeared in prose. With no explicit kind: hint, it must now
+    refuse rather than guess."""
+    drafter = StaticDeclarationDrafter()
+    drafted = drafter.draft(
+        "a remediation action was confirmed by an external system (action_class:remediation)", outcome_id="outcome.x"
+    )
+    assert isinstance(drafted.candidate, RefusedCandidate)
+    assert drafted.candidate.reason_code == STATEMENT_NOT_MAPPABLE
+
+
+def test_module_no_longer_exposes_the_kind_trigger_word_table():
+    import capsule_ledger.setup.declaration_drafter as mod
+
+    assert not hasattr(mod, "_KIND_TRIGGER_WORDS")
 
 
 # --- draft_declaration: never silently drops a fresh candidate -------------
@@ -108,7 +140,7 @@ def test_static_drafter_refuses_when_kind_matched_but_no_param_hint():
 def test_draft_declaration_zero_evidence_reports_0_of_0_not_dropped(store, signer):
     drafter = StaticDeclarationDrafter()
     outcome = draft_declaration(
-        "a remediation action was confirmed by an external system (action_class:remediation)",
+        "a remediation action was confirmed by an external system (kind:attainment; action_class:remediation)",
         outcome_id="outcome.fresh_remediation",
         drafter=drafter,
         ledger=store,
@@ -131,7 +163,7 @@ def test_draft_declaration_grades_real_evidence(store, signer):
 
     drafter = StaticDeclarationDrafter()
     outcome = draft_declaration(
-        "a remediation action was confirmed by an external system (action_class:remediation)",
+        "a remediation action was confirmed by an external system (kind:attainment; action_class:remediation)",
         outcome_id="outcome.fresh_remediation",
         drafter=drafter,
         ledger=store,
@@ -182,7 +214,7 @@ def test_drafted_and_hand_authored_candidates_produce_byte_identical_d_digest(st
         outcome_id=outcome_id, statement="a remediation action was confirmed by an external system", action_class="remediation"
     )
     drafted = StaticDeclarationDrafter().draft(
-        "a remediation action was confirmed by an external system (action_class:remediation)", outcome_id=outcome_id
+        "a remediation action was confirmed by an external system (kind:attainment; action_class:remediation)", outcome_id=outcome_id
     )
 
     # model off: candidate hand-authored directly, never touching a drafter
@@ -191,7 +223,7 @@ def test_drafted_and_hand_authored_candidates_produce_byte_identical_d_digest(st
 
     # model on: the SAME candidate structure, drafted from English text
     on = draft_declaration(
-        "a remediation action was confirmed by an external system (action_class:remediation)",
+        "a remediation action was confirmed by an external system (kind:attainment; action_class:remediation)",
         outcome_id=outcome_id,
         drafter=StaticDeclarationDrafter(),
         ledger=store,
@@ -247,7 +279,7 @@ def test_worked_example_english_to_proposal_to_confirm_to_compile(store, signer,
     decl_store = DeclarationStore(tmp_path / "on")
     outcome_id = "outcome.worked_example"
     outcome = draft_declaration(
-        "a remediation action was confirmed by an external system (action_class:remediation)",
+        "a remediation action was confirmed by an external system (kind:attainment; action_class:remediation)",
         outcome_id=outcome_id,
         drafter=StaticDeclarationDrafter(),
         ledger=store,

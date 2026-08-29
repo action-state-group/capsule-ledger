@@ -14,6 +14,7 @@ acceptance criteria stated verbatim in inbox.md --
 from __future__ import annotations
 
 import hashlib
+import re
 
 import pytest
 
@@ -26,7 +27,6 @@ from capsule_ledger.compiler.refusal import EVENT_REFUSAL
 from capsule_ledger.compiler.vocabulary import RESERVED_VERDICT_WORDS
 from capsule_ledger.examples.airline_engagement_pack import (
     _OPTION_LANGUAGE_RE,
-    _PRESSURE_LANGUAGE_RE,
     DATA_FILE,
     AirlineClaimResult,
     _asks_for_human,
@@ -34,7 +34,6 @@ from capsule_ledger.examples.airline_engagement_pack import (
     build_airline_engagement_pack,
     load_conversations,
     measure_a1_option_shaped_language,
-    measure_a3b_pressure_language_absent,
     measure_a4_human_reachable_when_asked,
     measure_a6_resolved_without_transfer,
     measure_a7_pushback_present,
@@ -173,6 +172,49 @@ def test_a3a_forward_verdict_matches_a2_and_a5_missing_instrument_pattern(pack):
     assert a3a.forward_verdict == a2.forward_verdict == a5.forward_verdict
 
 
+# --- A3b: the keyword stand-in was removed; renders WITH-INSTRUMENTATION ---
+# [remove-keyword-scorers]: A3b used to report a deterministic keyword
+# regex's count as if it were a MODEL-ASSISTED finding. "No pressure" is a
+# prose-quality judgment, not a structural event a regex can honestly stand
+# in for -- the row now renders pending a real judge run, never a fabricated
+# number.
+
+
+def test_a3b_no_longer_reports_a_measured_count(pack):
+    by_id = {r.claim_id: r for r in pack.rows}
+    a3b = by_id["A3b"]
+    assert a3b.forward_verdict == "UNAVAILABLE-MODEL-REQUIRED"
+    assert a3b.backward_verdict == "WITH-INSTRUMENTATION"
+    assert a3b.coverage_n is None
+    assert a3b.coverage_m is None
+    assert a3b.coverage_fraction() is None
+    assert a3b.missing_instrument == "llm_judge_verdict_a3b_pressure_language"
+    assert a3b.needs_instrumentation is True
+
+
+def test_a3b_rationale_names_the_removed_mechanism_not_a_number():
+    """Mutant proof: a regression that reintroduces a coverage_n/coverage_m
+    pair for A3b (e.g. someone re-wires the old regex back in) would make
+    this row's coverage_fraction() non-None again, which the test above
+    catches; this test separately locks that the rationale text itself
+    never carries a bare 'N of M' shape a reader could mistake for a real
+    measurement."""
+    pack = build_airline_engagement_pack()
+    by_id = {r.claim_id: r for r in pack.rows}
+    rationale = by_id["A3b"].rationale
+    assert "MISSING INSTRUMENT" in rationale
+    assert not re.search(r"\b\d+ of \d+\b", rationale)
+
+
+def test_module_no_longer_exposes_the_a3b_keyword_regex():
+    """[remove-keyword-scorers] acceptance: the keyword stand-in this row
+    used to render is gone from the module entirely, not merely unused."""
+    import capsule_ledger.examples.airline_engagement_pack as mod
+
+    assert not hasattr(mod, "_PRESSURE_LANGUAGE_RE")
+    assert not hasattr(mod, "measure_a3b_pressure_language_absent")
+
+
 # --- A1's own guard: refuses a one-option offer, RED when removed ----------
 
 
@@ -264,22 +306,6 @@ def test_a1_option_language_still_fires_on_a_genuine_either_or_offer():
     assert _OPTION_LANGUAGE_RE.search(text)
 
 
-def test_a3b_no_longer_fires_on_agents_own_promptness():
-    """41 of 45 legacy hits were the agent describing what IT will do
-    quickly, not pressure applied to the customer."""
-    assert not _PRESSURE_LANGUAGE_RE.search("I'll check your reservation details right away.")
-    assert not _PRESSURE_LANGUAGE_RE.search("The refund has been processed immediately.")
-
-
-def test_a3b_no_longer_fires_on_agent_empathising_with_customer_urgency():
-    assert not _PRESSURE_LANGUAGE_RE.search("Since you mentioned your mom is sick, I understand this is an urgent situation.")
-
-
-def test_a3b_still_fires_on_a_genuine_deadline_or_expiry_clause():
-    assert _PRESSURE_LANGUAGE_RE.search("You must book today to keep this rate.")
-    assert _PRESSURE_LANGUAGE_RE.search("This offer expires at midnight -- last chance to lock in the price.")
-
-
 def test_a4_negation_guard_excludes_a_declined_transfer():
     """A customer explicitly declining a transfer is not a request for
     one -- the negation guard exists because the retuned broader vocabulary
@@ -308,17 +334,18 @@ def test_vendored_conversation_file_has_200_simulations():
         # are the actual measured, hand-verified counts on the vendored
         # file today -- NOT a target. Pinned exactly (not a range) because
         # a bare "0 < n < m" is exactly what let a regex edit that halved
-        # A1's count ship green before: it cannot distinguish a genuine,
-        # hand-verified 200-of-200 (A3b) from a heuristic that stopped
-        # firing, nor can it catch a count that moved but stayed in-range.
-        # A real change to a classifier's precision/recall SHOULD move this
-        # number and SHOULD fail this test -- that is the point. When it's
-        # a genuine, deliberate retune: re-run the hand-labelling in
+        # A1's count ship green before: it cannot distinguish a genuine
+        # hand-verified count from a heuristic that stopped firing, nor can
+        # it catch a count that moved but stayed in-range. A real change to
+        # a classifier's precision/recall SHOULD move this number and
+        # SHOULD fail this test -- that is the point. When it's a genuine,
+        # deliberate retune: re-run the hand-labelling in
         # tests/test_airline_engagement_pack_hand_labels.py, update
         # hand_labels.json, and update the expected value here together,
-        # not this number alone.
+        # not this number alone. (A3b's own keyword stand-in and its pinned
+        # 200-of-200 were removed entirely, [remove-keyword-scorers] -- see
+        # test_a3b_no_longer_reports_a_measured_count above.)
         (measure_a1_option_shaped_language, 111),
-        (measure_a3b_pressure_language_absent, 200),
         (measure_a6_resolved_without_transfer, 160),
         (measure_a7_pushback_present, 26),
     ],
@@ -341,12 +368,12 @@ def test_a4_measures_reachability_conditioned_on_having_asked():
 
 def test_pack_rows_carry_their_measured_coverage(pack):
     by_id = {r.claim_id: r for r in pack.rows}
-    for claim_id in ("A1", "A3b", "A4", "A6", "A7"):
+    for claim_id in ("A1", "A4", "A6", "A7"):
         row = by_id[claim_id]
         assert row.coverage_n is not None
         assert row.coverage_m is not None
         assert row.coverage_fraction() == f"{row.coverage_n} of {row.coverage_m}"
-    for claim_id in ("A2", "A5", "A8"):
+    for claim_id in ("A2", "A3b", "A5", "A8"):
         row = by_id[claim_id]
         assert row.coverage_n is None
         assert row.coverage_fraction() is None

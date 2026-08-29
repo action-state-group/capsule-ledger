@@ -87,7 +87,7 @@ def test_static_drafter_end_to_end_drafts_and_persists_a_declaration(tmp_path):
             "setup", "propose",
             "--project-dir", str(tmp_path),
             "--ledger", str(ledger_dir),
-            "--statement", "a remediation action was confirmed by an external system (action_class:remediation)",
+            "--statement", "a remediation action was confirmed by an external system (kind:attainment; action_class:remediation)",
             "--outcome-id", "outcome.drafted_remediation",
             "--drafter", "static",
             "--out", str(out),
