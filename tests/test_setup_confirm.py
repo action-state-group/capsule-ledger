@@ -124,6 +124,9 @@ def test_confirm_prompt_seals_a_verifiable_capsule_chained_to_c(store, signer, t
     assert capsule["asg_payload"]["detail"]["instructions"] == generated.instructions
     assert capsule["asg_payload"]["detail"]["edited"] is False
     assert store.fetch(capsule["capsule_id"]) is not None
+    # T3's sealed capsule must be offline-verifiable, not merely fetchable --
+    # a stored-but-unverifiable record isn't the invariant confirm_prompt promises.
+    assert store.verify(capsule["capsule_id"]).ok
 
 
 def test_confirm_prompt_review_edit_reseals_with_the_edited_digest(store, signer, tmp_path):

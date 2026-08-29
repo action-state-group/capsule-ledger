@@ -94,6 +94,16 @@ def test_different_pack_context_framing_changes_the_digest():
     assert p1.prompt_digest() != p2.prompt_digest()
 
 
+def test_same_term_compiles_to_the_same_prompt_digest_twice():
+    # Determinism invariant: compiling the same outcome+pack-context twice,
+    # from fresh objects each time (not the same instance re-used), must
+    # yield the same prompt_digest -- the digest is a pure function of the
+    # term's content, not of object identity or compile order.
+    p1 = compile_judge_prompt(_outcome(), _pack_context())
+    p2 = compile_judge_prompt(_outcome(), _pack_context())
+    assert p1.prompt_digest() == p2.prompt_digest()
+
+
 def test_custom_label_set_and_model_id_hint_round_trip():
     prompt = compile_judge_prompt(
         _outcome(), _pack_context(), label_set=("meets", "does_not_meet"), model_id_hint="gemini-2.5-flash"
