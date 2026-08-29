@@ -23,8 +23,23 @@ appends a new, signed capsule to the ledger.
   rather than that the claim was unprovable." Seals the refusal capsule
   itself (design §2.2's compiler-refusal vocabulary) AND a second capsule
   recording the human's acknowledgment, chained to it.
+- **T3 -- judge-prompt confirmation** ([outcomes-to-judgeprompt-compiler-t3]
+  build spec point 2). The judge prompt a machine compiles
+  (``judge.prompt_compiler.compile_judge_prompt``) is load-bearing: it is
+  what a model actually reads to produce a judgment, so a human owns and
+  signs the FINAL wording the same way T1 owns the outcome's acceptance.
+  Mirrors T1/T4's recorded-act shape exactly -- ``decision="confirm"``
+  seals the compiled candidate verbatim; ``decision="review_edit"`` seals
+  an EDITED prompt instead, which naturally reseals under a different
+  ``prompt_digest`` (the digest commits to ``instructions``, so a wording
+  change is never silently absorbed). Chains to the compilation record C
+  the caller names (T1's ``confirm_accept`` return, or a terms-desk C) with
+  relation ``confirms`` -- the prompt observes/records against an already-
+  sealed C, it never supersedes it.
 """
 from __future__ import annotations
+
+from dataclasses import replace
 
 from ..compiler.compilation_record import EVENT_COMPILATION_RECORD
 from ..compiler.compile import seal_compilation_record
@@ -32,21 +47,31 @@ from ..compiler.refusal import EVENT_REFUSAL, build_refusal_capsule
 from ..compiler.scope_census import build_scope_census_capsule
 from ..guards.capsule import build_event_capsule
 from ..guards.signing import Signer
+from ..judge.prompt import JudgePromptDefinition
 from ..ledger.api import LedgerAPI
 from .compile_bridge import compiled_declaration_for
 from .declarations import DeclarationStore
 
 __all__ = [
     "EVENT_COMPILATION_RECORD",
+    "EVENT_JUDGE_PROMPT_CONFIRMED",
     "EVENT_REFUSAL",
     "EVENT_REFUSAL_ACKNOWLEDGED",
+    "PROMPT_CONFIRM_DECISIONS",
     "ConfirmError",
     "confirm_accept",
-    "confirm_scope_census",
     "confirm_acknowledge_refusal",
+    "confirm_prompt",
+    "confirm_scope_census",
 ]
 
 EVENT_REFUSAL_ACKNOWLEDGED = "compiler.refusal_acknowledged"
+EVENT_JUDGE_PROMPT_CONFIRMED = "compiler.judge_prompt_confirmed"
+
+# The CLI's own vocabulary for the T3 touchpoint -- "(C)onfirm / (R)eview-edit"
+# (build spec point 2). Closed set, same "unregistered is a typo" doctrine
+# every other closed vocabulary in this codebase follows.
+PROMPT_CONFIRM_DECISIONS = frozenset({"confirm", "review_edit"})
 
 
 class ConfirmError(ValueError):
@@ -173,3 +198,82 @@ def confirm_acknowledge_refusal(
 
     store.set_acceptance_state(outcome_id, "refused")
     return refusal_capsule, ack_capsule
+
+
+def confirm_prompt(
+    outcome_id: str,
+    *,
+    generated_prompt: JudgePromptDefinition,
+    decision: str,
+    compilation_record_capsule_id: str,
+    ledger: LedgerAPI,
+    signer: Signer,
+    operator: str,
+    developer: str,
+    store: DeclarationStore | None = None,
+    edited_instructions: str | None = None,
+) -> dict:
+    """T3. Seals the FINAL judge prompt for ``outcome_id`` -- either
+    ``generated_prompt`` verbatim (``decision="confirm"``) or an edited copy
+    of it (``decision="review_edit"``, ``edited_instructions`` required) --
+    as a signed capsule chained to ``compilation_record_capsule_id`` with
+    relation ``"confirms"``.
+
+    ``store``, when given, gates this the same way ``compiled_declaration_for``
+    gates T1/T4: ``outcome_id`` must already be T1-accepted
+    (``acceptance_state == "accepted"``) -- design's 6-step flow confirms the
+    OUTCOME (T1) before it confirms the outcome's JUDGE PROMPT (T3), never
+    the other way around. Omit ``store`` only for a caller that has already
+    verified acceptance some other way (e.g. the terms-desk profile, which
+    tracks acceptance across a whole ``TermsDocument`` rather than per-call).
+
+    Editing changes ``instructions`` only -- ``prompt_id``/``label_set``/
+    ``model_id_hint`` carry over from ``generated_prompt`` unchanged, so a
+    reviewer's edit is a wording correction, never a silent re-scoping of
+    what the prompt is even for. Because ``prompt_digest()`` commits to
+    ``instructions``, an edited prompt seals under a DIFFERENT digest than
+    the machine-compiled candidate -- the sealed capsule is always the
+    prompt that will actually run, never the one a human merely glanced at.
+    """
+    if decision not in PROMPT_CONFIRM_DECISIONS:
+        raise ConfirmError(f"decision must be one of {sorted(PROMPT_CONFIRM_DECISIONS)}; got {decision!r}")
+    if decision == "review_edit":
+        if not edited_instructions or not edited_instructions.strip():
+            raise ConfirmError("decision='review_edit' requires non-empty edited_instructions")
+        final_prompt = replace(generated_prompt, instructions=edited_instructions)
+    else:
+        if edited_instructions is not None:
+            raise ConfirmError("edited_instructions is only used with decision='review_edit'")
+        final_prompt = generated_prompt
+
+    if store is not None:
+        stored = store.load(outcome_id)
+        if stored.acceptance_state != "accepted":
+            raise ConfirmError(
+                f"{outcome_id!r} is not yet accepted (T1) -- acceptance_state={stored.acceptance_state!r}; "
+                "confirm the outcome (confirm_accept) before confirming its judge prompt (T3)"
+            )
+
+    prompt_digest = final_prompt.prompt_digest()
+    detail: dict = {
+        "outcome_id": outcome_id,
+        "prompt_id": final_prompt.prompt_id,
+        "prompt_digest": prompt_digest,
+        "label_set": list(final_prompt.label_set),
+        "instructions": final_prompt.instructions,
+        "edited": decision == "review_edit",
+    }
+    if final_prompt.model_id_hint is not None:
+        detail["model_id_hint"] = final_prompt.model_id_hint
+
+    capsule = build_event_capsule(
+        operator=operator,
+        developer=developer,
+        signer=signer,
+        event=EVENT_JUDGE_PROMPT_CONFIRMED,
+        detail=detail,
+        chain_parent=compilation_record_capsule_id,
+        chain_relation="confirms",
+    )
+    ledger.append(capsule, consequential=False)
+    return capsule

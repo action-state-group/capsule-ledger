@@ -32,6 +32,9 @@ JUDGE_PIN_MISSING = "judge_pin_missing"
 SCORER_LABEL_NOT_IN_LABEL_SET = "scorer_label_not_in_label_set"
 SCORER_DEPENDENCY_MISSING = "scorer_dependency_missing"
 
+# Outcomes -> judge-prompt compiler reasons ([outcomes-to-judgeprompt-compiler-t3]).
+REFUSED_OUTCOME_NO_JUDGE_PROMPT = "refused_outcome_no_judge_prompt"
+
 
 class JudgeError(ValueError):
     """A judge-harness object fails to parse, validate, or build. Carries a
