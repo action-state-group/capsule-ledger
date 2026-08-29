@@ -222,8 +222,8 @@ def test_a_pack_with_no_declared_not_measured_outcomes_never_scans_the_corpus(tm
 
 
 def test_the_real_airline_engagement_pack_verifies_clean_on_a_tau2_shaped_corpus_with_no_typed_fields():
-    """The real catalog pack's three declared_not_measured rows
-    (A2/A3a/A5) against a corpus shaped exactly like
+    """The real catalog pack's five declared_not_measured rows
+    (A1/A2/A3a/A3b/A5) against a corpus shaped exactly like
     ``record_grounding_bench.judge_run.transcript.Sim.to_dict()`` output
     (only role/content/tool_call_names ever present) -- this is the actual
     invariant the tau2 airline demo relies on."""
@@ -243,8 +243,8 @@ def test_the_real_airline_engagement_pack_verifies_clean_on_a_tau2_shaped_corpus
 
 def test_the_real_airline_engagement_pack_raises_if_a_future_corpus_started_emitting_the_typed_field():
     """The RED proof against the real catalog pack, not just a synthetic
-    fixture: if a future corpus producer started emitting one of the three
-    named typed fields, this must be caught, not silently rendered as
+    fixture: if a future corpus producer started emitting one of the named
+    typed fields, this must be caught, not silently rendered as
     'inapplicable' the way the old hardcoded lambda would have."""
     from capsule_ledger.packs.corpus_verify import verify_declared_not_measured
 

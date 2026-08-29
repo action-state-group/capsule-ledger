@@ -11,10 +11,11 @@
 # judge-only pack: a real but incidental dedupe obligation, not this pack's
 # actual point).
 #
-# **measurability / evidence_instrument is the hardened part.** A2/A3a/A5
-# are declared `measurability: declared_not_measured` -- tau2-bench's
-# free-text transcripts never emit the typed, structured record each one
-# would need (see each row's `evidence_rule`/`evidence_instrument` below).
+# **measurability / evidence_instrument is the hardened part.** A1/A2/A3a/
+# A3b/A5 are declared `measurability: declared_not_measured` -- tau2-bench's
+# free-text transcripts never emit the typed, structured record (or the
+# live judge call) each one would need (see each row's
+# `evidence_rule`/`evidence_instrument` below).
 # Before [pack-harden-tau2-oracle] this was a hardcoded `always_false`
 # lambda in consuming code, with nothing to stop a future edit from pointing
 # it at a term with a real fail. Now it is DATA, and
@@ -48,11 +49,20 @@ outcomes:
   - id: A1
     statement: "Choice, not ultimatum: the agent presented the customer more than one viable path to resolution, never a single take-it-or-leave-it."
     evidence_rule: >-
-      assistant turn matches option-shaped language: an offer of >=2
-      mutually exclusive actions the agent is willing to execute
-      (measure_a1_option_shaped_language)
+      n/a on this corpus today -- [ldg-bj-91-a1-to-llm-judge] removed the
+      deterministic keyword stand-in this row used to render
+      (_OPTION_LANGUAGE_RE/measure_a1_option_shaped_language, a
+      option-shaped-phrasing regex reported as if it were a judgment);
+      "more than one viable path" is a prose-quality claim that needs a
+      live judge reading the transcript directly
+      (declare_a1_option_language_pending_judge), not a keyword pattern
+      standing in for one
     forward_verdict: DETERMINISTIC
-    backward_verdict: DETERMINISTIC
+    backward_verdict: WITH-INSTRUMENTATION
+    measurability: declared_not_measured
+    evidence_instrument:
+      kind: structured_field
+      field: llm_judge_verdict_a1_option_language
 
   - id: A2
     statement: "Reason before restriction: where the agent applied a limit, it gave the reason before asking the customer to accept it."
@@ -83,12 +93,18 @@ outcomes:
   - id: A3b
     statement: "No pressure: the agent did not push, rush, or coerce the customer toward a decision."
     evidence_rule: >-
-      absence of a deterministic pressure-language pattern (second-person
-      imperative plus a deadline, or a fare/seat/offer-expiry clause) across
-      assistant turns -- a deterministic keyword stand-in, not a live model
-      call (measure_a3b_pressure_language_absent)
-    forward_verdict: DETERMINISTIC
-    backward_verdict: DETERMINISTIC
+      n/a on this corpus today -- [remove-keyword-scorers] removed the
+      deterministic keyword stand-in this row used to render (a
+      pressure-language regex reported as if it were a judgment); "no
+      pressure" is a prose-quality claim that needs a live judge reading
+      the transcript directly (declare_a3b_pressure_language_pending_judge),
+      not a keyword pattern standing in for one
+    forward_verdict: UNAVAILABLE-MODEL-REQUIRED
+    backward_verdict: WITH-INSTRUMENTATION
+    measurability: declared_not_measured
+    evidence_instrument:
+      kind: structured_field
+      field: llm_judge_verdict_a3b_pressure_language
 
   - id: A4
     statement: "A human on request: when the customer asked for a person, one was reachable."
