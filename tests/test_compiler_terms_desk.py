@@ -531,3 +531,51 @@ def test_evaluate_term_fold_refuses_a_refused_term(store, signer, tmp_path):
     compiled = compile_term(term)
     with pytest.raises(CompilerError, match="REFUSED"):
         evaluate_term_fold(compiled, [])
+
+
+# --- tier ([ldg-bj-tier-field], backward-judge design §8.2) ---------------
+#
+# Mirrors ``packs.schema.Outcome.tier``: whether a term gates a session's
+# job-success (must_have) or is reported without gating (informational, the
+# default). Additive and closed-set -- no per-term target/ratio.
+
+
+def _declaration_term(**overrides) -> TermDeclaration:
+    declaration = Declaration(
+        outcome_id="term.tier_probe",
+        statement="probe statement for tier tests",
+        requires_model_judgment=True,
+    )
+    kwargs = dict(
+        term_id="term.tier_probe",
+        statement=declaration.statement,
+        clause_ref=None,
+        applicability=_turn_applicability(),
+        verdict_schema=("pass", "fail"),
+        declaration=declaration,
+        judge_spec=_judge_spec(),
+    )
+    kwargs.update(overrides)
+    return TermDeclaration(**kwargs)
+
+
+def test_default_tier_is_informational_and_omitted_from_the_digest():
+    """A term that doesn't mention tier at all -- the ordinary case for
+    every pre-existing term -- parses as 'informational' and the digest
+    renders identically to before this field existed (no 'tier' key at
+    all), so no already-sealed T pin moves."""
+    term = _declaration_term()
+    assert term.tier == "informational"
+    doc = TermsDocument(terms=(term,))
+    assert "tier" not in doc.canonical_dict()["terms"][0]
+
+
+def test_invalid_tier_value_is_rejected():
+    with pytest.raises(CompilerError, match="tier"):
+        _declaration_term(tier="critical")
+
+
+def test_must_have_tier_renders_in_the_digest():
+    term = _declaration_term(tier="must_have")
+    doc = TermsDocument(terms=(term,))
+    assert doc.canonical_dict()["terms"][0]["tier"] == "must_have"

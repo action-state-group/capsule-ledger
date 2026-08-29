@@ -440,3 +440,36 @@ def test_the_real_airline_engagement_pack_loads_clean_with_expected_measurabilit
     assert declared_not_measured == {"A2", "A3a", "A5"}
     for oid in declared_not_measured:
         assert by_id[oid].evidence_instrument is not None
+
+
+# --- tier ([ldg-bj-tier-field], backward-judge design §8.2) ---------------
+#
+# Whether an outcome gates a session's job-success (must_have) or is
+# reported without gating (informational, the default). Additive, closed-
+# set, no per-term target/ratio -- the gate is entirely at the session-level
+# rollup a later task builds (§8.4).
+
+
+def test_default_tier_is_informational_and_omitted_from_the_digest(tmp_path):
+    """An outcome that doesn't mention tier at all -- the ordinary case for
+    every pre-existing outcome -- parses as 'informational' and the digest
+    renders identically to before this field existed (no 'tier' key at
+    all), so no already-sealed pack pin moves."""
+    pack_dir = _write_pack(tmp_path, {"outcomes": [_outcome()]})
+    pack = load_pack_dir(pack_dir)
+    assert pack.outcomes[0].tier == "informational"
+    assert "tier" not in pack.canonical_dict()["outcomes"][0]
+
+
+def test_invalid_tier_value_is_rejected(tmp_path):
+    pack_dir = _write_pack(tmp_path, {"outcomes": [_outcome(tier="critical")]})
+    with pytest.raises(PackDefinitionError) as exc:
+        load_pack_dir(pack_dir)
+    assert exc.value.reason == "invalid_tier"
+
+
+def test_must_have_tier_loads_clean_and_renders_in_the_digest(tmp_path):
+    pack_dir = _write_pack(tmp_path, {"outcomes": [_outcome(tier="must_have")]})
+    pack = load_pack_dir(pack_dir)
+    assert pack.outcomes[0].tier == "must_have"
+    assert pack.canonical_dict()["outcomes"][0]["tier"] == "must_have"

@@ -57,6 +57,7 @@ __all__ = [
     "KNOWN_SCOPE_DIMENSIONS",
     "MEASURABILITY_VALUES",
     "EVIDENCE_INSTRUMENT_KINDS",
+    "TIER_VALUES",
     "Obligation",
     "ActionSemantic",
     "ProposerStub",
@@ -129,6 +130,16 @@ MEASURABILITY_VALUES = frozenset({"measured", "declared_not_measured"})
 # An unrecognized kind is a typo, same "unregistered is a typo" doctrine as
 # every other closed set in this module -- never silently accepted as data.
 EVIDENCE_INSTRUMENT_KINDS = frozenset({"structured_field", "tool_call_name"})
+
+# Whether an outcome gates a session's job-success (backward-judge design
+# §8.2). "must_have" terms are the ones §8.4's per-session rollup requires to
+# hold for every session they apply to; "informational" terms are reported
+# but never gate. No per-term target/ratio -- the gate is entirely at the
+# session level, so this is a single closed-set field, not a threshold shape.
+# "informational" is the default for a term with no ``tier`` declared, so
+# every pack written before this field existed keeps its current (gate-free)
+# behavior and digests identically.
+TIER_VALUES = frozenset({"must_have", "informational"})
 
 
 @dataclass(frozen=True)
@@ -267,6 +278,10 @@ class Outcome:
     vendor-led, customer accepts -- but the report-facing computed enum
     this cashes out to is design §7, still open). Free-form strings here on
     purpose -- do not read closed-vocabulary meaning into them yet.
+
+    ``tier`` (backward-judge design §8.2) says whether this outcome gates a
+    session's job-success (``"must_have"``) or is reported without gating
+    (``"informational"``, the default) -- see ``TIER_VALUES``.
     """
 
     id: str
@@ -290,6 +305,12 @@ class Outcome:
     # convention every other optional Outcome field already follows).
     measurability: str = "measured"
     evidence_instrument: EvidenceInstrument | None = None
+    # tier -- optional, additive ([ldg-bj-tier-field], backward-judge design
+    # §8.2); default "informational" so a pack declared before this field
+    # existed parses and DIGESTS identically to before (canonical_dict below
+    # omits it whenever it's the default, same convention measurability
+    # already follows).
+    tier: str = "informational"
 
 
 @dataclass(frozen=True)
@@ -397,6 +418,7 @@ class PackDefinition:
                     **({"exposure_denominator_ref": o.exposure_denominator_ref} if o.exposure_denominator_ref else {}),
                     **({"retention_check": o.retention_check} if o.retention_check else {}),
                     **({"measurability": o.measurability} if o.measurability != "measured" else {}),
+                    **({"tier": o.tier} if o.tier != "informational" else {}),
                     **(
                         {"evidence_instrument": o.evidence_instrument.to_dict()}
                         if o.evidence_instrument is not None
