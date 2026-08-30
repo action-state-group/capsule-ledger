@@ -31,7 +31,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from numbers import Real
 from typing import Any
 
 from agent_action_capsule import (
