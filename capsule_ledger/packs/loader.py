@@ -52,10 +52,13 @@ from .errors import (
     DUPLICATE_CONSTRAINT_WICKET_ID,
     DUPLICATE_OBLIGATION_ID,
     DUPLICATE_OUTCOME_ID,
+    DUPLICATE_PROFILE_ID,
+    DUPLICATE_PROFILE_OVERRIDE_OUTCOME_ID,
     EFFECT_CLAIM_NOT_REFUSED,
     FOLD_FILE_NOT_FOUND,
     INVALID_ACTION_SEMANTIC,
     INVALID_CONSTRAINT,
+    INVALID_COUNTERPARTY_BINDING,
     INVALID_EVIDENCE_INSTRUMENT,
     INVALID_FIXTURES,
     INVALID_FOLD_REF,
@@ -64,6 +67,7 @@ from .errors import (
     INVALID_MODE,
     INVALID_OUTCOME,
     INVALID_PACK_ID,
+    INVALID_PROFILE_ID,
     INVALID_RE_DERIVABILITY_GRADE,
     INVALID_SCOPE_CENSUS,
     INVALID_SCOPE_DIMENSION,
@@ -78,9 +82,11 @@ from .errors import (
     OBLIGATION_CHECK_NOT_DECLARED,
     PACK_NOT_FOUND,
     SCOPE_MISMATCH,
+    TOPOLOGY_INVARIANT_OVERRIDE,
     UNKNOWN_ACTION_CLASS,
     UNKNOWN_EFFECT_CLAIM,
     UNKNOWN_NORMALIZED_FIELD,
+    UNKNOWN_OUTCOME_IN_PROFILE_OVERRIDE,
     PackDefinitionError,
 )
 from .schema import (
@@ -91,16 +97,21 @@ from .schema import (
     MODE_VALUES,
     NORMALIZED_ACTION_FIELDS,
     PACK_ID_RE,
+    PROFILE_ID_VALUES,
     TIER_VALUES,
+    TOPOLOGY_INVARIANT_MODES,
     ActionSemantic,
+    CounterpartyBinding,
     EvidenceInstrument,
     FixtureScenario,
     Obligation,
     Outcome,
+    OutcomeOverride,
     PackDefinition,
     PackFixtures,
     ProposerStub,
     ScopeCensus,
+    TopologyProfile,
     WindowSpec,
 )
 
@@ -714,6 +725,106 @@ def _parse_scope_census(raw: Any) -> ScopeCensus | None:
     return ScopeCensus(document_digest=document_digest, n=n, m=m, review_by=review_by)
 
 
+def _parse_counterparty_binding(raw: Any, *, profile_id: str) -> CounterpartyBinding:
+    raw = _require_mapping(raw, f"profiles[{profile_id!r}].counterparty_binding")
+    direct = _require_nonempty_str(
+        raw.get("direct"), f"profiles[{profile_id!r}].counterparty_binding.direct", "employee"
+    )
+    ultimate = raw.get("ultimate", direct)
+    if not isinstance(ultimate, str) or not ultimate:
+        raise PackDefinitionError(
+            INVALID_COUNTERPARTY_BINDING,
+            f"profiles[{profile_id!r}].counterparty_binding.ultimate must be a non-empty string, or omitted "
+            "(defaults to 'direct') -- it names the ultimate beneficiary a fold_rollup (job-success) outcome "
+            "binds to, e.g. 'downstream' for a mediated profile",
+        )
+    return CounterpartyBinding(direct=direct, ultimate=ultimate)
+
+
+def _parse_profile_overrides(
+    raw: Any, *, profile_id: str, outcomes_by_id: dict[str, Outcome]
+) -> tuple[OutcomeOverride, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise PackDefinitionError(INVALID_PROFILE_ID, f"profiles[{profile_id!r}].overrides must be a list")
+
+    out: list[OutcomeOverride] = []
+    seen_ids: set[str] = set()
+    for idx, entry in enumerate(raw):
+        entry = _require_mapping(entry, f"profiles[{profile_id!r}].overrides[{idx}]")
+        outcome_id = _require_nonempty_str(
+            entry.get("outcome_id"), f"profiles[{profile_id!r}].overrides[{idx}].outcome_id", "C1"
+        )
+        if outcome_id in seen_ids:
+            raise PackDefinitionError(
+                DUPLICATE_PROFILE_OVERRIDE_OUTCOME_ID,
+                f"profiles[{profile_id!r}] declares an override for outcome_id {outcome_id!r} more than once",
+            )
+        seen_ids.add(outcome_id)
+        outcome = outcomes_by_id.get(outcome_id)
+        if outcome is None:
+            raise PackDefinitionError(
+                UNKNOWN_OUTCOME_IN_PROFILE_OVERRIDE,
+                f"profiles[{profile_id!r}].overrides names outcome_id {outcome_id!r}, which this pack's own "
+                f"'outcomes' does not declare (known ids: {sorted(outcomes_by_id)})",
+            )
+        if outcome.mode in TOPOLOGY_INVARIANT_MODES:
+            raise PackDefinitionError(
+                TOPOLOGY_INVARIANT_OVERRIDE,
+                f"profiles[{profile_id!r}] declares an override for {outcome_id!r}, whose mode={outcome.mode!r} "
+                f"is topology-invariant ({sorted(TOPOLOGY_INVARIANT_MODES)}) -- the agent-integrity core (design "
+                "§6b) is the same in every profile by construction; only judged conduct (mode: judged) and "
+                "counterparty-change value-props (mode: fold_counterparty) vary by topology",
+            )
+        applies = entry.get("applies", True)
+        if not isinstance(applies, bool):
+            raise PackDefinitionError(
+                INVALID_PROFILE_ID, f"profiles[{profile_id!r}].overrides[{outcome_id!r}].applies must be a boolean"
+            )
+        tier = entry.get("tier")
+        if tier is not None and tier not in TIER_VALUES:
+            raise PackDefinitionError(
+                INVALID_TIER,
+                f"profiles[{profile_id!r}].overrides[{outcome_id!r}].tier={tier!r} must be one of "
+                f"{sorted(TIER_VALUES)}, or omitted (keeps the pack's own declared tier)",
+            )
+        out.append(OutcomeOverride(outcome_id=outcome_id, applies=applies, tier=tier))
+    return tuple(out)
+
+
+def _parse_profiles(raw: Any, *, outcomes: tuple[Outcome, ...]) -> tuple[TopologyProfile, ...]:
+    """``profiles[]`` -- relationship-topology profiles over this pack's own
+    outcomes ([ldg-bp-topology-profiles], design §6b/§7). Optional: a pack
+    with no ``profiles`` key ships zero profiles, same additive convention as
+    ``proposers``/``outcomes``."""
+    if not raw:
+        return ()
+    if not isinstance(raw, list):
+        raise PackDefinitionError(MALFORMED_PACK, "'profiles' must be a list")
+
+    outcomes_by_id = {o.id: o for o in outcomes}
+    out: list[TopologyProfile] = []
+    seen_ids: set[str] = set()
+    for idx, entry in enumerate(raw):
+        entry = _require_mapping(entry, f"profiles[{idx}]")
+        profile_id = _require_nonempty_str(entry.get("profile_id"), f"profiles[{idx}].profile_id", "p1_external_serve")
+        if profile_id not in PROFILE_ID_VALUES:
+            raise PackDefinitionError(
+                INVALID_PROFILE_ID,
+                f"profiles[{idx}].profile_id={profile_id!r} must be one of {sorted(PROFILE_ID_VALUES)} "
+                "(P5 autonomous is deferred per design §6b -- not yet a declarable profile)",
+            )
+        if profile_id in seen_ids:
+            raise PackDefinitionError(DUPLICATE_PROFILE_ID, f"profile_id {profile_id!r} declared more than once")
+        seen_ids.add(profile_id)
+
+        binding = _parse_counterparty_binding(entry.get("counterparty_binding"), profile_id=profile_id)
+        overrides = _parse_profile_overrides(entry.get("overrides"), profile_id=profile_id, outcomes_by_id=outcomes_by_id)
+        out.append(TopologyProfile(profile_id=profile_id, counterparty_binding=binding, overrides=overrides))
+    return tuple(out)
+
+
 def load_pack_dir(pack_dir: str | Path) -> PackDefinition:
     """Load and fully validate a pack directory's ``pack.yaml`` (plus every
     fold file and inline constraint it references) into a ``PackDefinition``."""
@@ -747,6 +858,7 @@ def load_pack_dir(pack_dir: str | Path) -> PackDefinition:
     fixtures = _parse_fixtures(data.get("fixtures"))
     outcomes = _parse_outcomes(data.get("outcomes"))
     scope_census = _parse_scope_census(data.get("scope_census"))
+    profiles = _parse_profiles(data.get("profiles"), outcomes=outcomes)
 
     holds_integration = data.get("holds_integration", "none")
     if holds_integration not in HOLDS_INTEGRATION_VALUES:
@@ -777,4 +889,5 @@ def load_pack_dir(pack_dir: str | Path) -> PackDefinition:
         constraint_scopes=constraint_scopes,
         outcomes=outcomes,
         scope_census=scope_census,
+        profiles=profiles,
     )

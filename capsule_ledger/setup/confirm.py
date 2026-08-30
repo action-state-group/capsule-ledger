@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``capsule setup confirm`` (design §3.2/§4/§6b): the two touchpoints a
-machine cannot make for itself, plus the one that makes a refusal visible
-instead of merely present. Every one of these produces a **recorded act,
-never a config edit** -- nothing here rewrites a file in place; each call
-appends a new, signed capsule to the ledger.
+"""``capsule setup confirm`` (design §3.2/§4/§6b): the touchpoints a machine
+cannot make for itself -- declaration acceptance, scope-census sign-off,
+topology-profile selection, judge-prompt wording -- plus the one that makes a
+refusal visible instead of merely present. Every one of these produces a
+**recorded act, never a config edit** -- nothing here rewrites a file in
+place; each call appends a new, signed capsule to the ledger.
 
 - **T1 -- declaration acceptance.** *"These are the outcomes we are
   claiming, and these are the rules for proving them."* Freezes the
@@ -23,6 +24,16 @@ appends a new, signed capsule to the ledger.
   rather than that the claim was unprovable." Seals the refusal capsule
   itself (design §2.2's compiler-refusal vocabulary) AND a second capsule
   recording the human's acknowledgment, chained to it.
+- **Topology-profile confirmation** ([ldg-bp-topology-profiles], standard-
+  outcome-pack design §6b/§7) -- part of the T1 family: *"these outcomes,
+  under THIS relationship topology."* A profile (``packs.schema.
+  TopologyProfile``) selects which counterparty a pack's fold_counterparty/
+  fold_rollup outcomes bind to and which per-outcome tier/applicability
+  overrides are in force -- design's explicit point that "the profile choice
+  is a signed fact, not a toggle." Independent of any one outcome_id (like
+  T2's scope census): it is a claim about the whole pack's chosen topology,
+  sealed as its own capsule so a later change of topology is itself an
+  auditable event rather than a silent config edit.
 - **T3 -- judge-prompt confirmation** ([outcomes-to-judgeprompt-compiler-t3]
   build spec point 2). The judge prompt a machine compiles
   (``judge.prompt_compiler.compile_judge_prompt``) is load-bearing: it is
@@ -41,6 +52,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from agent_action_capsule.canonical import json_digest
+
 from ..compiler.compilation_record import EVENT_COMPILATION_RECORD
 from ..compiler.compile import seal_compilation_record
 from ..compiler.refusal import EVENT_REFUSAL, build_refusal_capsule
@@ -49,6 +62,7 @@ from ..guards.capsule import build_event_capsule
 from ..guards.signing import Signer
 from ..judge.prompt import JudgePromptDefinition
 from ..ledger.api import LedgerAPI
+from ..packs.schema import TopologyProfile
 from .compile_bridge import compiled_declaration_for
 from .declarations import DeclarationStore
 
@@ -57,16 +71,19 @@ __all__ = [
     "EVENT_JUDGE_PROMPT_CONFIRMED",
     "EVENT_REFUSAL",
     "EVENT_REFUSAL_ACKNOWLEDGED",
+    "EVENT_TOPOLOGY_PROFILE_CONFIRMED",
     "PROMPT_CONFIRM_DECISIONS",
     "ConfirmError",
     "confirm_accept",
     "confirm_acknowledge_refusal",
     "confirm_prompt",
     "confirm_scope_census",
+    "confirm_topology_profile",
 ]
 
 EVENT_REFUSAL_ACKNOWLEDGED = "compiler.refusal_acknowledged"
 EVENT_JUDGE_PROMPT_CONFIRMED = "compiler.judge_prompt_confirmed"
+EVENT_TOPOLOGY_PROFILE_CONFIRMED = "compiler.topology_profile_confirmed"
 
 # The CLI's own vocabulary for the T3 touchpoint -- "(C)onfirm / (R)eview-edit"
 # (build spec point 2). Closed set, same "unregistered is a typo" doctrine
@@ -142,6 +159,44 @@ def confirm_scope_census(
         developer=developer,
         signer=signer,
         chain_parent=chain_parent,
+    )
+    ledger.append(capsule, consequential=False)
+    return capsule
+
+
+def confirm_topology_profile(
+    *,
+    pack_id: str,
+    profile: TopologyProfile,
+    ledger: LedgerAPI,
+    signer: Signer,
+    operator: str,
+    developer: str,
+    chain_parent: str | None = None,
+) -> dict:
+    """Seals the CHOICE of relationship-topology profile for a pack as its
+    own signed fact ([ldg-bp-topology-profiles], design §6b/§7) -- "these
+    outcomes, under THIS relationship topology," never a config toggle. Not
+    scoped to one outcome_id (mirrors T2's ``confirm_scope_census``): it is a
+    claim about the whole pack's chosen topology. Calling this again with a
+    different ``profile`` records a SECOND capsule rather than overwriting
+    the first -- a change of topology over a pack's lifetime is itself an
+    auditable event, not a silent state mutation."""
+    detail = {
+        "pack_id": pack_id,
+        "profile_id": profile.profile_id,
+        "counterparty_binding": profile.counterparty_binding.to_dict(),
+        "overrides": [o.to_dict() for o in sorted(profile.overrides, key=lambda o: o.outcome_id)],
+        "profile_digest": json_digest(profile.canonical_dict()),
+    }
+    capsule = build_event_capsule(
+        operator=operator,
+        developer=developer,
+        signer=signer,
+        event=EVENT_TOPOLOGY_PROFILE_CONFIRMED,
+        detail=detail,
+        chain_parent=chain_parent,
+        chain_relation="confirms" if chain_parent is not None else None,
     )
     ledger.append(capsule, consequential=False)
     return capsule

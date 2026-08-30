@@ -352,4 +352,107 @@ outcomes:
       field: cohort_partition_key
     mode: fold_cohort
 
+# --- Relationship-topology profiles (design §6b/§7) -----------------------
+# Who the agent works WITH changes the pack -- but not by forking it. Each
+# profile below is a thin, T1-confirmed declaration over the outcomes above:
+# a counterparty binding (schema.CounterpartyBinding -- 'direct' is who the
+# agent actually talks to; 'ultimate' is who the engagement is ultimately
+# FOR, equal to 'direct' except under mediation) plus per-outcome
+# {applies, tier} overrides. The agent-integrity core (S1-S4/V1/F1, the
+# structural/value/fold_rollup modes) is topology-INVARIANT by construction
+# -- loader.py refuses any override naming one of those ids. Only judged
+# conduct (J1-J6) and the counterparty-change value-props (C1-C6) vary here.
+# P5 autonomous is DEFERRED (design §6b) -- not declared until a real
+# autonomous case lands.
+profiles:
+  # P1 external-serve (tau2 airline): the agent IS the front line to an
+  # outside customer -- conduct quality is the product. No overrides: the
+  # outcomes above are already authored in this profile's voice (J must-have,
+  # C-family informational, bound to the one counterparty there is).
+  - profile_id: p1_external_serve
+    counterparty_binding:
+      direct: customer
+
+  # P2 internal-assist (Amplifier): the employee IS the beneficiary -- the
+  # agent makes THEM better at their own job. Conduct matters less than
+  # bounded-authority (S2, already must_have in the invariant core); the
+  # differentiated value-prop is the employee's own capability growth (C1)
+  # and autonomy (C5), so the C-family binds to the employee.
+  - profile_id: p2_internal_assist
+    counterparty_binding:
+      direct: employee
+    overrides:
+      - outcome_id: J1
+        tier: informational
+      - outcome_id: J2
+        tier: informational
+      - outcome_id: J3
+        tier: informational
+      - outcome_id: J5
+        tier: informational
+      - outcome_id: J6
+        tier: informational
+
+  # P3 mediated (Alchemy): still internal (direct counterparty = the
+  # engineer), but the engineer is a CONDUIT to their own downstream
+  # customer/incident. Two layers: conduct (J) is informational because it's
+  # about how the agent treats the employee it's actually talking to, same
+  # demotion as P2; job success (F1, invariant, still must_have) binds to
+  # 'ultimate' = downstream -- the real job is whether the incident got
+  # handled right for the affected party one hop further out. The C-family
+  # value-prop (employee learning) binds to 'direct' = employee. That
+  # direct != ultimate split IS the dual binding design §6b calls for.
+  - profile_id: p3_mediated
+    counterparty_binding:
+      direct: employee
+      ultimate: downstream
+    overrides:
+      - outcome_id: J1
+        tier: informational
+      - outcome_id: J2
+        tier: informational
+      - outcome_id: J3
+        tier: informational
+      - outcome_id: J5
+        tier: informational
+      - outcome_id: J6
+        tier: informational
+
+  # P4 agent-to-agent (mesh): no human counterparty to have conduct toward or
+  # to grow more capable over time -- conduct (J) and counterparty-change
+  # (C) are both N/A. What's load-bearing is the integrity core (unchanged,
+  # invariant) plus cross-record reconciliation between the two agents'
+  # sealed records (mesh-accountability territory, not yet a declared
+  # outcome in this pack). The binding still names who's on the other end,
+  # for documentation/audit, even though no outcome reads it.
+  - profile_id: p4_agent_to_agent
+    counterparty_binding:
+      direct: agent
+      ultimate: principal
+    overrides:
+      - outcome_id: J1
+        applies: false
+      - outcome_id: J2
+        applies: false
+      - outcome_id: J3
+        applies: false
+      - outcome_id: J4
+        applies: false
+      - outcome_id: J5
+        applies: false
+      - outcome_id: J6
+        applies: false
+      - outcome_id: C1
+        applies: false
+      - outcome_id: C2
+        applies: false
+      - outcome_id: C3
+        applies: false
+      - outcome_id: C4
+        applies: false
+      - outcome_id: C5
+        applies: false
+      - outcome_id: C6
+        applies: false
+
 bootstrap: AI-BOOTSTRAP.md

@@ -2,17 +2,20 @@
 import io
 
 import pytest
+from agent_action_capsule.canonical import json_digest
 
 from capsule_ledger.judge.prompt_compiler import PackContextBlock, compile_judge_prompt
-from capsule_ledger.packs.schema import Outcome
+from capsule_ledger.packs.schema import CounterpartyBinding, Outcome, OutcomeOverride, TopologyProfile
 from capsule_ledger.setup.confirm import (
     EVENT_JUDGE_PROMPT_CONFIRMED,
     EVENT_REFUSAL_ACKNOWLEDGED,
+    EVENT_TOPOLOGY_PROFILE_CONFIRMED,
     ConfirmError,
     confirm_accept,
     confirm_acknowledge_refusal,
     confirm_prompt,
     confirm_scope_census,
+    confirm_topology_profile,
 )
 from capsule_ledger.setup.declarations import DeclarationStore
 from capsule_ledger.setup.observe import ObserveRecorder
@@ -76,6 +79,73 @@ def test_confirm_scope_census_appends_a_census_capsule(store, signer):
         document_digest="d" * 64, n=3, m=5, review_by="alice", ledger=store, signer=signer, operator="op", developer="dev"
     )
     assert store.fetch(capsule["capsule_id"]) is not None
+
+
+# -- topology-profile confirmation (design §6b/§7) -------------------------
+
+
+def _profile(**overrides) -> TopologyProfile:
+    base = dict(
+        profile_id="p3_mediated",
+        counterparty_binding=CounterpartyBinding(direct="employee", ultimate="downstream"),
+        overrides=(OutcomeOverride(outcome_id="J1", tier="informational"),),
+    )
+    base.update(overrides)
+    return TopologyProfile(**base)
+
+
+def test_confirm_topology_profile_seals_a_verifiable_signed_fact(store, signer):
+    profile = _profile()
+    capsule = confirm_topology_profile(
+        pack_id="asg/standard-vendor/1.0.0", profile=profile, ledger=store, signer=signer, operator="op", developer="dev"
+    )
+    assert capsule["asg_payload"]["event"] == EVENT_TOPOLOGY_PROFILE_CONFIRMED
+    detail = capsule["asg_payload"]["detail"]
+    assert detail["pack_id"] == "asg/standard-vendor/1.0.0"
+    assert detail["profile_id"] == "p3_mediated"
+    assert detail["counterparty_binding"] == {"direct": "employee", "ultimate": "downstream"}
+    assert detail["overrides"] == [{"outcome_id": "J1", "tier": "informational"}]
+    assert detail["profile_digest"] == json_digest(profile.canonical_dict())
+    assert store.fetch(capsule["capsule_id"]) is not None
+    assert store.verify(capsule["capsule_id"]).ok
+
+
+def test_confirm_topology_profile_is_not_a_toggle_two_calls_seal_two_capsules(store, signer):
+    """Changing topology mid-lifecycle is itself an auditable event -- a
+    second call for a different profile records a SECOND capsule, it never
+    overwrites the first (design §6b/§7: "a signed fact, not a toggle")."""
+    first = confirm_topology_profile(
+        pack_id="asg/standard-vendor/1.0.0",
+        profile=_profile(profile_id="p2_internal_assist", counterparty_binding=CounterpartyBinding(direct="employee", ultimate="employee")),
+        ledger=store,
+        signer=signer,
+        operator="op",
+        developer="dev",
+    )
+    second = confirm_topology_profile(
+        pack_id="asg/standard-vendor/1.0.0", profile=_profile(), ledger=store, signer=signer, operator="op", developer="dev"
+    )
+    assert first["capsule_id"] != second["capsule_id"]
+    assert store.fetch(first["capsule_id"]).capsule["asg_payload"]["detail"]["profile_id"] == "p2_internal_assist"
+    assert store.fetch(second["capsule_id"]).capsule["asg_payload"]["detail"]["profile_id"] == "p3_mediated"
+
+
+def test_confirm_topology_profile_can_chain_to_a_compilation_record(store, signer, tmp_path):
+    decl_store = _proposed_store(store, signer, tmp_path, REMEDIATION_EVENTS)
+    c_record = confirm_accept(
+        "outcome.remediation_confirmed", store=decl_store, ledger=store, signer=signer, operator="op", developer="dev"
+    )
+    capsule = confirm_topology_profile(
+        pack_id="asg/standard-vendor/1.0.0",
+        profile=_profile(),
+        ledger=store,
+        signer=signer,
+        operator="op",
+        developer="dev",
+        chain_parent=c_record["capsule_id"],
+    )
+    assert capsule["chain"]["parent_capsule_id"] == c_record["capsule_id"]
+    assert capsule["chain"]["relation"] == "confirms"
 
 
 def test_confirm_acknowledge_refusal_seals_refusal_and_ack_chained(store, signer, tmp_path):
