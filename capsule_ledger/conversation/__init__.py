@@ -56,7 +56,9 @@ from .capsules import (
 from .exchange import (
     EVENT_CONVERSATION_EXCHANGE,
     build_conversation_exchange_capsule,
+    build_usage,
     digest_conversation_exchange,
+    stringify_floats,
 )
 from .merkle import session_root, turn_inclusion_proof, verify_turn_inclusion
 from .session import ConversationSession, SessionAlreadyClosedError
@@ -73,6 +75,8 @@ __all__ = [
     "build_turn_reference_capsule",
     "build_conversation_exchange_capsule",
     "digest_conversation_exchange",
+    "build_usage",
+    "stringify_floats",
     "find_session_turns",
     "find_session_close",
     "find_turn_reference",

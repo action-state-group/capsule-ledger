@@ -48,6 +48,8 @@ __all__ = [
     "EVENT_CONVERSATION_EXCHANGE",
     "digest_conversation_exchange",
     "build_conversation_exchange_capsule",
+    "stringify_floats",
+    "build_usage",
 ]
 
 _SPEC_VERSION = "draft-mih-scitt-agent-action-capsule-02"
@@ -91,6 +93,58 @@ def digest_conversation_exchange(messages: Sequence[Mapping[str, Any]]) -> dict[
     }
 
 
+def stringify_floats(value: Any) -> Any:
+    """Recursively replace JSON floats with their exact decimal-string form
+    so a value can enter a digest-bearing field.
+
+    ``agent_action_capsule``'s JSON-DIGEST (spec §5.1) refuses any float in a
+    digest-bearing value -- JSON float serialization is not cross-
+    implementation deterministic, so the spec requires exact decimal strings
+    instead. Generation parameters recovered from a benchmark source
+    (``temperature`` is the common case) arrive as floats, so anything sealed
+    into ``generation_parameters`` must be stringified first. This mirrors
+    ``capsule-emit-mesh``'s ``capsule_sidecar._stringify_floats`` -- ``repr``
+    round-trips a float64 exactly (shortest string that reparses to the same
+    value). ``bool`` is deliberately left untouched (it is not a numeric
+    knob), and ints are left as ints (they carry no float-serialization
+    ambiguity).
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, Mapping):
+        return {k: stringify_floats(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [stringify_floats(v) for v in value]
+    return value
+
+
+def build_usage(
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+) -> dict[str, int] | None:
+    """The mesh-shaped ``usage`` block: ``prompt_tokens`` / ``completion_tokens``
+    plus a derived ``total_tokens`` -- the token METER a relying party audits
+    over, deliberately NOT a currency amount (meter-not-price: cost is derived
+    downstream and stays out of the sealed neutral record).
+
+    Honest-by-absence: a token count the source never recorded stays absent;
+    ``None`` for both inputs returns ``None`` (no usage block at all) rather
+    than a fabricated ``{0, 0, 0}``. ``total_tokens`` is derived only from the
+    counts that are present.
+    """
+    usage: dict[str, int] = {}
+    if prompt_tokens is not None:
+        usage["prompt_tokens"] = prompt_tokens
+    if completion_tokens is not None:
+        usage["completion_tokens"] = completion_tokens
+    if not usage:
+        return None
+    usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+    return usage
+
+
 def build_conversation_exchange_capsule(
     *,
     session_id: str,
@@ -104,6 +158,9 @@ def build_conversation_exchange_capsule(
     quant: str | None = None,
     hardware: str | None = None,
     runtime: str | None = None,
+    served_by: str | None = None,
+    generation_parameters: Mapping[str, Any] | None = None,
+    usage: Mapping[str, int] | None = None,
     chain_parent: str | None = None,
     chain_relation: str | None = None,
     timestamp: str | None = None,
@@ -114,6 +171,21 @@ def build_conversation_exchange_capsule(
     docstring). Requires a live ``signer`` -- same fail-closed convention as
     every other builder in this package (an unsigned record is not a
     record).
+
+    The optional serving-provenance fields mirror ``capsule-emit-mesh``'s
+    ``serving_provenance`` (model + ``generation_parameters`` + ``usage``):
+
+    - ``generation_parameters``: the settings the run used (``temperature``,
+      ``seed``, ...). Floats are stringified (§5.1). Absent stays absent.
+    - ``usage``: the token METER (``prompt_tokens`` / ``completion_tokens`` /
+      derived ``total_tokens``). Currency/cost is deliberately NOT sealed
+      here -- tokens are what a relying party meters over; price is derived
+      downstream (meter-not-price, capsule-emit-mesh docs/TRUST-MODEL.md §6).
+    - ``served_by``: for an API-served benchmark (tau2 runs against hosted
+      API models), set ``"api"`` and leave ``hardware`` absent -- an honest
+      marker that there is no local GPU/VRAM to attest, NOT a fabricated
+      hardware block. This is the one field that legitimately differs from a
+      self-hosted mesh node.
     """
     if not messages:
         raise ValueError("messages must be non-empty -- there is no such thing as an empty exchange")
@@ -134,6 +206,22 @@ def build_conversation_exchange_capsule(
         compute_attestation["hardware"] = hardware
     if runtime is not None:
         compute_attestation["runtime"] = runtime
+    # ``served_by`` is the ONE field where an API-served benchmark
+    # legitimately differs from a self-hosted mesh node: there is no local
+    # GPU/VRAM to attest, so rather than fabricate a hardware block we record
+    # an explicit "api-served" marker (and leave ``hardware`` genuinely
+    # absent). See build_conversation_exchange_capsule's docstring.
+    if served_by is not None:
+        compute_attestation["served_by"] = served_by
+    # Generation parameters (temperature, seed, ...) and token usage, mirroring
+    # capsule-emit-mesh's serving_provenance shape (model + generation_parameters
+    # + usage). Both are honest-by-absence: a caller passes only what the source
+    # actually recorded. Floats (temperature) are stringified so the block can
+    # enter the capsule_id digest (spec §5.1 float ban); token counts are ints.
+    if generation_parameters:
+        compute_attestation["generation_parameters"] = stringify_floats(dict(generation_parameters))
+    if usage:
+        compute_attestation["usage"] = {k: int(v) for k, v in usage.items()}
 
     model_attestation = ModelAttestation(model_id=model_id, provider=provider, compute_attestation=compute_attestation)
 

@@ -63,7 +63,21 @@ def seal_tau2_sim_exchange(
     provider: str = TAU2_PROVIDER,
 ) -> dict:
     """Seal one tau2 simulation's full conversation as a
-    ``conversation_exchange`` capsule with the mesh capsule shape."""
+    ``conversation_exchange`` capsule with the mesh capsule shape, carrying
+    the recovered inference metadata (``generation_parameters``, ``usage``,
+    and the honest ``served_by: "api"`` marker) the vendor script now vendors
+    per sim.
+
+    The metadata is passed through honestly-by-absence: a sim whose vendored
+    record lacks ``usage`` or a given generation parameter seals WITHOUT that
+    field rather than a fabricated placeholder. tau2 runs against hosted API
+    models, so ``served_by`` is ``"api"`` and no local hardware block is
+    fabricated (``hardware`` stays genuinely absent)."""
+    generation_parameters = sim.get("generation_parameters") or None
+    usage = sim.get("usage") or None
+    # served_by rides from the vendored record, defaulting to the honest
+    # api-served marker -- tau2 has no local GPU/VRAM to attest.
+    served_by = sim.get("served_by", "api")
     return build_conversation_exchange_capsule(
         session_id=f"tau2-airline/{sim['sim_id']}",
         exchange_id=sim["sim_id"],
@@ -73,4 +87,7 @@ def seal_tau2_sim_exchange(
         operator=operator,
         developer=developer,
         signer=signer,
+        served_by=served_by,
+        generation_parameters=generation_parameters,
+        usage=usage,
     )
