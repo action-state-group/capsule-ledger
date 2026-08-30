@@ -30,6 +30,7 @@ from .harness import JudgeHarness
 from .loader import load_prompt_file, load_prompt_text
 from .prompt import JudgePromptDefinition, parse_prompt_definition
 from .prompt_compiler import PackContextBlock, compile_judge_prompt
+from .prompt_drafter_vertex import draft_judge_prompt_vertex
 from .scorer import JudgeEvidence, Scorer, ScoreResult
 
 __all__ = [
@@ -52,6 +53,7 @@ __all__ = [
     "build_judgment_capsule",
     "compile_judge_prompt",
     "compute_judge_calibration_stats",
+    "draft_judge_prompt_vertex",
     "find_adjudications_for_judgment",
     "find_drift_checks_for_judgment",
     "find_judgments_for_session",

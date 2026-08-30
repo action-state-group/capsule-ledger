@@ -3,11 +3,25 @@
 propose -> confirm accept (T1) -> compile + confirm judge prompts (T3, via
 #90's ``compile_judge_prompt``/``confirm_prompt``) -> ``capsule judge run
 --scorer vertex`` over the real tau2-airline corpus -> report. Produces REAL
-signed judgment capsules for A1/A3b/A6/A7 (the four airline-engagement-pack
-terms with real narration-text evidence in the committed fixture -- see
-``tau2_pack_outcomes_walkthrough.py``'s own finding: A2/A3a/A5 have no typed
-evidence in this corpus at all, and A8 is REFUSED so
-``compile_judge_prompt`` refuses it outright regardless of corpus).
+signed judgment capsules for a small default subset of A1/A3b/A6/A7 (the
+four airline-engagement-pack terms with real narration-text evidence in the
+committed fixture -- see ``tau2_pack_outcomes_walkthrough.py``'s own
+finding: A2/A3a/A5 have no typed evidence in this corpus at all, and A8 is
+REFUSED so ``compile_judge_prompt`` refuses it outright regardless of
+corpus).
+
+**[ldg-bp-vertex-prompt-drafting-small-run] #98-review fix:** the first cut
+of this script printed no dollar/call cost estimate and never paused
+immediately before the real Vertex judging calls -- ``--yes`` alone fired
+billed calls with no confirm at all. It now prints
+``N term(s) x M session(s) = K call(s), est ~$Y`` and requires an explicit
+``y/N`` confirm right before ``run_live_judge`` makes any real call, UNLESS
+BOTH ``--yes`` and ``--dry-run-was-reviewed`` are given (i.e. the operator
+already ran ``--dry-run`` and reviewed the exact call shape this run would
+produce). ``--yes`` alone still only skips the T1/T3 "type approve" gates --
+it does NOT skip this spend confirm. The default scope is also now small on
+purpose: 2 terms (A1, A3b) x 10 sessions, not the full 4 x 3-73 shape --
+``--all-terms``/``--all-sessions`` opt back in.
 
 **THIS SCRIPT MAKES REAL, BILLED VERTEX AI CALLS** (``gemini-2.5-flash`` on
 GCP project ``fluxxom`` via your own ``gcloud`` ADC session) when run with
@@ -40,21 +54,25 @@ committed 73-session fixture lives at
     $ PYTHONPATH=/Users/intangible/dev/asg/capsule-ledger python3 -m \\
           capsule_ledger.examples.live_judge_run_vertex \\
           --corpus /Users/intangible/dev/asg/_worktrees/record-grounding-bench/demo-chunk1-tau2-corpus/data/fixtures/tau2-airline-corpus-v1 \\
-          --out ~/vertex-live-run-demo \\
-          --limit-sessions 3
+          --out ~/vertex-live-run-demo
 
-``--limit-sessions 3`` (the default) keeps a first run cheap -- 4 terms x 3
-sessions = 12 real Gemini calls; pass ``--all-sessions`` to run the full
-73-session corpus (4 terms x 73 sessions = 292 calls, one call per (term,
-session) pair, never per label -- see ``judge/scorers/vertex.py``'s own
-module docstring for why that cost shape was chosen over
-``DeepEvalScorer``'s per-label G-Eval loop). ``--dry-run`` compiles and
-seals T1/T3 exactly as a real run would,
-then reports the call count it WOULD make, without calling ``VertexScorer``
-at all -- run this first to see the exact shape before spending anything.
+The defaults (``--limit-terms 2 --limit-sessions 10``) keep a first run
+small and cheap -- 2 terms x 10 sessions = 20 real Gemini calls at most (some
+sessions may have no narration/tool-call text and are skipped, never
+charged). Pass ``--all-terms``/``--all-sessions`` to widen either dimension
+independently, e.g. the full shape is 4 terms x 73 sessions = up to 292
+calls, one call per (term, session) pair, never per label -- see
+``judge/scorers/vertex.py``'s own module docstring for why that cost shape
+was chosen over ``DeepEvalScorer``'s per-label G-Eval loop). ``--dry-run``
+compiles and seals T1/T3 exactly as a real run would, then reports the exact
+call shape it WOULD make, without calling ``VertexScorer`` at all -- run
+this first to see the exact shape before spending anything.
 
-Blocks on real terminal input at T1 (same "type 'approve'" gate the
-tau2-live-approve runbook uses) unless ``--yes`` is passed.
+Blocks on real terminal input at T1/T3 (same "type 'approve'" gate the
+tau2-live-approve runbook uses) unless ``--yes`` is passed. Separately,
+immediately before the real judging calls, it ALWAYS prints the call/cost
+estimate and blocks on a "type 'y'" confirm -- ``--yes`` does not skip this
+one; only ``--yes`` combined with ``--dry-run-was-reviewed`` does.
 """
 from __future__ import annotations
 
@@ -118,6 +136,19 @@ _EVIDENCE_RULES = {
     "pushback where the facts warrant it, rather than deferring by default.",
 }
 _LIVE_TERM_IDS = tuple(_STATEMENTS)  # ("A1", "A3b", "A6", "A7")
+
+# Small-by-default scope ([ldg-bp-vertex-prompt-drafting-small-run] #98-review fix): the first
+# cut of this script defaulted to the full 4 terms and only capped sessions at 3 -- still a
+# real-spend surprise on a first run. Default to the first 2 of _LIVE_TERM_IDS (A1, A3b) x 10
+# sessions; --all-terms/--all-sessions opt back into the wider shape independently.
+_DEFAULT_LIMIT_TERMS = 2
+_DEFAULT_LIMIT_SESSIONS = 10
+
+# A rough, clearly-labeled per-call BUDGETING estimate for a gemini-2.5-flash call over a
+# short tau2-airline session transcript -- NOT an exact billing figure (actual cost depends on
+# each session's real token count). Purpose is to stop an operator from firing an unknown
+# number of billed calls blind, not to reconcile against a GCP invoice.
+_EST_COST_PER_CALL_USD = 0.01
 
 
 def _outcome_id(term_id: str) -> str:
@@ -199,18 +230,19 @@ def compile_and_accept(
 
 
 def compile_and_confirm_prompts(
-    decl_store: DeclarationStore, c_digest: str, live_ledger: LedgerStore, signer, *, yes: bool
+    decl_store: DeclarationStore, c_digest: str, live_ledger: LedgerStore, signer, *, term_ids: tuple[str, ...], yes: bool
 ) -> dict[str, JudgePromptDefinition]:
-    """T3: for each of the four terms with real evidence in this corpus,
-    compile a judge prompt (#90's ``compile_judge_prompt``), print it for
-    review, then seal it verbatim (``confirm_prompt``, ``decision="confirm"``)
-    chained to C. Gated on T1 acceptance via ``decl_store`` (the same store
-    ``compile_and_accept`` just wrote to)."""
+    """T3: for each of ``term_ids`` (a subset of the four terms with real
+    evidence in this corpus), compile a judge prompt (#90's
+    ``compile_judge_prompt``), print it for review, then seal it verbatim
+    (``confirm_prompt``, ``decision="confirm"``) chained to C. Gated on T1
+    acceptance via ``decl_store`` (the same store ``compile_and_accept``
+    just wrote to)."""
     print()
     print("=" * 78)
     print("T3 -- the following judge prompts are about to be SEALED as the final wording:")
     generated: dict[str, JudgePromptDefinition] = {}
-    for term_id in _LIVE_TERM_IDS:
+    for term_id in term_ids:
         outcome_id = _outcome_id(term_id)
         stored = decl_store.load(outcome_id)
         outcome = Outcome(
@@ -235,8 +267,57 @@ def compile_and_confirm_prompts(
             ledger=live_ledger, signer=signer, operator=OPERATOR, developer=DEVELOPER, store=decl_store,
         )
         sealed[term_id] = prompt
-    print("T3 sealed for all four terms.")
+    print(f"T3 sealed for {len(sealed)} term(s).")
     return sealed
+
+
+def plan_judge_calls(
+    prompts: dict[str, JudgePromptDefinition], corpus_path: Path, session_ids: list[str]
+) -> tuple[list[tuple[str, str, list[RealTurn], str]], list[tuple[str, str]]]:
+    """Compute the exact (term, session) pairs a real run would call, and
+    the ones it would skip (no narration/tool-call text) -- WITHOUT ever
+    constructing a ``VertexScorer`` or touching the network. The single
+    source of truth for both ``--dry-run``'s report and the spend-confirm
+    gate that always runs immediately before any real call, so the two can
+    never disagree on the call count."""
+    real_turns, _records_by_id, _seq_by_id = _resolve_real_turns(corpus_path)
+    sessions = _group_sessions(real_turns)
+
+    plan: list[tuple[str, str, list[RealTurn], str]] = []
+    skipped: list[tuple[str, str]] = []
+    for term_id in prompts:
+        for session_id in session_ids:
+            turns = sessions.get(session_id, [])
+            evidence_text = _session_evidence_text(turns)
+            if not evidence_text.strip():
+                skipped.append((term_id, session_id))
+                continue
+            plan.append((term_id, session_id, turns, evidence_text))
+    return plan, skipped
+
+
+def confirm_live_spend(term_count: int, session_count: int, call_count: int, *, yes: bool, dry_run_was_reviewed: bool) -> None:
+    """The MONEY-PATH gate ([ldg-bp-vertex-prompt-drafting-small-run]
+    #98-review fix): print the exact call/cost shape and require an
+    explicit ``y/N`` confirm immediately before the first real Vertex call.
+    ``--yes`` ALONE is NOT enough to skip this -- it only skips the T1/T3
+    'type approve' gates. Skipping this one requires BOTH ``--yes`` AND
+    ``--dry-run-was-reviewed`` (the operator has already run ``--dry-run``
+    and reviewed the exact call shape this run would produce)."""
+    est_cost = call_count * _EST_COST_PER_CALL_USD
+    print()
+    print("=" * 78)
+    print(f"{term_count} term(s) x {session_count} session(s) = {call_count} call(s), est ~${est_cost:.2f}")
+    print(
+        "(rough per-call budgeting estimate for gemini-2.5-flash over a short session "
+        "transcript -- not an exact billing figure)"
+    )
+    if yes and dry_run_was_reviewed:
+        print("--yes --dry-run-was-reviewed given -- skipping the interactive confirm.")
+        return
+    answer = input("proceed with these REAL, BILLED Vertex calls? [y/N]: ").strip().lower()
+    if answer not in ("y", "yes"):
+        raise SystemExit("not confirmed -- no Vertex calls made")
 
 
 def run_live_judge(
@@ -247,52 +328,62 @@ def run_live_judge(
     *,
     session_ids: list[str],
     dry_run: bool,
+    yes: bool,
+    dry_run_was_reviewed: bool,
 ) -> tuple[Counter, int]:
     """The judge run itself: one real ``VertexScorer`` call per (term,
     session) pair -- never per label. ``dry_run`` reports the call shape
     without ever constructing a ``VertexScorer`` (no gcloud subprocess, no
-    network) -- for previewing spend before committing to it."""
-    real_turns, _records_by_id, _seq_by_id = _resolve_real_turns(corpus_path)
-    sessions = _group_sessions(real_turns)
-
-    label_counts: Counter = Counter()
-    call_count = 0
+    network) -- for previewing spend before committing to it. A real run
+    (``dry_run=False``) always calls ``confirm_live_spend`` first, so the
+    operator sees the cost estimate and confirms before the first real
+    call is made."""
+    plan, skipped = plan_judge_calls(prompts, corpus_path, session_ids)
     print()
     print("=" * 78)
     print(f"judge run -- {len(prompts)} term(s) x {len(session_ids)} session(s)" + (" (DRY RUN, no Vertex calls)" if dry_run else ""))
-    for term_id, prompt in prompts.items():
-        harness = None if dry_run else JudgeHarness(
-            ledger=live_ledger, prompt=prompt, scorer=VertexScorer(), operator=OPERATOR, developer=DEVELOPER,
-            signer_provider=lambda: signer,
-        )
-        for session_id in session_ids:
-            turns = sessions.get(session_id, [])
-            evidence_text = _session_evidence_text(turns)
-            if not evidence_text.strip():
-                print(f"  skip {term_id} / {session_id}: no narration/tool-call text in this session")
-                continue
-            call_count += 1
-            if dry_run:
-                print(f"  [{call_count}] would call vertex: {term_id} / {session_id}")
-                continue
-            evidence = JudgeEvidence(
-                session_id=session_id, turn_capsule_ids=tuple(t.capsule_id for t in turns), evidence_text=evidence_text,
+    for term_id, session_id in skipped:
+        print(f"  skip {term_id} / {session_id}: no narration/tool-call text in this session")
+
+    if dry_run:
+        for i, (term_id, session_id, _turns, _evidence_text) in enumerate(plan, start=1):
+            print(f"  [{i}] would call vertex: {term_id} / {session_id}")
+        return Counter(), len(plan)
+
+    confirm_live_spend(
+        len(prompts), len(session_ids), len(plan), yes=yes, dry_run_was_reviewed=dry_run_was_reviewed
+    )
+
+    harnesses: dict[str, JudgeHarness] = {}
+    label_counts: Counter = Counter()
+    call_count = 0
+    for term_id, session_id, turns, evidence_text in plan:
+        harness = harnesses.get(term_id)
+        if harness is None:
+            harness = JudgeHarness(
+                ledger=live_ledger, prompt=prompts[term_id], scorer=VertexScorer(), operator=OPERATOR, developer=DEVELOPER,
+                signer_provider=lambda: signer,
             )
-            record = harness.run(evidence=evidence)
-            label = record.capsule["asg_payload"]["detail"]["label"]
-            label_counts[(term_id, label)] += 1
-            print(f"  [{call_count}] {term_id} / {session_id}: {label}  ({record.capsule_id[:16]}...)")
+            harnesses[term_id] = harness
+        call_count += 1
+        evidence = JudgeEvidence(
+            session_id=session_id, turn_capsule_ids=tuple(t.capsule_id for t in turns), evidence_text=evidence_text,
+        )
+        record = harness.run(evidence=evidence)
+        label = record.capsule["asg_payload"]["detail"]["label"]
+        label_counts[(term_id, label)] += 1
+        print(f"  [{call_count}] {term_id} / {session_id}: {label}  ({record.capsule_id[:16]}...)")
     return label_counts, call_count
 
 
-def render_report(label_counts: Counter, call_count: int, *, total_sessions: int, dry_run: bool) -> str:
+def render_report(label_counts: Counter, call_count: int, *, term_ids: tuple[str, ...], total_sessions: int, dry_run: bool) -> str:
     lines = [f"judgment report -- {call_count} call(s) made" + (" (dry run)" if dry_run else "")]
-    for term_id in _LIVE_TERM_IDS:
+    for term_id in term_ids:
         term_labels = {label: n for (t, label), n in label_counts.items() if t == term_id}
         if term_labels:
             lines.append(f"  {term_id}: {dict(term_labels)}")
     lines.append(
-        f"cost shape: {len(_LIVE_TERM_IDS)} term(s) x {total_sessions} session(s) in this run, "
+        f"cost shape: {len(term_ids)} term(s) x {total_sessions} session(s) in this run, "
         "ONE call per (term, session) pair -- never per label."
     )
     return "\n".join(lines)
@@ -302,15 +393,31 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--corpus", required=True, help="path to the tau2-airline-corpus-v1 fixture directory")
     parser.add_argument("--out", required=True, help="output directory for this run's own ledger + declarations")
-    parser.add_argument("--limit-sessions", type=int, default=3, help="run over only the first N sessions (default: 3, cheap)")
+    parser.add_argument(
+        "--limit-terms", type=int, default=_DEFAULT_LIMIT_TERMS,
+        help=f"use only the first N of the {len(_LIVE_TERM_IDS)} airline-pack terms with real evidence (default: {_DEFAULT_LIMIT_TERMS}, cheap)",
+    )
+    parser.add_argument("--all-terms", action="store_true", help="use all terms with real evidence in the corpus (overrides --limit-terms)")
+    parser.add_argument(
+        "--limit-sessions", type=int, default=_DEFAULT_LIMIT_SESSIONS,
+        help=f"run over only the first N sessions (default: {_DEFAULT_LIMIT_SESSIONS}, cheap)",
+    )
     parser.add_argument("--all-sessions", action="store_true", help="run over the full corpus (overrides --limit-sessions)")
-    parser.add_argument("--yes", action="store_true", help="skip the T1/T3 'type approve' interactive gates")
+    parser.add_argument("--yes", action="store_true", help="skip the T1/T3 'type approve' interactive gates (does NOT skip the spend confirm -- see --dry-run-was-reviewed)")
+    parser.add_argument(
+        "--dry-run-was-reviewed", action="store_true",
+        help="acknowledge you already ran --dry-run and reviewed the exact call shape; combined with --yes, skips the final y/N spend confirm before real Vertex calls",
+    )
     parser.add_argument("--dry-run", action="store_true", help="seal T1/T3 for real, but report the judge-run call shape WITHOUT calling Vertex")
     args = parser.parse_args(argv)
 
     corpus_path = Path(args.corpus)
     if not corpus_path.exists():
         parser.error(f"corpus fixture not found at {corpus_path} -- pass --corpus explicitly")
+
+    term_ids = _LIVE_TERM_IDS if args.all_terms else _LIVE_TERM_IDS[: args.limit_terms]
+    if not term_ids:
+        parser.error("--limit-terms must select at least one term")
 
     out_root = Path(args.out)
     out_root.mkdir(parents=True, exist_ok=True)
@@ -319,7 +426,9 @@ def main(argv: list[str] | None = None) -> int:
     signer = LocalSigner(key_id="live-judge-run-vertex-key", secret=b"live-judge-run-vertex-demo-secret")
     try:
         c_digest = compile_and_accept(corpus_path, decl_store, live_ledger, signer, yes=args.yes)
-        prompts = compile_and_confirm_prompts(decl_store, c_digest, live_ledger, signer, yes=args.yes)
+        prompts = compile_and_confirm_prompts(
+            decl_store, c_digest, live_ledger, signer, term_ids=term_ids, yes=args.yes
+        )
 
         real_turns, _records, _seq = _resolve_real_turns(corpus_path)
         sessions = _group_sessions(real_turns)
@@ -328,12 +437,13 @@ def main(argv: list[str] | None = None) -> int:
 
         label_counts, call_count = run_live_judge(
             prompts, corpus_path, live_ledger, signer, session_ids=session_ids, dry_run=args.dry_run,
+            yes=args.yes, dry_run_was_reviewed=args.dry_run_was_reviewed,
         )
     finally:
         live_ledger.close()
 
     print()
-    print(render_report(label_counts, call_count, total_sessions=len(session_ids), dry_run=args.dry_run))
+    print(render_report(label_counts, call_count, term_ids=term_ids, total_sessions=len(session_ids), dry_run=args.dry_run))
     print(f"live ledger: {out_root / 'live-ledger'}")
     return 0
 

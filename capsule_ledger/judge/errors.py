@@ -36,6 +36,9 @@ VERTEX_RESPONSE_MALFORMED = "vertex_response_malformed"
 # Outcomes -> judge-prompt compiler reasons ([outcomes-to-judgeprompt-compiler-t3]).
 REFUSED_OUTCOME_NO_JUDGE_PROMPT = "refused_outcome_no_judge_prompt"
 
+# Vertex-assisted prompt-drafting reasons ([ldg-bp-vertex-prompt-drafting-small-run]).
+PROMPT_DRAFT_NO_OUTPUT = "prompt_draft_no_output"
+
 # Evidence-completeness (insufficient_evidence, design §11) build-time reasons.
 MISSING_EVIDENCE_LABEL_REQUIRED = "missing_evidence_label_required"
 MISSING_EVIDENCE_LABEL_NOT_ALLOWED = "missing_evidence_label_not_allowed"
