@@ -2,6 +2,14 @@
 """Fold definitions, reducers, and replay evaluation over the ledger (spec §1-4)."""
 
 from .catalog import Catalog
+from .counterparty_signals import (
+    BASIC_QUESTION_COUNT,
+    CLARIFICATION_TURN_COUNT,
+    CounterpartySignal,
+    compute_clarification_turn_count,
+    counterparty_trajectory_for_signal,
+    signal_record,
+)
 from .definition import FilterClause, FoldDefinition, ReadField, Reduce, Window, parse_definition
 from .engine import EvaluationTrace, evaluate_all, evaluate_one
 from .errors import FoldDefinitionError, FoldDeterminismError
@@ -42,4 +50,10 @@ __all__ = [
     "agent_trajectory",
     "cohort_comparison",
     "counterparty_change",
+    "CounterpartySignal",
+    "CLARIFICATION_TURN_COUNT",
+    "BASIC_QUESTION_COUNT",
+    "compute_clarification_turn_count",
+    "signal_record",
+    "counterparty_trajectory_for_signal",
 ]
