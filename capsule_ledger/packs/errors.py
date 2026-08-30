@@ -52,6 +52,16 @@ INVALID_TIER = "invalid_tier"
 # fold_counterparty/fold_agent/fold_cohort).
 INVALID_MODE = "invalid_mode"
 
+# profiles[] -- relationship-topology profiles over a pack's own outcomes
+# ([ldg-bp-topology-profiles], standard-outcome-pack design §6b/§7).
+INVALID_PROFILE_ID = "invalid_profile_id"
+DUPLICATE_PROFILE_ID = "duplicate_profile_id"
+UNKNOWN_PROFILE_ID = "unknown_profile_id"
+INVALID_COUNTERPARTY_BINDING = "invalid_counterparty_binding"
+DUPLICATE_PROFILE_OVERRIDE_OUTCOME_ID = "duplicate_profile_override_outcome_id"
+UNKNOWN_OUTCOME_IN_PROFILE_OVERRIDE = "unknown_outcome_in_profile_override"
+TOPOLOGY_INVARIANT_OVERRIDE = "topology_invariant_override"
+
 # measurability / evidence_instrument (pack-harden-tau2-oracle: closes the
 # adversarial-review finding that a term's "declared, not measured on this
 # corpus" claim was an unchecked, hand-authored lambda -- see
