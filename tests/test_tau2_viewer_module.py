@@ -27,13 +27,13 @@ from pathlib import Path
 
 import pytest
 
+from capsule_ledger.bundle_viewer import base_viewer as bv
 from capsule_ledger.bundle_viewer import (
     build_entry,
     build_payload,
     encode_fragment,
     render_base_viewer_html,
 )
-from capsule_ledger.bundle_viewer import base_viewer as bv
 from capsule_ledger.examples.airline_engagement_pack import DEVELOPER, OPERATOR, load_conversations
 from capsule_ledger.examples.tau2_conversation_exchange import seal_tau2_sim_exchange
 

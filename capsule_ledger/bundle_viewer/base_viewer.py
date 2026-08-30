@@ -32,7 +32,6 @@ encoder and the JS decode below stays in step with it.
 """
 from __future__ import annotations
 
-import html
 import json
 from importlib import resources
 from typing import Any
