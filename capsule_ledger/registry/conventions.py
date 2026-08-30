@@ -35,7 +35,13 @@ from typing import Any
 
 from agent_action_capsule import json_digest
 
-__all__ = ["ActionConvention", "describe_action_class", "conventions_digest"]
+__all__ = [
+    "ActionConvention",
+    "describe_action_class",
+    "conventions_digest",
+    "FieldConvention",
+    "describe_field_value",
+]
 
 
 @dataclass(frozen=True)
@@ -43,6 +49,26 @@ class ActionConvention:
     action_class: str | None
     label: str
     description: str | None
+    registered: bool
+
+
+@dataclass(frozen=True)
+class FieldConvention:
+    """A resolved convention label for one AAC six-registry field value
+    (``effect.type``, ``effect_attestation``, ``chain.relation``, ...).
+
+    ``status`` is ``"provisional"`` when the value is resolved from the vendored
+    CPB *provisional* payload-class snapshot (a known-with-status-provisional
+    value, never a rejection -- the never-reject invariant); ``None`` when the
+    value carries no convention entry here (renders as-is, unregistered).
+    ``payload_class`` names the CPB provisional payload class that sets the
+    value, when known."""
+    field: str
+    value: str
+    label: str
+    description: str | None
+    status: str | None
+    payload_class: str | None
     registered: bool
 
 
@@ -54,6 +80,13 @@ def _load_raw() -> dict[str, Any]:
 @lru_cache(maxsize=1)
 def _table() -> dict[str, Any]:
     return _load_raw().get("action_class_conventions", {})
+
+
+@lru_cache(maxsize=1)
+def _provisional_field_table() -> dict[str, Any]:
+    """The vendored provisional field-value conventions, keyed by AAC registry
+    field name (``effect.type`` etc.). Empty when none are vendored."""
+    return _load_raw().get("provisional_field_conventions", {})
 
 
 @lru_cache(maxsize=1)
@@ -73,4 +106,33 @@ def describe_action_class(action_class: str | None) -> ActionConvention:
         return ActionConvention(action_class=action_class, label=action_class, description=None, registered=False)
     return ActionConvention(
         action_class=action_class, label=entry["label"], description=entry.get("description"), registered=True
+    )
+
+
+def describe_field_value(field: str, value: str | None) -> FieldConvention:
+    """Resolve a convention label for one AAC six-registry field value.
+
+    A value carried by a vendored CPB *provisional* payload class resolves
+    known-with-status-``provisional`` (``registered=True``, ``status=
+    "provisional"``); any other value renders as-is, unregistered -- never an
+    error (the never-reject invariant, mirroring ``describe_action_class`` and
+    the spec-level §12 binding)."""
+    if not value:
+        return FieldConvention(
+            field=field, value="", label="(no value recorded)", description=None,
+            status=None, payload_class=None, registered=False,
+        )
+    entry = _provisional_field_table().get(field, {}).get(value)
+    if entry is None:
+        return FieldConvention(
+            field=field, value=value, label=value, description=None,
+            status=None, payload_class=None, registered=False,
+        )
+    return FieldConvention(
+        field=field, value=value,
+        label=entry.get("label", value),
+        description=entry.get("description"),
+        status=entry.get("status", "provisional"),
+        payload_class=entry.get("payload_class"),
+        registered=True,
     )
