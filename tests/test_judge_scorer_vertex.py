@@ -104,17 +104,52 @@ def test_one_call_per_score_not_one_call_per_label():
     assert len(transport.calls) == 1
 
 
-def test_thinking_budget_and_temperature_are_digest_safe_sampling_params():
+def test_thinking_budget_temperature_and_seed_are_digest_safe_sampling_params():
     transport = _RecordingTransport(json.dumps({"label": "pass", "confidence": 1.0}))
-    scorer = _scorer(transport, temperature=0.2, thinking_budget=64, max_output_tokens=512)
+    scorer = _scorer(transport, temperature=0.2, thinking_budget=64, max_output_tokens=512, seed=42)
     result = scorer.score(evidence=EVIDENCE, prompt=PROMPT)
     assert result.sampling_params == {
         "temperature_micros": 200_000,
         "thinking_budget": 64,
         "max_output_tokens": 512,
+        "seed": 42,
     }
     for value in result.sampling_params.values():
         assert isinstance(value, int)
+
+
+# -- seed / entropy binding ([account-fold-core-unify]) ---------------------
+
+
+def test_explicit_seed_is_sent_in_generation_config_and_echoed_in_sampling_params():
+    transport = _RecordingTransport(json.dumps({"label": "pass", "confidence": 1.0}))
+    scorer = _scorer(transport, seed=12345)
+    result = scorer.score(evidence=EVIDENCE, prompt=PROMPT)
+
+    _url, payload, _headers = transport.calls[0]
+    assert payload["generationConfig"]["seed"] == 12345
+    assert result.sampling_params["seed"] == 12345
+
+
+def test_explicit_seed_pins_every_call_from_the_same_scorer_instance():
+    transport = _RecordingTransport(json.dumps({"label": "pass", "confidence": 1.0}))
+    scorer = _scorer(transport, seed=999)
+    scorer.score(evidence=EVIDENCE, prompt=PROMPT)
+    scorer.score(evidence=EVIDENCE, prompt=PROMPT)
+
+    seeds = [call[1]["generationConfig"]["seed"] for call in transport.calls]
+    assert seeds == [999, 999]
+
+
+def test_no_seed_given_draws_a_fresh_real_seed_every_call_not_a_shared_or_null_one():
+    transport = _RecordingTransport(json.dumps({"label": "pass", "confidence": 1.0}))
+    scorer = _scorer(transport)  # seed=None (default)
+    scorer.score(evidence=EVIDENCE, prompt=PROMPT)
+    scorer.score(evidence=EVIDENCE, prompt=PROMPT)
+
+    seeds = [call[1]["generationConfig"]["seed"] for call in transport.calls]
+    assert all(isinstance(s, int) for s in seeds)
+    assert seeds[0] != seeds[1]  # a fresh draw per call, not a fixed default
 
 
 # -- response parsing ---------------------------------------------------
