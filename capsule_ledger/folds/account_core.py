@@ -52,8 +52,10 @@ from capsule_emit.account import (
     Selection,
     VerificationResult,
     build_account,
-    parse_definition as parse_account_definition,
     verify_account,
+)
+from capsule_emit.account import (
+    parse_definition as parse_account_definition,
 )
 
 # The default derivation class for a hand-authored / precondition-decomposable

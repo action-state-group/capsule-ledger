@@ -17,10 +17,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from capsule_emit.account import AccountDefinition
 from capsule_emit.account import parse_definition as core_parse
 from capsule_emit.account import verify_account as core_verify
+
 from capsule_ledger.folds import (
     DERIVATION_DETERMINISTIC,
     DERIVATION_MODEL_ASSISTED,
