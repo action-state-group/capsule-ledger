@@ -66,18 +66,43 @@
 # spec-driven, not drift; same accept decision `main` already made. Verified
 # this branch's regenerated fixture is byte-identical to `main`'s own
 # regenerated one.
+#
+# PIN BUMP + EXTRA + INCONSISTENCY RECONCILE (2026-08-31,
+# [capsule-emit-release-consumer-sweep], for #107 account-fold de-fork):
+# bumped capsule-emit ==0.4.0 -> [checkpoint]==0.6.0. Two things happen here:
+#   (1) This branch (folds: de-fork onto capsule_emit.account) imports the new
+#       public `capsule_emit.account` subpackage, which does not exist in 0.4.0
+#       (it landed via capsule-emit #132 + #133, released as 0.6.0). #107 CI
+#       fails on the import until this floor moves.
+#   (2) Reconciles the standing inconsistency between this lockfile (==0.4.0)
+#       and pyproject.toml's floor (>=0.5.1, format-4/jcs). The lockfile
+#       predated the 0.5.1 floor decision and was never re-cut; both now name
+#       0.6.0. The `[checkpoint]` extra is added here to match pyproject.toml's
+#       `capsule-emit[checkpoint]` dependency (pulls scitt-cose>=0.2.0, needed
+#       by capsule_ledger.mmr.checkpoint's sign/register/verify path).
+# Fixture check: installed capsule-emit 0.6.0 from the release-sweep branch and
+# ran the full ledger suite; result recorded in #107. capsule-emit 0.6.0 is a
+# superset of 0.5.1's format-4/jcs surface (account core + chain_segment are
+# additive; no capsule-format field changed between 0.5.1 and 0.6.0), so no
+# fixture regeneration was required by the bump itself.
+# NOTE: this lockfile resolves 0.6.0 only once capsule-emit 0.6.0 is on PyPI
+# (Steven's v0.6.0 GitHub Release triggers the publish workflow). Until then a
+# clean `pip install -r requirements.txt` cannot find 0.6.0 -- #107 stays
+# CI-red and goes green on the 0.6.0 publish. Tested locally against the
+# release-sweep branch build (capsule-emit#134).
 
 # --- verification path (§7a-5 mandatory exact pins) -------------------------
 agent-action-capsule==0.1.0
 PyYAML==6.0.3
 
 # --- fixture generation path (LOAD-BEARING — see header) --------------------
-capsule-emit==0.4.0
+capsule-emit[checkpoint]==0.6.0
 
 # --- transitive dependencies (full freeze for complete reproducibility) ------
 annotated-types==0.8.0
 anyio==4.14.2
 attrs==26.1.0
+cbor2==6.1.4
 certifi==2026.7.22
 cffi==2.1.1
 click==8.4.2
@@ -105,6 +130,7 @@ python-multipart==0.0.32
 referencing==0.37.0
 rpds-py==2026.6.3
 ruff==0.16.3
+scitt-cose==0.2.2
 sse-starlette==3.4.8
 starlette==1.6.0
 typing_extensions==4.16.0

@@ -33,6 +33,7 @@ from typing import Any
 
 from agent_action_capsule.canonical import json_digest
 
+from ..folds.account_core import DERIVATION_MODEL_ASSISTED
 from ..folds.definition import FilterClause, FoldDefinition, ReadField, Reduce
 from ..guards.plan import PlanDefinition
 from ..guards.signing import Signer
@@ -223,6 +224,11 @@ def _model_assisted_fold(d: Declaration) -> FoldDefinition:
         key="developer",
         reduce=Reduce(reducer="count"),
         emit=f"{d.outcome_id}.judgment_count",
+        # The class-marker mapping: this compiler branch is the MODEL-ASSISTED
+        # verdict, so the fold it emits carries the neutral core's
+        # ``model_assisted`` derivation_class. _fold_for_declaration leaves the
+        # default (deterministic).
+        derivation_class=DERIVATION_MODEL_ASSISTED,
     )
 
 

@@ -1,6 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 """Fold definitions, reducers, and replay evaluation over the ledger (spec §1-4)."""
 
+from .account_core import (
+    DEFAULT_DERIVATION_CLASS,
+    DERIVATION_CLASSES,
+    DERIVATION_DETERMINISTIC,
+    DERIVATION_MODEL_ASSISTED,
+    SELECTION_CHAIN_SEGMENT,
+    SELECTION_EXPLICIT_SET,
+    SELECTION_RANGE,
+    AccountDefinition,
+    build_account,
+    verify_account,
+)
 from .catalog import Catalog
 from .counterparty_signals import (
     BASIC_QUESTION_COUNT,
@@ -27,6 +39,18 @@ from .taxonomy import (
 )
 
 __all__ = [
+    # de-fork: the neutral account/fold core, re-imported through the folds
+    # public interface (Amendment E) — not re-implemented in the ledger.
+    "AccountDefinition",
+    "build_account",
+    "verify_account",
+    "DERIVATION_DETERMINISTIC",
+    "DERIVATION_MODEL_ASSISTED",
+    "DERIVATION_CLASSES",
+    "DEFAULT_DERIVATION_CLASS",
+    "SELECTION_RANGE",
+    "SELECTION_EXPLICIT_SET",
+    "SELECTION_CHAIN_SEGMENT",
     "Catalog",
     "FoldDefinition",
     "ReadField",
