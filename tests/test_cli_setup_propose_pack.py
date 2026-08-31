@@ -109,6 +109,24 @@ def test_pack_mode_works_on_the_airline_engagement_pack_too_not_only_standard_ve
     assert "pack: airline-engagement" in out or "pack: asg/airline-engagement" in out
 
 
+def test_pack_mode_errors_when_a_unit_is_missing_the_entity_key_field(tmp_path, capsys):
+    """Review fix: a unit missing --entity-key's field must not silently
+    collapse onto a fake shared key and pass the repeat-traffic gate."""
+    corpus_path = _write_corpus(tmp_path, [{"messages": [{"role": "user", "content": "hi"}]}])  # no session_id
+    rc = main(
+        [
+            "setup", "propose",
+            "--project-dir", str(tmp_path),
+            "--pack", str(STANDARD_VENDOR_DIR),
+            "--corpus", str(corpus_path),
+            "--entity-key", "session_id",
+        ]
+    )
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "missing the --entity-key field 'session_id'" in err
+
+
 def test_default_propose_path_is_unaffected_when_pack_is_omitted(tmp_path, capsys, monkeypatch):
     """--pack is opt-in (default None) -- the pre-existing candidate-grading
     propose path must still require an initialized instance exactly as

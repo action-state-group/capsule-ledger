@@ -209,7 +209,13 @@ def _cmd_propose_pack(args: argparse.Namespace) -> int:
 
     units = _load_units_jsonl(args.corpus)
     key = args.entity_key
-    report = pack_measurability_report.build_measurability_report(pack, units, entity_key=lambda u: str(u.get(key)))
+    try:
+        report = pack_measurability_report.build_measurability_report(
+            pack, units, entity_key=pack_measurability_report.entity_key_field(key)
+        )
+    except pack_measurability_report.MissingEntityKeyField as exc:
+        print(f"capsule setup propose --pack: {exc}", file=sys.stderr)
+        return 2
 
     print(f"pack: {pack.pack_id}")
     print(f"corpus: {args.corpus} ({len(units)} unit(s))")
