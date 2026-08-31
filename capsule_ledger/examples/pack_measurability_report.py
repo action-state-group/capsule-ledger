@@ -43,7 +43,12 @@ __all__ = ["main"]
 # The only entity-key choices this script knows how to resolve from a plain
 # JSONL unit dict without guessing a pack-specific shape -- an explicit,
 # closed set rather than an arbitrary Python-expression flag (no eval()).
-_ENTITY_KEY_FIELDS = ("session_id", "developer", "operator")
+# task_id/sim_id are the real per-unit fields the vendored tau2 200-simulation
+# file (examples/data/tau2_airline/tau2_conversations_*.jsonl) actually
+# carries -- task_id repeats 4x (one per trial), sim_id never repeats;
+# session_id/developer/operator cover other corpus shapes this script might
+# be pointed at later.
+_ENTITY_KEY_FIELDS = ("task_id", "sim_id", "session_id", "developer", "operator")
 
 
 def _load_corpus(path: Path) -> list[dict]:
