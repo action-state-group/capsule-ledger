@@ -25,8 +25,8 @@ def test_runs_end_to_end_against_the_real_standard_vendor_pack(tmp_path, capsys)
     corpus_path = _write_corpus(
         tmp_path,
         [
-            {"messages": [{"role": "user", "content": "hi", "tool_call_names": []}]},
-            {"messages": [{"role": "user", "content": "bye", "tool_call_names": []}]},
+            {"session_id": "s1", "messages": [{"role": "user", "content": "hi", "tool_call_names": []}]},
+            {"session_id": "s1", "messages": [{"role": "user", "content": "bye", "tool_call_names": []}]},
         ],
     )
     rc = report_mod.main(
@@ -36,10 +36,27 @@ def test_runs_end_to_end_against_the_real_standard_vendor_pack(tmp_path, capsys)
     out = capsys.readouterr().out
     assert "pack: asg/standard-vendor" in out
     assert "measurability report -- 22 outcome(s)" in out
-    # neither unit carries a session_id -> both resolve to the SAME key
-    # (None) -> repeat traffic present -> fold_counterparty rows fall
-    # through to the instrument check rather than the not-enough-traffic line
+    # both units share the SAME real session_id -> genuine repeat traffic ->
+    # fold_counterparty rows fall through to the instrument check rather
+    # than the not-enough-traffic line
     assert "can't be shown" not in out
+
+
+def test_a_unit_missing_the_entity_key_field_errors_rather_than_silently_counting_as_repeat_traffic(tmp_path, capsys):
+    """Review fix: str(unit.get('session_id')) on a unit with NO session_id
+    field at all used to return "None" for every such unit -- collapsing
+    them onto the same fake key and reporting repeat traffic that isn't
+    real. Must now fail loudly instead."""
+    corpus_path = _write_corpus(
+        tmp_path,
+        [{"messages": [{"role": "user", "content": "hi", "tool_call_names": []}]}],  # no session_id at all
+    )
+    rc = report_mod.main(
+        ["--pack-dir", str(STANDARD_VENDOR_DIR), "--corpus", str(corpus_path), "--entity-key", "session_id"]
+    )
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "missing the --entity-key field 'session_id'" in err
 
 
 def test_no_repeat_traffic_when_session_id_is_actually_distinct(tmp_path, capsys):

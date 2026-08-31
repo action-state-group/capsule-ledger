@@ -33,17 +33,28 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from ..packs.loader import load_pack_dir
-from ..packs.measurability_report import build_measurability_report, render_terminal
+from ..packs.measurability_report import (
+    MissingEntityKeyField,
+    build_measurability_report,
+    entity_key_field,
+    render_terminal,
+)
 
 __all__ = ["main"]
 
 # The only entity-key choices this script knows how to resolve from a plain
 # JSONL unit dict without guessing a pack-specific shape -- an explicit,
 # closed set rather than an arbitrary Python-expression flag (no eval()).
-_ENTITY_KEY_FIELDS = ("session_id", "developer", "operator")
+# task_id/sim_id are the real per-unit fields the vendored tau2 200-simulation
+# file (examples/data/tau2_airline/tau2_conversations_*.jsonl) actually
+# carries -- task_id repeats 4x (one per trial), sim_id never repeats;
+# session_id/developer/operator cover other corpus shapes this script might
+# be pointed at later.
+_ENTITY_KEY_FIELDS = ("task_id", "sim_id", "session_id", "developer", "operator")
 
 
 def _load_corpus(path: Path) -> list[dict]:
@@ -71,7 +82,11 @@ def main(argv: list[str] | None = None) -> int:
     units = _load_corpus(Path(args.corpus))
     key = args.entity_key
 
-    report = build_measurability_report(pack, units, entity_key=lambda u, key=key: str(u.get(key)))
+    try:
+        report = build_measurability_report(pack, units, entity_key=entity_key_field(key))
+    except MissingEntityKeyField as exc:
+        print(f"pack_measurability_report: {exc}", file=sys.stderr)
+        return 2
     print(f"pack: {pack.pack_id}")
     print(f"corpus: {args.corpus} ({len(units)} unit(s))")
     print(f"entity_key: {key}")

@@ -16,6 +16,7 @@ from capsule_ledger.packs.measurability_report import (
     NOT_ENOUGH_REPEAT_TRAFFIC_DETAIL,
     STATUS_MISSING_INSTRUMENT,
     STATUS_NOT_ENOUGH_REPEAT_TRAFFIC,
+    STATUS_REFUSED,
     STATUS_RESOLVES,
     build_measurability_report,
     render_terminal,
@@ -98,7 +99,7 @@ def test_structural_row_with_no_instrument_anywhere_reports_missing_instrument(t
     row = _by_id(report, "outcome.needs_typed_field")
     assert row.status == STATUS_MISSING_INSTRUMENT
     assert row.mode == "structural"
-    assert row.core_definition_digest is None  # not a fold mode -- no digest expected
+    assert row.projection_digest is None  # not a fold mode -- no digest expected
 
 
 def test_structural_row_resolves_when_the_field_is_present(tmp_path):
@@ -134,6 +135,79 @@ def test_a_measured_row_with_no_instrument_reports_resolves_not_a_gap(tmp_path):
     assert "not a declared-not-measured row" in row.detail
 
 
+# --- REFUSED: too open-ended to check regardless of data ------------------
+
+
+def test_a_refused_outcome_reports_refused_not_resolves(tmp_path):
+    """A statement that's too open-ended to ever be checked -- refused
+    mechanically at compile time from its own shape (an unbounded goal, a
+    causation overclaim, a felt-state claim -- compiler.vocabulary.
+    REFUSAL_REASON_CODES), NEVER by looking at the corpus. Must not be
+    reported as resolves just because it happens to carry no
+    evidence_instrument."""
+    pack_dir = _write_pack(
+        tmp_path,
+        {
+            "outcomes": [
+                _outcome(
+                    id="outcome.no_causation_overclaim",
+                    mode="structural",
+                    forward_verdict="REFUSED",
+                    backward_verdict="REFUSED",
+                    refusal_reason_code="agent_caused_resolution_undecomposable",
+                )
+            ]
+        },
+    )
+    pack = load_pack_dir(pack_dir)
+    # A corpus that WOULD resolve a naive instrument check, to prove REFUSED
+    # wins regardless of what the data looks like.
+    corpus = [_unit([{"role": "assistant", "content": "x", "tool_call_names": [], "anything": "present"}])]
+    report = build_measurability_report(pack, corpus, entity_key=lambda u: id(u))
+    row = _by_id(report, "outcome.no_causation_overclaim")
+    assert row.status == STATUS_REFUSED
+    assert "agent_caused_resolution_undecomposable" in row.detail
+    assert row.projection_digest is None
+
+
+def test_a_refused_fold_mode_outcome_short_circuits_before_the_digest_and_repeat_traffic_check(tmp_path):
+    """REFUSED is checked FIRST -- a refused fold_counterparty row must not
+    compute a fold digest or run the repeat-traffic gate at all, since
+    neither applies to a statement that's unattestable regardless of data."""
+    pack_dir = _write_pack(
+        tmp_path,
+        {
+            "outcomes": [
+                _outcome(
+                    id="outcome.felt_state",
+                    mode="fold_counterparty",
+                    forward_verdict="REFUSED",
+                    backward_verdict="REFUSED",
+                    refusal_reason_code="subjective_state_unattestable",
+                )
+            ]
+        },
+    )
+    pack = load_pack_dir(pack_dir)
+    corpus = [_unit([{"role": "user", "content": "a"}])]  # single unit -- would also fail the repeat-traffic gate
+    report = build_measurability_report(pack, corpus, entity_key=lambda u: id(u))
+    row = _by_id(report, "outcome.felt_state")
+    assert row.status == STATUS_REFUSED  # not not_enough_repeat_traffic
+    assert row.projection_digest is None  # no fold digest computed for a refused row
+
+
+def test_the_real_standard_vendor_s4_row_reports_refused_not_resolves():
+    """Regression for the actual bug this fix closes: S4 ('No causation
+    overclaim... agent.caused_resolution', compile-time refused, zero
+    corpus dependency) was previously mis-reported as resolves because
+    forward_verdict/backward_verdict were never checked."""
+    pack = load_pack_dir(STANDARD_VENDOR_DIR)
+    report = build_measurability_report(pack, [], entity_key=lambda u: id(u))
+    s4 = _by_id(report, "S4")
+    assert s4.status == STATUS_REFUSED
+    assert s4.detail == "REFUSED (compile-time, no corpus dependency): agent_caused_resolution_undecomposable"
+
+
 # --- Stage 1b [LOCKED]: fold_counterparty/fold_cohort repeat-traffic gate --
 
 
@@ -163,7 +237,7 @@ def test_fold_counterparty_reports_not_enough_repeat_traffic_when_every_unit_is_
     row = _by_id(report, "outcome.capability_growth")
     assert row.status == STATUS_NOT_ENOUGH_REPEAT_TRAFFIC
     assert row.detail == NOT_ENOUGH_REPEAT_TRAFFIC_DETAIL  # exact locked wording, not paraphrased
-    assert row.core_definition_digest is not None  # still real -- the row isn't excluded, just honestly gated
+    assert row.projection_digest is not None  # still real -- the row isn't excluded, just honestly gated
 
 
 def test_fold_counterparty_row_is_never_silently_excluded_from_the_report(tmp_path):
@@ -182,7 +256,7 @@ def test_fold_counterparty_falls_through_to_the_instrument_check_when_repeat_tra
     report = build_measurability_report(pack, corpus, entity_key=lambda u: "same-customer")
     row = _by_id(report, "outcome.capability_growth")
     assert row.status == STATUS_MISSING_INSTRUMENT  # repeat traffic present, but the field still never resolves
-    assert row.core_definition_digest is not None
+    assert row.projection_digest is not None
 
 
 def test_fold_rollup_and_fold_agent_are_not_repeat_traffic_gated(tmp_path):
@@ -208,11 +282,11 @@ def test_fold_rollup_and_fold_agent_are_not_repeat_traffic_gated(tmp_path):
 
     rollup = _by_id(report, "outcome.session_rollup")
     assert rollup.status == STATUS_RESOLVES  # no instrument declared -- not a gap
-    assert rollup.core_definition_digest is not None
+    assert rollup.projection_digest is not None
 
     agent = _by_id(report, "outcome.agent_trend")
     assert agent.status == STATUS_MISSING_INSTRUMENT  # NOT not_enough_repeat_traffic
-    assert agent.core_definition_digest is not None
+    assert agent.projection_digest is not None
 
 
 # --- the unified fold seam: real digest, not a report-local one ------------
@@ -245,32 +319,57 @@ def test_fold_mode_digest_comes_from_the_real_seam_not_a_second_implementation()
         emit="outcome.rollup_only.fold_rollup.measurability",
         derivation_class=DERIVATION_DETERMINISTIC,
     )
-    assert row.core_definition_digest == independent.core_definition_digest()
+    assert row.projection_digest == independent.core_definition_digest()
 
 
-def test_judged_mode_fold_digest_uses_model_assisted_derivation_class():
-    pack_dir_data = {**BASE_PACK, "outcomes": [_outcome(id="outcome.judged_fold", mode="fold_counterparty")]}
+def test_fold_mode_projections_are_always_deterministic_never_model_assisted():
+    """Review fix: a fold-mode projection checks a structural fact about
+    the DEFINITION's shape, never asserts a model's judgment -- so it is
+    always DERIVATION_DETERMINISTIC, regardless of the outcome's own
+    mode. There is no reachable model_assisted branch: mode is a single
+    closed-set value, so an outcome can never be BOTH ``judged`` and a
+    fold mode (``judged`` is not in ``_FOLD_MODES``) -- proven here by
+    round-tripping a fold_counterparty projection's digest against an
+    independently-built deterministic FoldDefinition."""
     import tempfile
 
+    from capsule_ledger.folds import DERIVATION_DETERMINISTIC, FoldDefinition, ReadField, Reduce
+
+    pack_dir_data = {**BASE_PACK, "outcomes": [_outcome(id="outcome.some_fold", mode="fold_counterparty")]}
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         (tmp_path / "pack.yaml").write_text(yaml.dump(pack_dir_data))
         (tmp_path / "spend.yaml").write_text(MINIMAL_FOLD_YAML)
         pack = load_pack_dir(tmp_path)
 
-    outcome = pack.outcome_for_id("outcome.judged_fold")
-    assert outcome.mode == "fold_counterparty"  # deterministic class expected (not "judged")
+    report = build_measurability_report(pack, [], entity_key=lambda u: id(u))
+    row = _by_id(report, "outcome.some_fold")
 
-    pack_dir_data2 = {**BASE_PACK, "outcomes": [_outcome(id="outcome.judged_row", mode="judged")]}
-    with tempfile.TemporaryDirectory() as tmp2:
-        tmp_path2 = Path(tmp2)
-        (tmp_path2 / "pack.yaml").write_text(yaml.dump(pack_dir_data2))
-        (tmp_path2 / "spend.yaml").write_text(MINIMAL_FOLD_YAML)
-        pack2 = load_pack_dir(tmp_path2)
-    # judged mode alone (not a fold mode) carries no digest at all -- only
-    # fold-mode rows route through the seam.
-    report2 = build_measurability_report(pack2, [], entity_key=lambda u: id(u))
-    assert _by_id(report2, "outcome.judged_row").core_definition_digest is None
+    independent = FoldDefinition(
+        fold_id="measurability_report.outcome.some_fold/1.0.0",
+        reads=(ReadField(path="outcome.some_fold", erasure_class="commitment-ok"),),
+        reduce=Reduce(reducer="count"),
+        emit="outcome.some_fold.fold_counterparty.measurability",
+        derivation_class=DERIVATION_DETERMINISTIC,
+    )
+    assert row.projection_digest == independent.core_definition_digest()
+
+
+def test_judged_mode_alone_is_not_a_fold_mode_and_carries_no_digest():
+    """``judged`` (a1/a3b-style: a live-judge row, not a fold) is never in
+    _FOLD_MODES -- no projection is built for it at all, so it carries no
+    digest, distinct from a fold-mode row."""
+    import tempfile
+
+    pack_dir_data = {**BASE_PACK, "outcomes": [_outcome(id="outcome.judged_row", mode="judged")]}
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        (tmp_path / "pack.yaml").write_text(yaml.dump(pack_dir_data))
+        (tmp_path / "spend.yaml").write_text(MINIMAL_FOLD_YAML)
+        pack = load_pack_dir(tmp_path)
+
+    report = build_measurability_report(pack, [], entity_key=lambda u: id(u))
+    assert _by_id(report, "outcome.judged_row").projection_digest is None
 
 
 # --- entity_key is required -------------------------------------------------
@@ -296,9 +395,9 @@ def test_the_real_standard_vendor_pack_produces_a_row_for_every_outcome_unregres
     fold_modes = {"fold_rollup", "fold_counterparty", "fold_agent", "fold_cohort"}
     for row in report:
         if row.mode in fold_modes:
-            assert row.core_definition_digest is not None, row.outcome_id
+            assert row.projection_digest is not None, row.outcome_id
         else:
-            assert row.core_definition_digest is None, row.outcome_id
+            assert row.projection_digest is None, row.outcome_id
     # render_terminal must not raise on the real pack
     text = render_terminal(report)
     assert "S1" in text and "C1" in text and "X1" in text
@@ -313,4 +412,4 @@ def test_the_real_airline_engagement_pack_is_unregressed_by_this_new_module():
     corpus = [_unit([{"role": "user", "content": "I need to change my flight", "tool_call_names": []}])]
     report = build_measurability_report(pack, corpus, entity_key=lambda u: id(u))
     assert len(report) == len(pack.outcomes)
-    assert all(row.core_definition_digest is None for row in report)  # no fold modes in this pack
+    assert all(row.projection_digest is None for row in report)  # no fold modes in this pack
