@@ -38,7 +38,7 @@ from typing import Any
 from .errors import DECLARED_NOT_MEASURED_EVIDENCE_RESOLVED, CorpusVerificationError
 from .schema import EvidenceInstrument, PackDefinition
 
-__all__ = ["verify_declared_not_measured"]
+__all__ = ["verify_declared_not_measured", "resolves_instrument"]
 
 # The message-dict keys every unit in this codebase's judge-run corpora
 # already carries by construction (transcript.py's `_turn_message`) -- a
@@ -66,7 +66,14 @@ def _resolves_tool_call_name(messages: Iterable[Mapping[str, Any]], name: str) -
     return False
 
 
-def _resolves(instrument: EvidenceInstrument, messages: Iterable[Mapping[str, Any]]) -> bool:
+def resolves_instrument(instrument: EvidenceInstrument, messages: Iterable[Mapping[str, Any]]) -> bool:
+    """Whether ``instrument`` (a ``structured_field`` or ``tool_call_name``
+    signal) resolves anywhere in one unit's ``messages``. The single
+    resolve-check implementation in this codebase -- ``verify_declared_not_measured``
+    below and ``packs.measurability_report`` (the generic "would this pack
+    work" report, a second real caller as of ``[pack-propose-generic]``) both
+    call this rather than each carrying their own copy. Public (was
+    ``_resolves``): promoted the moment a second caller needed it."""
     if instrument.kind == "structured_field":
         assert instrument.field is not None  # loader guarantees this
         return _resolves_structured_field(messages, instrument.field)
@@ -102,7 +109,7 @@ def verify_declared_not_measured(pack: PackDefinition, corpus: Iterable[Mapping[
             )
         for unit in units:
             messages = unit.get("messages") or ()
-            if _resolves(instrument, messages):
+            if resolves_instrument(instrument, messages):
                 violations.append(
                     f"outcome {outcome.id!r} declares measurability=declared_not_measured with "
                     f"evidence_instrument={instrument.to_dict()!r}, but that instrument DOES resolve on this "
