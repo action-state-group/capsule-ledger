@@ -21,6 +21,8 @@ from ..envcompat import env_get
 from ..guards.action import Action
 from ..guards.signing import LocalSigner
 from ..ledger import LedgerStore
+from ..packs import PackDefinitionError, load_pack_dir
+from ..packs import measurability_report as pack_measurability_report
 from ..setup import adapters as setup_adapters
 from ..setup import confirm as setup_confirm
 from ..setup import declaration_drafter as setup_declaration_drafter
@@ -167,7 +169,60 @@ def _cmd_observe(args: argparse.Namespace) -> int:
 # --- propose ---------------------------------------------------------------
 
 
+def _load_units_jsonl(path: str) -> list[dict]:
+    units = []
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                units.append(json.loads(line))
+    return units
+
+
+def _cmd_propose_pack(args: argparse.Namespace) -> int:
+    """``--pack``: the GENERIC ``[pack-propose-generic]`` measurability
+    report, for ANY pack -- not the Candidate-based grading below, which
+    only ever worked for the airline pack's own hand-authored translator.
+
+    READ-ONLY, deliberately: this prints resolves/MISSING-INSTRUMENT per
+    outcome, it persists nothing to DeclarationStore -- there are no T1
+    declarations to `confirm accept` afterward. Confirmable persistence for
+    a generic pack is a real, separate design decision (a MeasurabilityRow
+    is not a Candidate/ProposedOutcome), not built here. No ``capsule setup
+    init`` instance is required either -- this mode never touches
+    ``.capsule-setup/`` at all."""
+    if args.corpus is None:
+        print("capsule setup propose --pack: --corpus is required", file=sys.stderr)
+        return 2
+    if args.entity_key is None:
+        print(
+            "capsule setup propose --pack: --entity-key is required (no default -- names the unit field "
+            "identifying a repeat entity for fold_counterparty/fold_cohort rows, e.g. task_id, session_id)",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        pack = load_pack_dir(Path(args.pack))
+    except PackDefinitionError as exc:
+        print(f"capsule setup propose --pack: pack failed to load ({exc.reason}): {exc}", file=sys.stderr)
+        return 1
+
+    units = _load_units_jsonl(args.corpus)
+    key = args.entity_key
+    report = pack_measurability_report.build_measurability_report(pack, units, entity_key=lambda u: str(u.get(key)))
+
+    print(f"pack: {pack.pack_id}")
+    print(f"corpus: {args.corpus} ({len(units)} unit(s))")
+    print(f"entity_key: {key}")
+    print("READ-ONLY report -- no T1 declarations persisted (omit --pack for the confirmable propose flow)")
+    print()
+    print(pack_measurability_report.render_terminal(report), end="")
+    return 0
+
+
 def _cmd_propose(args: argparse.Namespace) -> int:
+    if args.pack is not None:
+        return _cmd_propose_pack(args)
     early_exit = _require_initialized(args, "propose")
     if early_exit is not None:
         return early_exit
@@ -501,6 +556,21 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
         ),
     )
     p_propose.add_argument("--outcome-id", default=None, help="the outcome_id to draft --statement under")
+    p_propose.add_argument(
+        "--pack", default=None,
+        help=(
+            "[pack-propose-generic] path to a pack directory (pack.yaml) -- runs a GENERIC READ-ONLY "
+            "measurability report (resolves vs MISSING INSTRUMENT per outcome, from the pack's own tier/"
+            "mode/evidence_instrument fields) instead of the default candidate-grading flow above. "
+            "Persists nothing -- requires --corpus and --entity-key, not --project-dir/--ledger/init."
+        ),
+    )
+    p_propose.add_argument("--corpus", default=None, help="[--pack mode] path to a JSONL file of units shaped {'messages': [...]}")
+    p_propose.add_argument(
+        "--entity-key", default=None,
+        help="[--pack mode] REQUIRED with --pack, no default: the unit field identifying a repeat entity "
+        "for fold_counterparty/fold_cohort rows (e.g. task_id, session_id)",
+    )
     p_propose.set_defaults(func=_cmd_propose)
 
     p_confirm = setup_sub.add_parser("confirm", help="the human touchpoints: T1 accept, T2 census, T4 refusal acknowledgment")
