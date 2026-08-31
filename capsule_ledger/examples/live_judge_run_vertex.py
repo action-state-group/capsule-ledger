@@ -79,7 +79,7 @@ first real model-assisted account in the system, so it seals as a
 conformant one rather than beside the new core. Each real Vertex call now
 sends a fresh ``seed`` (``judge/scorers/vertex.py``, unless the caller pins
 one), so every judgment capsule's own ``judge_pin.sampling_params`` carries
-a real entropy binding. After a real (non-dry-run) run, this script also
+a real, citable seed. After a real (non-dry-run) run, this script also
 seals ONE checkpoint over the run's own live ledger and, per term, builds a
 ``capsule_emit.account`` ``Account`` (via the ledger's own de-fork seam,
 ``folds.account_core`` -- never a second contracts implementation): a
@@ -87,13 +87,30 @@ seals ONE checkpoint over the run's own live ledger and, per term, builds a
 _model_assisted_fold`` emits) projected onto a core ``AccountDefinition``,
 a ``range`` selection citing the checkpoint's ``(coverage_root, range)``
 (never per-judgment digests), and ``Provenance`` naming the model + this
-term's prompt digest. Because a range account's own sessions each drew an
-INDEPENDENT seed (never a shared one -- see ``judge/scorers/vertex.py``),
-the aggregate ``Provenance`` honestly reports that count via ``entropy``
-rather than collapsing N distinct seeds into one misleading scalar --
-report the exact per-call seed by reading that judgment capsule's own
-``judge_pin``, cited by its ``turn_capsule_ids``/session id in this run's
-report.
+term's prompt digest.
+
+**This seed is NOT a grind-resistance guarantee -- an overclaim this module
+used to make and has since corrected.** It is an operator/system-chosen
+value (``seed_source: operator_chosen``): valuable as a reproducibility
+handle for re-adjudication, but it does not close the multi-run-grind
+attack (``[t2r-live-judge-run]``'s entropy gate, ``capsule-compiler``
+chunk-6, adversarial finding 1b) -- a caller who can freely pick or re-roll
+a seed can run N times and publish only the favorable account. Closing that
+needs entropy the operator does NOT choose (witness-receipt bytes, or a
+one-nonce-per-(operator,period) ledger); this script's own checkpoint is
+self-sealed (unwitnessed), so no such binding is available here yet, and
+none is claimed. Wiring the checkpoint through ``witness.aac`` (or a
+``FileNoncePeriodLedger``) to close this is real, tracked follow-up work,
+not done in this pass -- this task's own spec explicitly rules out a
+cross-repo dependency on ``capsule-compiler``'s runner
+(``[ldg-bp-vertex-scorer-live-run]``), so that wiring needs its own
+explicit design decision, not a silent import here. Because a range
+account's own sessions each drew an INDEPENDENT seed (never a shared one --
+see ``judge/scorers/vertex.py``), the aggregate ``Provenance`` honestly
+reports that count via ``entropy`` rather than collapsing N distinct seeds
+into one misleading scalar -- report the exact per-call seed by reading
+that judgment capsule's own ``judge_pin``, cited by its
+``turn_capsule_ids``/session id in this run's report.
 """
 from __future__ import annotations
 
@@ -494,10 +511,19 @@ def seal_conformant_accounts(
                 # N distinct seeds into one scalar would misrepresent the
                 # binding, so the aggregate honestly reports the count and
                 # points at where each real seed lives instead of fabricating
-                # a merged value.
+                # a merged value. seed_source=operator_chosen is explicit and
+                # load-bearing here: this is a reproducibility handle, NOT a
+                # grind-resistance guarantee -- an operator who can freely
+                # pick/re-roll a seed can still run N times and publish only
+                # the favorable account (the multi-run-grind attack
+                # [t2r-live-judge-run]'s entropy gate closes). This run's own
+                # checkpoint is self-sealed (unwitnessed), so no
+                # witness/nonce-ledger-derived binding is available or
+                # claimed here -- see the module docstring.
                 entropy=(
-                    f"{len(seeds)} independent per-call seed(s), one per judgment capsule "
-                    "(see each capsule's own judge_pin.sampling_params.seed)"
+                    f"seed_source=operator_chosen (NOT grind-resistant); {len(seeds)} independent "
+                    "per-call seed(s), one per judgment capsule (see each capsule's own "
+                    "judge_pin.sampling_params.seed)"
                 ),
                 re_adjudicable=True,
             ),

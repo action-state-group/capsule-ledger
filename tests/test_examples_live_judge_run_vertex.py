@@ -275,6 +275,23 @@ def test_sealed_account_provenance_names_the_real_model_and_prompt_digest(tmp_pa
     assert doc["provenance"]["model_id"] == "static-scorer/deterministic"
     assert doc["provenance"]["prompt_digest"] == judgments[0].capsule["asg_payload"]["detail"]["prompt_digest"]
     assert "2 independent per-call seed" in doc["provenance"]["entropy"]
+    # [t2r-live-judge-run] review fix: an operator-chosen seed is a reproducibility
+    # handle, not a grind-resistance guarantee -- this label must stay honest.
+    assert "seed_source=operator_chosen" in doc["provenance"]["entropy"]
+    assert "NOT grind-resistant" in doc["provenance"]["entropy"]
+
+
+def test_no_overclaimed_entropy_binding_language_anywhere_in_the_module():
+    """Regression guard for the reviewed overclaim: this module must never
+    claim a "real"/grind-resistant entropy binding for an operator-chosen
+    seed -- see ``judge/scorers/vertex.py``'s and this module's own
+    docstrings for why. A future edit that reintroduces that phrasing should
+    fail this test, not slip through review again."""
+    import inspect
+
+    source = inspect.getsource(live_mod)
+    assert "real entropy binding" not in source
+    assert "a grind-resistant" not in source  # only "NOT grind-resistant" may appear
 
 
 def test_account_construction_is_fail_closed_on_missing_provenance():

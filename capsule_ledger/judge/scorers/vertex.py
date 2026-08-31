@@ -190,17 +190,25 @@ class VertexScorer:
     and returns an empty response (``finishReason: MAX_TOKENS``, no
     ``parts``) for tasks, like this one, that don't need deep reasoning.
 
-    ``seed`` (``[account-fold-core-unify]``: a model-assisted account's
-    ``Provenance`` needs a real entropy binding, not just a temperature note)
-    is sent as Gemini's ``generationConfig.seed`` so the call is, per Google's
-    documented behavior, reproducible against the same prompt/model -- and
-    echoed back in ``ScoreResult.sampling_params["seed"]`` so it seals onto
-    the judgment capsule's own ``judge_pin`` and is available to build a
-    conformant ``Provenance`` for an aggregate account. Leave ``seed=None``
-    (the default) to draw a FRESH random seed for every ``score()`` call --
-    still a real, citable seed, just not caller-pinned; pass an explicit
-    ``seed`` to pin every call from this scorer instance to the same value
-    (e.g. a controlled re-run)."""
+    ``seed`` is sent as Gemini's ``generationConfig.seed`` so the call is,
+    per Google's documented behavior, reproducible against the same
+    prompt/model -- and echoed back in ``ScoreResult.sampling_params["seed"]``
+    so it seals onto the judgment capsule's own ``judge_pin``. Leave
+    ``seed=None`` (the default) to draw a FRESH random seed for every
+    ``score()`` call; pass an explicit ``seed`` to pin every call from this
+    scorer instance to the same value (e.g. a controlled re-run).
+
+    **This is an operator/system-chosen seed, NOT a grind-resistant entropy
+    binding** -- ``[t2r-live-judge-run]``'s entropy gate (``capsule-compiler``'s
+    ``runner/entropy_gate.py``, chunk-6) exists precisely because a caller who
+    can freely pick or re-roll a seed can run N times and publish only the
+    favorable result (the multi-run-grind attack, adversarial finding 1b).
+    Closing that requires entropy the operator does NOT choose -- witness-receipt
+    bytes, or a one-nonce-per-(operator,period) ledger. That gate is NOT wired
+    here (a cross-repo dependency this task's own spec explicitly rules out --
+    ``[ldg-bp-vertex-scorer-live-run]``: "do not add a cross-repo dep"); a
+    caller citing this seed as grind-resistant provenance is making a claim
+    this scorer does not back."""
 
     project: str = _DEFAULT_PROJECT
     region: str = _DEFAULT_REGION
