@@ -16,6 +16,7 @@ from capsule_ledger.packs.measurability_report import (
     NOT_ENOUGH_REPEAT_TRAFFIC_DETAIL,
     STATUS_MISSING_INSTRUMENT,
     STATUS_NOT_ENOUGH_REPEAT_TRAFFIC,
+    STATUS_REFUSED,
     STATUS_RESOLVES,
     build_measurability_report,
     render_terminal,
@@ -132,6 +133,79 @@ def test_a_measured_row_with_no_instrument_reports_resolves_not_a_gap(tmp_path):
     row = _by_id(report, "outcome.already_measured")
     assert row.status == STATUS_RESOLVES
     assert "not a declared-not-measured row" in row.detail
+
+
+# --- REFUSED: too open-ended to check regardless of data ------------------
+
+
+def test_a_refused_outcome_reports_refused_not_resolves(tmp_path):
+    """A statement that's too open-ended to ever be checked -- refused
+    mechanically at compile time from its own shape (an unbounded goal, a
+    causation overclaim, a felt-state claim -- compiler.vocabulary.
+    REFUSAL_REASON_CODES), NEVER by looking at the corpus. Must not be
+    reported as resolves just because it happens to carry no
+    evidence_instrument."""
+    pack_dir = _write_pack(
+        tmp_path,
+        {
+            "outcomes": [
+                _outcome(
+                    id="outcome.no_causation_overclaim",
+                    mode="structural",
+                    forward_verdict="REFUSED",
+                    backward_verdict="REFUSED",
+                    refusal_reason_code="agent_caused_resolution_undecomposable",
+                )
+            ]
+        },
+    )
+    pack = load_pack_dir(pack_dir)
+    # A corpus that WOULD resolve a naive instrument check, to prove REFUSED
+    # wins regardless of what the data looks like.
+    corpus = [_unit([{"role": "assistant", "content": "x", "tool_call_names": [], "anything": "present"}])]
+    report = build_measurability_report(pack, corpus, entity_key=lambda u: id(u))
+    row = _by_id(report, "outcome.no_causation_overclaim")
+    assert row.status == STATUS_REFUSED
+    assert "agent_caused_resolution_undecomposable" in row.detail
+    assert row.core_definition_digest is None
+
+
+def test_a_refused_fold_mode_outcome_short_circuits_before_the_digest_and_repeat_traffic_check(tmp_path):
+    """REFUSED is checked FIRST -- a refused fold_counterparty row must not
+    compute a fold digest or run the repeat-traffic gate at all, since
+    neither applies to a statement that's unattestable regardless of data."""
+    pack_dir = _write_pack(
+        tmp_path,
+        {
+            "outcomes": [
+                _outcome(
+                    id="outcome.felt_state",
+                    mode="fold_counterparty",
+                    forward_verdict="REFUSED",
+                    backward_verdict="REFUSED",
+                    refusal_reason_code="subjective_state_unattestable",
+                )
+            ]
+        },
+    )
+    pack = load_pack_dir(pack_dir)
+    corpus = [_unit([{"role": "user", "content": "a"}])]  # single unit -- would also fail the repeat-traffic gate
+    report = build_measurability_report(pack, corpus, entity_key=lambda u: id(u))
+    row = _by_id(report, "outcome.felt_state")
+    assert row.status == STATUS_REFUSED  # not not_enough_repeat_traffic
+    assert row.core_definition_digest is None  # no fold digest computed for a refused row
+
+
+def test_the_real_standard_vendor_s4_row_reports_refused_not_resolves():
+    """Regression for the actual bug this fix closes: S4 ('No causation
+    overclaim... agent.caused_resolution', compile-time refused, zero
+    corpus dependency) was previously mis-reported as resolves because
+    forward_verdict/backward_verdict were never checked."""
+    pack = load_pack_dir(STANDARD_VENDOR_DIR)
+    report = build_measurability_report(pack, [], entity_key=lambda u: id(u))
+    s4 = _by_id(report, "S4")
+    assert s4.status == STATUS_REFUSED
+    assert s4.detail == "REFUSED (compile-time, no corpus dependency): agent_caused_resolution_undecomposable"
 
 
 # --- Stage 1b [LOCKED]: fold_counterparty/fold_cohort repeat-traffic gate --

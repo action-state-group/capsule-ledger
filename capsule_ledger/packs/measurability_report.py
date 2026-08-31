@@ -58,6 +58,7 @@ __all__ = [
     "STATUS_RESOLVES",
     "STATUS_MISSING_INSTRUMENT",
     "STATUS_NOT_ENOUGH_REPEAT_TRAFFIC",
+    "STATUS_REFUSED",
     "NOT_ENOUGH_REPEAT_TRAFFIC_DETAIL",
     "MeasurabilityRow",
     "build_measurability_report",
@@ -67,6 +68,12 @@ __all__ = [
 STATUS_RESOLVES = "resolves"
 STATUS_MISSING_INSTRUMENT = "missing_instrument"
 STATUS_NOT_ENOUGH_REPEAT_TRAFFIC = "not_enough_repeat_traffic"
+# A statement that is too open-ended to ever be checked, REGARDLESS of what
+# data is available -- distinct from missing_instrument (measurable in
+# principle, just not on THIS corpus). Refused mechanically at compile time
+# from the statement's own shape (compiler.vocabulary.REFUSAL_REASON_CODES /
+# compiler.effect_model.compile_effect_claim), never by scanning a corpus.
+STATUS_REFUSED = "refused"
 
 # Stage 1b's own locked wording -- printed verbatim, not paraphrased, so a
 # test can pin the exact string and a report reader always sees the same
@@ -161,10 +168,20 @@ def build_measurability_report(
     entity_key: Callable[[Mapping[str, Any]], str],
 ) -> tuple[MeasurabilityRow, ...]:
     """Run every outcome in ``pack`` against ``corpus`` and report
-    resolves/missing_instrument/not_enough_repeat_traffic per row. No
-    grading, no pass/fail counts -- a feasibility report, not ``propose``'s
-    grading engine (which only exists for one hand-authored pack today;
-    this is deliberately lighter-weight and works for any pack).
+    resolves/missing_instrument/not_enough_repeat_traffic/refused per row.
+    No grading, no pass/fail counts -- a feasibility report, not
+    ``propose``'s grading engine (which only exists for one hand-authored
+    pack today; this is deliberately lighter-weight and works for any
+    pack).
+
+    A ``REFUSED`` outcome (``forward_verdict``/``backward_verdict`` ==
+    ``"REFUSED"`` -- ``compiler.vocabulary.REFUSAL_REASON_CODES``: an
+    unbounded goal, a causation overclaim, a felt-state claim) is checked
+    FIRST and short-circuits everything else for that row: it is too
+    open-ended to be checkable regardless of what data is available, so
+    neither the instrument check nor a fold digest applies -- reporting
+    either would imply "measurable, just not here yet", which is false for
+    a refused statement.
 
     ``entity_key`` is REQUIRED, no default: the generic corpus shape here
     has no built-in "counterparty" concept, so guessing a default field
@@ -174,6 +191,15 @@ def build_measurability_report(
     units = list(corpus)  # materialized once; every outcome scans it independently, same convention as corpus_verify
     rows: list[MeasurabilityRow] = []
     for outcome in pack.outcomes:
+        if outcome.forward_verdict == "REFUSED" or outcome.backward_verdict == "REFUSED":
+            reason = outcome.refusal_reason_code or "no refusal_reason_code declared"
+            rows.append(
+                MeasurabilityRow(
+                    outcome.id, outcome.tier, outcome.mode, STATUS_REFUSED,
+                    f"REFUSED (compile-time, no corpus dependency): {reason}",
+                )
+            )
+            continue
         core_digest = _fold_definition_for(outcome).core_definition_digest() if outcome.mode in _FOLD_MODES else None
         if outcome.mode in _REPEAT_TRAFFIC_GATED_MODES and not _has_repeat_entity(units, entity_key):
             rows.append(
@@ -190,7 +216,12 @@ def build_measurability_report(
 
 
 def render_terminal(rows: tuple[MeasurabilityRow, ...]) -> str:
-    glyphs = {STATUS_RESOLVES: "✓", STATUS_MISSING_INSTRUMENT: "⚠", STATUS_NOT_ENOUGH_REPEAT_TRAFFIC: "⚠"}
+    glyphs = {
+        STATUS_RESOLVES: "✓",
+        STATUS_MISSING_INSTRUMENT: "⚠",
+        STATUS_NOT_ENOUGH_REPEAT_TRAFFIC: "⚠",
+        STATUS_REFUSED: "✗",  # same glyph convention as airline_engagement_pack.py/tau2_pack_outcomes_walkthrough.py
+    }
     lines = [f"measurability report -- {len(rows)} outcome(s)", ""]
     for row in rows:
         glyph = glyphs.get(row.status, "?")
