@@ -73,6 +73,27 @@ tau2-live-approve runbook uses) unless ``--yes`` is passed. Separately,
 immediately before the real judging calls, it ALWAYS prints the call/cost
 estimate and blocks on a "type 'y'" confirm -- ``--yes`` does not skip this
 one; only ``--yes`` combined with ``--dry-run-was-reviewed`` does.
+
+**``[account-fold-core-unify]`` conformance (2026-08-31):** this is the
+first real model-assisted account in the system, so it seals as a
+conformant one rather than beside the new core. Each real Vertex call now
+sends a fresh ``seed`` (``judge/scorers/vertex.py``, unless the caller pins
+one), so every judgment capsule's own ``judge_pin.sampling_params`` carries
+a real entropy binding. After a real (non-dry-run) run, this script also
+seals ONE checkpoint over the run's own live ledger and, per term, builds a
+``capsule_emit.account`` ``Account`` (via the ledger's own de-fork seam,
+``folds.account_core`` -- never a second contracts implementation): a
+``model_assisted`` ``FoldDefinition`` (the same shape ``compiler.compile.
+_model_assisted_fold`` emits) projected onto a core ``AccountDefinition``,
+a ``range`` selection citing the checkpoint's ``(coverage_root, range)``
+(never per-judgment digests), and ``Provenance`` naming the model + this
+term's prompt digest. Because a range account's own sessions each drew an
+INDEPENDENT seed (never a shared one -- see ``judge/scorers/vertex.py``),
+the aggregate ``Provenance`` honestly reports that count via ``entropy``
+rather than collapsing N distinct seeds into one misleading scalar --
+report the exact per-call seed by reading that judgment capsule's own
+``judge_pin``, cited by its ``turn_capsule_ids``/session id in this run's
+report.
 """
 from __future__ import annotations
 
@@ -80,12 +101,17 @@ import argparse
 from collections import Counter
 from pathlib import Path
 
+from capsule_emit.checkpoint import MmrLedger
+
+from ..folds import DERIVATION_MODEL_ASSISTED, FoldDefinition, ReadField, Reduce, build_account
+from ..folds.account_core import Coverage, Provenance, Selection
 from ..guards.signing import LocalSigner
 from ..judge import JudgeEvidence, JudgeHarness
 from ..judge.prompt import JudgePromptDefinition
 from ..judge.prompt_compiler import PackContextBlock, compile_judge_prompt
 from ..judge.scorers.vertex import VertexScorer
 from ..ledger import LedgerStore
+from ..mmr.checkpoint import emit_checkpoint, load_latest_checkpoint, save_checkpoint
 from ..packs.schema import Outcome
 from ..setup.confirm import confirm_accept, confirm_acknowledge_refusal, confirm_prompt
 from ..setup.declarations import DeclarationStore
@@ -330,14 +356,22 @@ def run_live_judge(
     dry_run: bool,
     yes: bool,
     dry_run_was_reviewed: bool,
-) -> tuple[Counter, int]:
+) -> tuple[Counter, int, dict[str, list]]:
     """The judge run itself: one real ``VertexScorer`` call per (term,
     session) pair -- never per label. ``dry_run`` reports the call shape
     without ever constructing a ``VertexScorer`` (no gcloud subprocess, no
     network) -- for previewing spend before committing to it. A real run
     (``dry_run=False``) always calls ``confirm_live_spend`` first, so the
     operator sees the cost estimate and confirms before the first real
-    call is made."""
+    call is made.
+
+    Returns ``(label_counts, call_count, records_by_term)`` --
+    ``records_by_term`` is each term's own sealed ``LedgerRecord``s, in call
+    order, so a caller can seal a ``range``-kind account over exactly the
+    records this run produced (``[account-fold-core-unify]``: a range
+    account's identity is ``(coverage_root, range)``, and its ``Provenance``
+    is read back from what was ACTUALLY sealed, never re-derived from local
+    Python state). Empty for a dry run."""
     plan, skipped = plan_judge_calls(prompts, corpus_path, session_ids)
     print()
     print("=" * 78)
@@ -348,7 +382,7 @@ def run_live_judge(
     if dry_run:
         for i, (term_id, session_id, _turns, _evidence_text) in enumerate(plan, start=1):
             print(f"  [{i}] would call vertex: {term_id} / {session_id}")
-        return Counter(), len(plan)
+        return Counter(), len(plan), {}
 
     confirm_live_spend(
         len(prompts), len(session_ids), len(plan), yes=yes, dry_run_was_reviewed=dry_run_was_reviewed
@@ -356,6 +390,7 @@ def run_live_judge(
 
     harnesses: dict[str, JudgeHarness] = {}
     label_counts: Counter = Counter()
+    records_by_term: dict[str, list] = {term_id: [] for term_id in prompts}
     call_count = 0
     for term_id, session_id, turns, evidence_text in plan:
         harness = harnesses.get(term_id)
@@ -372,11 +407,114 @@ def run_live_judge(
         record = harness.run(evidence=evidence)
         label = record.capsule["asg_payload"]["detail"]["label"]
         label_counts[(term_id, label)] += 1
+        records_by_term[term_id].append(record)
         print(f"  [{call_count}] {term_id} / {session_id}: {label}  ({record.capsule_id[:16]}...)")
-    return label_counts, call_count
+    return label_counts, call_count, records_by_term
 
 
-def render_report(label_counts: Counter, call_count: int, *, term_ids: tuple[str, ...], total_sessions: int, dry_run: bool) -> str:
+def _term_fold_definition(term_id: str) -> FoldDefinition:
+    """The same MODEL-ASSISTED fold shape ``compiler.compile._model_assisted_fold``
+    emits for a model-judgment declaration, instantiated for this term's own
+    live run -- so this run's account is not a one-off shape but the SAME
+    fold family the compiler already produces for a model-judgment
+    outcome. ``derivation_class=DERIVATION_MODEL_ASSISTED`` is the marker
+    the de-fork asks for (``folds/account_core.py``)."""
+    return FoldDefinition(
+        fold_id=f"tau2_airline.{term_id.lower()}.judge_run/1.0.0",
+        reads=(
+            ReadField(path="asg_payload.detail.label", erasure_class="commitment-ok"),
+            ReadField(path="asg_payload.detail.judge_pin.judge_pin_digest", erasure_class="commitment-ok"),
+        ),
+        key="asg_payload.detail.judge_pin.judge_pin_digest",
+        reduce=Reduce(reducer="count"),
+        emit=f"term.airline_pack.{term_id.lower()}.judge_run.judgment_count",
+        derivation_class=DERIVATION_MODEL_ASSISTED,
+    )
+
+
+def seal_conformant_accounts(
+    records_by_term: dict[str, list],
+    label_counts: Counter,
+    live_ledger: LedgerStore,
+    signer,
+) -> dict[str, dict]:
+    """Seal ONE checkpoint over this run's live ledger, then build one
+    conformant ``capsule_emit.account`` ``Account`` per term --
+    ``[account-fold-core-unify]``: this run is the first real
+    model-assisted account in the system, so it is the first conformant
+    one rather than a bespoke report beside the new core.
+
+    A single checkpoint root covers the WHOLE run (every term's judgments);
+    each term's account then cites its OWN ``range`` (its own records'
+    ``[min(seq), max(seq)]``) under that SAME root -- exactly the "one root,
+    many independently-cited ranges" pattern the tau2 corpus fixture's own
+    drill-down already uses. Returns ``{term_id: account.to_document()}``;
+    empty if ``records_by_term`` is empty (a dry run, or zero real calls)."""
+    if not records_by_term or not any(records_by_term.values()):
+        return {}
+
+    mmr = MmrLedger(live_ledger)
+    mmr.sync()
+    prev = load_latest_checkpoint(live_ledger.root)
+    cp = emit_checkpoint(mmr, signer, prev=prev)
+    save_checkpoint(live_ledger.root, cp)
+
+    accounts: dict[str, dict] = {}
+    for term_id, records in records_by_term.items():
+        if not records:
+            continue
+        seqs = [r.seq for r in records]
+        seeds = [
+            r.capsule["asg_payload"]["detail"]["judge_pin"].get("sampling_params", {}).get("seed") for r in records
+        ]
+        model_ids = {r.capsule["asg_payload"]["detail"]["model_id"] for r in records}
+        prompt_digests = {r.capsule["asg_payload"]["detail"]["prompt_digest"] for r in records}
+        # Every call for one term shares the same prompt + model by construction
+        # (one JudgeHarness per term, built from one compiled/confirmed prompt) --
+        # asserted here, not assumed, so a future change that breaks that
+        # invariant fails loudly instead of silently citing the wrong digest.
+        assert len(model_ids) == 1, f"{term_id}: calls disagree on model_id: {model_ids}"
+        assert len(prompt_digests) == 1, f"{term_id}: calls disagree on prompt_digest: {prompt_digests}"
+
+        fold_definition = _term_fold_definition(term_id)
+        term_labels = {label: n for (t, label), n in label_counts.items() if t == term_id}
+        account = build_account(
+            # build_account wants the neutral core's AccountDefinition, not the
+            # ledger's richer authoring-side FoldDefinition -- to_account_definition()
+            # is the de-fork bridge (folds/definition.py) that projects one onto
+            # the other so the SAME document yields the identical core digest.
+            definition=fold_definition.to_account_definition(),
+            selection=Selection(kind="range", coverage=Coverage(coverage_root=cp.root, range=(min(seqs), max(seqs)))),
+            asserted_result=dict(term_labels),
+            provenance=Provenance(
+                model_id=next(iter(model_ids)),
+                prompt_digest=next(iter(prompt_digests)),
+                # A range account's sessions each drew an INDEPENDENT seed
+                # (judge/scorers/vertex.py: never a shared one) -- collapsing
+                # N distinct seeds into one scalar would misrepresent the
+                # binding, so the aggregate honestly reports the count and
+                # points at where each real seed lives instead of fabricating
+                # a merged value.
+                entropy=(
+                    f"{len(seeds)} independent per-call seed(s), one per judgment capsule "
+                    "(see each capsule's own judge_pin.sampling_params.seed)"
+                ),
+                re_adjudicable=True,
+            ),
+        )
+        accounts[term_id] = account.to_document()
+    return accounts
+
+
+def render_report(
+    label_counts: Counter,
+    call_count: int,
+    *,
+    term_ids: tuple[str, ...],
+    total_sessions: int,
+    dry_run: bool,
+    accounts: dict[str, dict] | None = None,
+) -> str:
     lines = [f"judgment report -- {call_count} call(s) made" + (" (dry run)" if dry_run else "")]
     for term_id in term_ids:
         term_labels = {label: n for (t, label), n in label_counts.items() if t == term_id}
@@ -386,6 +524,15 @@ def render_report(label_counts: Counter, call_count: int, *, term_ids: tuple[str
         f"cost shape: {len(term_ids)} term(s) x {total_sessions} session(s) in this run, "
         "ONE call per (term, session) pair -- never per label."
     )
+    if accounts:
+        lines.append("")
+        lines.append("[account-fold-core-unify] conformant model-assisted account(s) sealed:")
+        for term_id, doc in accounts.items():
+            lines.append(f"  {term_id}:")
+            lines.append(f"    definition_digest: {doc['derivation']['definition_digest']}")
+            lines.append(f"    selection:         {doc['selection']['kind']} {doc['selection']['input_identity']}")
+            lines.append(f"    asserted_result:    {doc['asserted_result']}")
+            lines.append(f"    provenance:         model_id={doc['provenance']['model_id']} entropy={doc['provenance']['entropy']!r}")
     return "\n".join(lines)
 
 
@@ -435,15 +582,23 @@ def main(argv: list[str] | None = None) -> int:
         all_session_ids = sorted(sessions)
         session_ids = all_session_ids if args.all_sessions else all_session_ids[: args.limit_sessions]
 
-        label_counts, call_count = run_live_judge(
+        label_counts, call_count, records_by_term = run_live_judge(
             prompts, corpus_path, live_ledger, signer, session_ids=session_ids, dry_run=args.dry_run,
             yes=args.yes, dry_run_was_reviewed=args.dry_run_was_reviewed,
         )
+        # Must run before live_ledger.close(): sealing the run's checkpoint
+        # (MmrLedger.sync()) reads the ledger that's still open here.
+        accounts = seal_conformant_accounts(records_by_term, label_counts, live_ledger, signer)
     finally:
         live_ledger.close()
 
     print()
-    print(render_report(label_counts, call_count, term_ids=term_ids, total_sessions=len(session_ids), dry_run=args.dry_run))
+    print(
+        render_report(
+            label_counts, call_count, term_ids=term_ids, total_sessions=len(session_ids), dry_run=args.dry_run,
+            accounts=accounts,
+        )
+    )
     print(f"live ledger: {out_root / 'live-ledger'}")
     return 0
 

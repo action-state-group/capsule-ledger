@@ -165,6 +165,18 @@ def _parse_response_text(text: str, label_set: tuple[str, ...]) -> tuple[str, fl
     return label, confidence, (str(rationale) if rationale is not None else None)
 
 
+# Gemini's generationConfig.seed accepts a 32-bit signed integer; Vertex
+# does not document an exact range beyond "an integer", but every published
+# example uses an int32-sized value, so a fresh per-call seed is drawn from
+# that range rather than Python's unbounded int space.
+_SEED_MIN = 0
+_SEED_MAX = 2**31 - 1
+
+
+def _fresh_seed() -> int:
+    return random.SystemRandom().randint(_SEED_MIN, _SEED_MAX)
+
+
 @dataclass
 class VertexScorer:
     """Scores one ``JudgeEvidence``/``JudgePromptDefinition`` pair with a
@@ -177,7 +189,18 @@ class VertexScorer:
     default thinking silently consumes the whole budget on thinking tokens
     and returns an empty response (``finishReason: MAX_TOKENS``, no
     ``parts``) for tasks, like this one, that don't need deep reasoning.
-    """
+
+    ``seed`` (``[account-fold-core-unify]``: a model-assisted account's
+    ``Provenance`` needs a real entropy binding, not just a temperature note)
+    is sent as Gemini's ``generationConfig.seed`` so the call is, per Google's
+    documented behavior, reproducible against the same prompt/model -- and
+    echoed back in ``ScoreResult.sampling_params["seed"]`` so it seals onto
+    the judgment capsule's own ``judge_pin`` and is available to build a
+    conformant ``Provenance`` for an aggregate account. Leave ``seed=None``
+    (the default) to draw a FRESH random seed for every ``score()`` call --
+    still a real, citable seed, just not caller-pinned; pass an explicit
+    ``seed`` to pin every call from this scorer instance to the same value
+    (e.g. a controlled re-run)."""
 
     project: str = _DEFAULT_PROJECT
     region: str = _DEFAULT_REGION
@@ -185,6 +208,7 @@ class VertexScorer:
     max_output_tokens: int = 1024
     temperature: float = 0.0
     thinking_budget: int = 0
+    seed: int | None = None
     access_token_fn: Callable[[], str] = field(default=_current_default_access_token)
     http_post_fn: Callable[[str, dict, Mapping[str, str]], dict] = field(default=_current_default_http_post)
 
@@ -193,11 +217,13 @@ class VertexScorer:
             f"https://{self.region}-aiplatform.googleapis.com/v1/projects/{self.project}"
             f"/locations/{self.region}/publishers/google/models/{self.model}:generateContent"
         )
+        call_seed = self.seed if self.seed is not None else _fresh_seed()
         payload = {
             "contents": [{"role": "user", "parts": [{"text": _build_request_text(prompt, evidence)}]}],
             "generationConfig": {
                 "maxOutputTokens": self.max_output_tokens,
                 "temperature": self.temperature,
+                "seed": call_seed,
                 "thinkingConfig": {"thinkingBudget": self.thinking_budget},
             },
         }
@@ -236,6 +262,7 @@ class VertexScorer:
                 "temperature_micros": int(round(self.temperature * 1_000_000)),
                 "thinking_budget": self.thinking_budget,
                 "max_output_tokens": self.max_output_tokens,
+                "seed": call_seed,
             },
             rationale=rationale,
         )

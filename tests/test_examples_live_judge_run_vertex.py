@@ -195,3 +195,109 @@ def test_spend_confirm_gate_prints_the_call_and_cost_estimate(tmp_path, capsys, 
     assert rc == 0
     out = capsys.readouterr().out
     assert "2 term(s) x 1 session(s) = 2 call(s), est ~$" in out
+
+
+# -- [account-fold-core-unify] conformance -----------------------------------
+
+
+def test_real_run_seals_a_conformant_model_assisted_account_per_term(tmp_path, capsys, monkeypatch):
+    _fake_vertex(monkeypatch, label="pass", confidence=0.9)
+    out_root = tmp_path / "run"
+    rc = live_mod.main(
+        [
+            "--corpus", str(CORPUS_PATH), "--out", str(out_root),
+            "--limit-sessions", "1", "--yes", "--dry-run-was-reviewed",
+        ]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "[account-fold-core-unify] conformant model-assisted account(s) sealed:" in out
+    assert "A1:" in out and "A3b:" in out
+    assert "definition_digest:" in out
+    assert "asserted_result:    {'pass': 1}" in out
+
+    # A checkpoint sealed onto the run's own live ledger (sidecar file, not a
+    # ledger capsule) -- the coverage_root the accounts cite.
+    checkpoints = sorted((out_root / "live-ledger" / "checkpoints").glob("*.json"))
+    assert len(checkpoints) == 1
+
+
+def test_dry_run_seals_no_account_and_no_checkpoint(tmp_path, capsys, monkeypatch):
+    _fake_vertex(monkeypatch)
+    out_root = tmp_path / "run"
+    rc = live_mod.main(
+        ["--corpus", str(CORPUS_PATH), "--out", str(out_root), "--limit-sessions", "1", "--yes", "--dry-run"]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "[account-fold-core-unify]" not in out
+    assert not (out_root / "live-ledger" / "checkpoints").exists()
+
+
+def test_sealed_account_provenance_names_the_real_model_and_prompt_digest(tmp_path):
+    """Isolated unit test of ``seal_conformant_accounts`` itself -- a fresh
+    ledger + two real (StaticScorer, no network) judgment capsules, so this
+    doesn't rely on ``main()``'s own T1/T3/checkpoint side effects (a second
+    ``seal_conformant_accounts`` call against an already-checkpointed ledger
+    with no new records would raise a rollback error -- that's a real
+    invariant, not a bug, so this test avoids it by building its own fixture
+    ledger instead of reusing one ``main()`` already checkpointed)."""
+    from collections import Counter
+
+    from capsule_ledger.guards.signing import LocalSigner
+    from capsule_ledger.judge import JudgeEvidence, JudgeHarness
+    from capsule_ledger.judge.prompt import JudgePromptDefinition
+    from capsule_ledger.judge.scorers.static import StaticScorer
+    from capsule_ledger.ledger import LedgerStore
+
+    prompt = JudgePromptDefinition(prompt_id="a1/1.0.0", label_set=("pass", "fail"), instructions="judge it")
+    signer = LocalSigner(key_id="test-key", secret=b"test-secret")
+    store = LedgerStore(tmp_path / "fixture-ledger")
+    try:
+        harness = JudgeHarness(
+            ledger=store, prompt=prompt, scorer=StaticScorer(responses={}, default=("fail", 0.6)),
+            operator="test", developer="test@v1", signer_provider=lambda: signer,
+        )
+        judgments = [
+            harness.run(evidence=JudgeEvidence(session_id=f"s{i}", turn_capsule_ids=(f"cap-{i}",), evidence_text=f"ev{i}"))
+            for i in range(2)
+        ]
+        accounts = live_mod.seal_conformant_accounts({"A1": judgments}, Counter({("A1", "fail"): 2}), store, signer)
+    finally:
+        store.close()
+
+    assert set(accounts) == {"A1"}
+    doc = accounts["A1"]
+    assert doc["derivation"]["derivation_class"] == "model_assisted"
+    assert doc["selection"]["kind"] == "range"
+    assert doc["selection"]["input_identity"]["range"] == [judgments[0].seq, judgments[-1].seq]
+    assert "references" not in doc["selection"]["input_identity"]  # range identity, never per-member digests
+    assert doc["provenance"]["model_id"] == "static-scorer/deterministic"
+    assert doc["provenance"]["prompt_digest"] == judgments[0].capsule["asg_payload"]["detail"]["prompt_digest"]
+    assert "2 independent per-call seed" in doc["provenance"]["entropy"]
+
+
+def test_account_construction_is_fail_closed_on_missing_provenance():
+    """Not this script's own bug surface -- the core's own contract, exercised
+    here so a future change to how this script calls ``build_account`` can't
+    silently start minting a provenance-free model-assisted account (the
+    exact failure mode ``[account-fold-core-unify]`` designed fail-closed
+    construction to catch)."""
+    from capsule_ledger.folds import DERIVATION_MODEL_ASSISTED, ReadField, Reduce, build_account
+    from capsule_ledger.folds.account_core import AccountConstructionError, Coverage, Selection
+    from capsule_ledger.folds.definition import FoldDefinition
+
+    fold = FoldDefinition(
+        fold_id="test.fold/1.0.0",
+        reads=(ReadField(path="asg_payload.detail.label", erasure_class="commitment-ok"),),
+        reduce=Reduce(reducer="count"),
+        emit="test.count",
+        derivation_class=DERIVATION_MODEL_ASSISTED,
+    )
+    with pytest.raises(AccountConstructionError):
+        build_account(
+            definition=fold.to_account_definition(),
+            selection=Selection(kind="range", coverage=Coverage(coverage_root="deadbeef", range=(1, 2))),
+            asserted_result={"fail": 2},
+            provenance=None,  # model_assisted with no provenance -- must refuse
+        )
