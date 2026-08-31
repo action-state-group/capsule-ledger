@@ -78,6 +78,14 @@ def digest_conversation_exchange(messages: Sequence[Mapping[str, Any]]) -> dict[
     having asserted "there were zero tool calls" when the source simply
     never told it either way.
     """
+    # NOTE ``role`` here is the MESSAGE role (``user``/``assistant``) used only
+    # to split turns into the input/output halves before they are folded under
+    # ``agent_input_digest``/``agent_output_digest``. It is NOT the
+    # ``mesh-inference-exchange`` registry entry's ``role`` field (that one is
+    # the account-role ``{requested, served}`` carried in ``x-mesh-lifecycle-v1``
+    # and paired with ``observation_point``). Same spelling, different axis:
+    # this ``role`` is committed UNDER the two digests, never emitted as a
+    # sibling ``compute_attestation`` field, so the two never collide on the wire.
     input_turns = [{"role": m["role"], "content": m.get("content", "")} for m in messages if m.get("role") == "user"]
     output_turns = [
         {"role": m["role"], "content": m.get("content", "")} for m in messages if m.get("role") == "assistant"
