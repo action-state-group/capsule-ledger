@@ -26,14 +26,20 @@ classifiers = [
 # bundle_cmd's completeness certificate, capsule_ledger.conversation.merkle's
 # session digest, and capsule_ledger.mmr.checkpoint's sign/register/verify
 # path all depend on it directly, not just the examples path. Floor is
-# >=0.5.1 (explicit, not >=0.4.0): capsule-emit 0.5.1's format-4/jcs
+# >=0.6.0 (was >=0.5.1, was 0.4.x): capsule-emit 0.5.1's format-4/jcs
 # capsules produce different capsule_id/digest bytes than 0.4.x, so the
 # committed fixtures and format-dependent assertions in this repo are
-# generated against 0.5.1. Pinning the floor at the exact released version
-# prevents silent resolution back to an incompatible 0.4.x.
+# generated against that format. The floor moves to >=0.6.0 because this
+# branch (folds: de-fork onto capsule_emit.account) consumes the new public
+# `capsule_emit.account` subpackage, which first ships in capsule-emit 0.6.0
+# (#132 fold/account core + #133 chain_segment). 0.6.0 is a superset of 0.5.1's
+# format-4/jcs surface -- account core + chain_segment are additive, no capsule
+# format field changed -- so no fixture regeneration is required by this bump.
+# Pinning the floor at the exact released version prevents silent resolution
+# back to a version without `capsule_emit.account`.
 dependencies = [
     "agent-action-capsule>=0.1.0",
-    "capsule-emit[checkpoint]>=0.5.1",
+    "capsule-emit[checkpoint]>=0.6.0",
     "pyyaml>=6.0",
 ]
 
