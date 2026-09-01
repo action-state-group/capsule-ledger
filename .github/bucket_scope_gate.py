@@ -19,8 +19,10 @@ that split here would be guessing. Once the real moves land and the
 remaining cli/ surface is known, extend BLOCKED_PREFIXES with the specific
 cli/*_cmds.py files that stayed bucket-owned (confirm_cmds.py, judge_cmds.py,
 setup_cmds.py, report_cmd.py, enforce_cmds.py, guard_cmds.py, fold_cmds.py,
-fold_ref.py, console_cmd.py, tenant_cmds.py, telemetry_cmd.py, lens_cmds.py,
-manifest_cmds.py, thresholds_cmds.py, agents_cmd.py, constraints_cmd.py).
+fold_ref.py, tenant_cmds.py, lens_cmds.py, manifest_cmds.py,
+thresholds_cmds.py, agents_cmd.py, constraints_cmd.py). console_cmd.py was
+deleted outright and telemetry_cmd.py turned out to be core (see the RESIDUALS
+correction below), so both are off this candidate list now.
 
 Only ADDED or MODIFIED files under a blocked prefix trip the gate --
 deletions/renames-away are the eventual move-out PRs this re-extraction
@@ -67,17 +69,36 @@ modifiable here; only ``base_viewer.py`` and its two static JS files moved.
 Steven's ruling, capsule-ledger keeps a minimal, self-contained
 ``describe_action_class`` shim (its own tiny embedded label data, no
 capsule-engine import) for its core read/verify display surface
-(``cli/format.py``, ``console/api.py``); only the full vendored CPB registry
-(``cpb_registry.json`` + the ``provisional_field_conventions`` half of
-``conventions.json``) moved to capsule-engine as the interim vendor-of-record.
-_ENGINE below narrows from the whole ``registry/`` directory to the one file
-that's actually gone.
+(``cli/format.py``); only the full vendored CPB registry (``cpb_registry.json``
++ the ``provisional_field_conventions`` half of ``conventions.json``) moved to
+capsule-engine as the interim vendor-of-record. _ENGINE below narrows from
+the whole ``registry/`` directory to the one file that's actually gone.
 
-``console/`` and ``telemetry/`` are untouched by either correction -- no
-dependency forced a call on them. ``mcp/`` was deleted outright in an
-earlier RESIDUALS-pass PR (capsule-engine already carried a current,
-self-sufficient copy); its _ENGINE entry stays as a guard against anything
-new landing back under that path.
+``mcp/`` was deleted outright in an earlier RESIDUALS-pass PR (capsule-engine
+already carried a current, self-sufficient copy); its _ENGINE entry stays as
+a guard against anything new landing back under that path.
+
+**CORRECTION (2026-09-01, [ldg-ledger-scope-re-extraction] RESIDUALS pass,
+console/telemetry trace):** traced, not assumed, per the ratified map's own
+"trace core dependents before moving" rule. ``console/`` has exactly one
+importer repo-wide -- ``cli/console_cmd.py`` -- which nothing else in core
+calls; capsule-engine already carries a byte-identical copy of both
+(confirmed via diff, only the intra-package imports differ, rewritten for
+the installed-package form), so both are deleted outright here, the same
+disposition as ``mcp/``. ``console/``'s _ENGINE entry stays, for the same
+reason ``mcp/``'s does: a guard against anything new landing back under a
+path this repo no longer owns.
+
+``telemetry/`` is the opposite finding: ``cli/main.py`` (``record_install_seen``)
+and the core evidence verbs ``cli/bundle_cmd.py``, ``cli/verify_cmd.py``,
+``cli/show_cmd.py`` (all three via ``record_evidence_touch``) hard-import
+``telemetry.record`` unconditionally, at the top of ``run()`` -- not behind a
+flag, not optional. capsule-ledger cannot import capsule-engine to satisfy
+this (the dependency runs the other way), so ``telemetry/`` cannot move
+without breaking core. It is core, not engine-destined, for the same reason
+``guards/``/``policy/``/``folds/``/``report/`` are -- removed from _ENGINE
+below. ``telemetry_cmd.py`` (the ``capsule telemetry status/funnel`` verb)
+was never a separate question once its underlying package is core.
 
 Usage: python .github/bucket_scope_gate.py <base-sha> <head-sha>
 Exit 0 = clean; 1 = a blocked path grew; 2 = misconfig/usage.
@@ -93,11 +114,13 @@ import sys
 # static JS specifically, not the whole directory -- viewer.py/offline_shell.html
 # are core and must stay modifiable here. registry/ is narrowed the same way
 # to just cpb_registry.json -- the describe_action_class shim stays core.
+# telemetry/ is also core now (see the console/telemetry trace correction
+# above) and removed from this list; console/ was deleted outright and its
+# entry stays only as a re-add guard.
 _ENGINE = [
     "capsule_ledger/packs/",
     "capsule_ledger/console/",
     "capsule_ledger/mcp/",
-    "capsule_ledger/telemetry/",
     "capsule_ledger/lenses/",
     "capsule_ledger/report/",
     "capsule_ledger/tenants.py",
