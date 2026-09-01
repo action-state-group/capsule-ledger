@@ -26,13 +26,12 @@ Only ADDED or MODIFIED files under a blocked prefix trip the gate --
 deletions/renames-away are the eventual move-out PRs this re-extraction
 itself will produce, and must stay legal.
 
-**[ldg-endgame-bucket-deletion] reclassification, flagged for Steven's
-ratification, not yet reflected in the 2026-08-22 map above:** executing the
+**[ldg-endgame-bucket-deletion] reclassification, ratified:** executing the
 bucket-cluster deletion (packs/compiler/judge/setup/audit_report/tenants.py)
 surfaced hard, non-optional dependencies from surviving F.1-core code onto
-four of the paths this map calls "engine bucket" -- with packs/compiler/
+three of the paths this map calls "engine bucket" -- with packs/compiler/
 judge/setup now gone, re-importing capsule-engine or duplicating code is not
-an option, so these four are core, not engine-destined, and are removed from
+an option, so these three are core, not engine-destined, and are removed from
 _ENGINE below:
   - ``guards/`` (minus the now-deleted ``tool_call.py``) -- ``holds/``
     (F.1 core) calls into it directly.
@@ -41,12 +40,33 @@ _ENGINE below:
     ``tests/conftest.py`` fixtures every ``holds/`` test uses.
   - ``folds/`` -- the still-live, still-registered ``capsule fold`` CLI verb
     (fold_cmds.py) owns this outright; it was never engine-only.
-  - ``report/`` -- ``bundle_viewer/base_viewer.py`` (backing the still-live
-    ``capsule bundle --with-viewer``) hard-imports
-    ``report.render.encode_fragment``; ``report/build.py`` in turn needs
-    ``folds/`` for ``FoldDefinition``.
-``console/``, ``mcp/``, ``telemetry/``, ``bundle_viewer/``, and ``registry/``
-are untouched here -- no dependency forced a call on them in this pass.
+
+**CORRECTION (2026-09-01, [ldg-ledger-scope-re-extraction] RESIDUALS pass) --
+the ``report/`` row of the reclassification above was wrong, kept here (not
+deleted) so the reasoning chain stays auditable:** the original claim was
+that ``bundle_viewer/base_viewer.py`` "backs the still-live ``capsule bundle
+--with-viewer``" and hard-imports ``report.render.encode_fragment``, making
+``report/`` an undeletable core dependency. Traced at execution time instead
+of taken on faith: ``--with-viewer`` (``cli/bundle_cmd.py``) only ever calls
+``bundle_viewer.viewer.render_offline_viewer_html`` -- the byte-for-byte
+scitt-cose vendor copy -- never ``base_viewer.py``. ``base_viewer.py`` is a
+separate, newer plug-in seam (PR #104) reachable only via
+``bundle_viewer/__init__.py``'s re-export, with zero real CLI callers.
+Both ``base_viewer.py`` (+ its two static JS files) and ``report/`` moved to
+capsule-engine in this pass -- ``report/``'s capsule-engine copy was
+independently confirmed to already be the current, richer version, wired
+into its own live ``capsule guard dry-run --share`` via ``guard_cmds.py``,
+with replay_command/tuning-box/enforce-band chrome capsule-ledger's copy
+never had. ``report/`` is restored to _ENGINE below. ``bundle_viewer/``
+itself is REMOVED from _ENGINE: ``viewer.py``/``offline_shell.html`` (the
+actual ``--with-viewer`` backing) are genuinely core and must stay
+modifiable here; only ``base_viewer.py`` and its two static JS files moved.
+
+``console/``, ``telemetry/``, and ``registry/`` are untouched by either
+correction -- no dependency forced a call on them. ``mcp/`` was deleted
+outright in an earlier RESIDUALS-pass PR (capsule-engine already carried a
+current, self-sufficient copy); its _ENGINE entry stays as a guard against
+anything new landing back under that path.
 
 Usage: python .github/bucket_scope_gate.py <base-sha> <head-sha>
 Exit 0 = clean; 1 = a blocked path grew; 2 = misconfig/usage.
@@ -56,17 +76,26 @@ from __future__ import annotations
 import subprocess
 import sys
 
-# capsule-engine bucket (Amendment F/H §2, §4). guards/, policy/, folds/,
-# and report/ were removed here -- see the reclassification note above.
+# capsule-engine bucket (Amendment F/H §2, §4). guards/, policy/, folds/
+# stay core -- see the reclassification note above. report/ is back (2026-09-01
+# correction, see above); bundle_viewer/ is narrowed to base_viewer.py + its
+# static JS specifically, not the whole directory -- viewer.py/offline_shell.html
+# are core and must stay modifiable here.
 _ENGINE = [
     "capsule_ledger/packs/",
     "capsule_ledger/console/",
     "capsule_ledger/mcp/",
     "capsule_ledger/telemetry/",
     "capsule_ledger/lenses/",
-    "capsule_ledger/bundle_viewer/",
+    "capsule_ledger/report/",
     "capsule_ledger/registry/",
     "capsule_ledger/tenants.py",
+    # File-level, not directory-level: bundle_viewer/viewer.py +
+    # static/offline_shell.html (the actual `--with-viewer` backing) are
+    # core and must stay modifiable here. Only the plug-in seam moved.
+    "capsule_ledger/bundle_viewer/base_viewer.py",
+    "capsule_ledger/bundle_viewer/static/capsule_viewer.js",
+    "capsule_ledger/bundle_viewer/static/conversation_exchange_card.js",
 ]
 # capsule-compiler bucket
 _COMPILER = [

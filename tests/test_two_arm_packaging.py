@@ -2,6 +2,12 @@
 """Arm A ("guards-only") vs Arm B ("full"): one codebase, one env var
 (``CAPSULE_LEDGER_ARM``), never a fork -- see ``capsule_ledger/packaging.py``.
 
+The report-rendering half of this arm mechanism (``render_report_html``'s
+``arm`` chrome) lived here until the [ldg-ledger-scope-re-extraction]
+RESIDUALS pass deleted ``report/`` -- see capsule-engine's
+``tests/test_report_two_arm_rendering.py`` for that coverage now. This file
+keeps only the CLI-registration half, which is core here.
+
 Also the one place this repo checks, mechanically, that the private
 thresholds doc's PASS/WORRY/FAIL numbers never made it into this repo: see
 ``test_no_threshold_bands_anywhere_in_telemetry_code`` at the bottom.
@@ -14,10 +20,6 @@ import pytest
 
 from capsule_ledger.cli.main import _build_parser
 from capsule_ledger.cli.main import main as cli_main
-from capsule_ledger.report import build_dry_run_report, render_report_html
-
-FIXTURES = Path(__file__).parent / "fixtures"
-NANDA = FIXTURES / "nanda_transaction_ledger.jsonl"
 
 
 @pytest.fixture
@@ -56,40 +58,6 @@ def test_guards_only_arm_evidence_verbs_are_unregistered(guards_only_arm, verb, 
     assert exc.value.code == 2  # argparse's own "invalid choice" exit code
     err = capsys.readouterr().err
     assert "invalid choice" in err
-
-
-# -- report rendering ---------------------------------------------------------
-
-
-def test_render_report_html_default_arm_is_full(caps_fold):
-    report = build_dry_run_report([str(NANDA)], caps_fold=caps_fold, since="7d")
-    html, _ = render_report_html(report)
-    assert 'data-arm="full"' in html
-    assert '[data-arm="guards-only"]' not in html
-
-
-def test_render_report_html_guards_only_hides_evidence_chrome(caps_fold):
-    report = build_dry_run_report([str(NANDA)], caps_fold=caps_fold, since="7d")
-    html, _ = render_report_html(report, arm="guards-only")
-    assert 'data-arm="guards-only"' in html
-    assert '[data-arm="guards-only"] .share-row' in html
-    assert '[data-arm="guards-only"] .row-fp' in html
-
-
-def test_render_report_html_verify_js_is_byte_identical_across_arms(caps_fold):
-    """The evidence-hiding mechanism must never touch verify.js itself --
-    only the surrounding static shell -- so the JS/Python digest-parity
-    tests in test_report_dry_run.py keep meaning what they say in both arms."""
-    report = build_dry_run_report([str(NANDA)], caps_fold=caps_fold, since="7d")
-    full_html, _ = render_report_html(report, arm="full")
-    guards_html, _ = render_report_html(report, arm="guards-only")
-
-    def _script_body(html: str) -> str:
-        start = html.index("<script>\n") + len("<script>\n")
-        end = html.index("</script>", start)
-        return html[start:end]
-
-    assert _script_body(full_html) == _script_body(guards_html)
 
 
 # -- the hard boundary: no private threshold content in this repo -----------

@@ -59,10 +59,6 @@ from `capsule-engine`, not this repo.
 - `capsule_ledger/ledger/` — append-only store and the query API (agent, time range, counterparty, verdict, action type).
 - `capsule_ledger/folds/` — declarative fold definitions (count/sum/min/max/last, keyed and windowed) and their replay evaluation.
 - `capsule_ledger/guards/` — the guard API: `check(action) -> allow | deny | escalate`, plus `dry_run`.
-- `capsule_ledger/report/` — replays a ledger through the guard checks and emits a self-contained HTML
-  report. The report's cited records travel only in the shared link's URL fragment (after `#`), never
-  server-side or fetched — the page re-derives its own numbers and re-verifies every cited capsule's
-  digest from that fragment when opened.
 - `capsule_ledger/cli/` — the `capsule` command line (git-verb shaped: `log`, `show`, `verify`, `bundle`, `fold`, ...).
 - `capsule_ledger/vectors/` — pinned test vectors: known-answer results, determinism probes, and MUST-FAIL cases.
 - `capsule_ledger/telemetry/` — opt-in-disclosed, aggregate-only usage instrumentation and the 6-metric funnel report generator (see below).
@@ -71,7 +67,7 @@ from `capsule-engine`, not this repo.
 
 Select runtime with `$CAPSULE_LEDGER_ARM`
 
-- `full` (default) — everything: the guard checks plus the evidence surfaces (`log`/`show`/`verify`/`bundle`, permalinks, the dry-run report's share/verify chrome).
+- `full` (default) — everything: the guard checks plus the evidence surfaces (`log`/`show`/`verify`/`bundle`, permalinks).
 - `guards-only` (`CAPSULE_LEDGER_ARM=guards-only`) — a minimal profile registering only the guard commands.
 
 See `capsule_ledger/packaging.py` for the mechanism and the reasoning behind picking an env var over a pip extra, a config file, or a per-command flag.

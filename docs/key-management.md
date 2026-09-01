@@ -29,11 +29,12 @@ provisioning story — now lives in `capsule-engine`, not this package. See
 `docs/onboarding.md`'s Path 2 (`framework_adapter_example.py`) for how an
 in-process caller in this repo constructs one directly.
 
-One other place constructs a `LocalSigner`: `capsule_ledger/report/replay.py`'s
-dry-run report builder uses its own hardcoded key (`key_id="dry-run-report"`)
-to produce a read-only replay artifact, unrelated to any live decision path.
-`GuardEngine.check(..., dry_run=...)` is the only thing that ever gates a
-real decision.
+The dry-run report builder that used to live here (`capsule_ledger/report/`,
+`capsule guard dry-run` in `capsule-engine`) constructed its own `LocalSigner`
+with a hardcoded key (`key_id="dry-run-report"`) to produce a read-only replay
+artifact, unrelated to any live decision path; that builder now lives in
+`capsule-engine` too. `GuardEngine.check(..., dry_run=...)` is the only thing
+in this package that ever gates a real decision.
 
 ## Key loss or compromise, today
 
