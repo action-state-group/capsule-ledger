@@ -28,16 +28,11 @@ for the life of the process (`capsule_ledger/mcp/config.py`, `load_config`).
 There is no key-generation step, ceremony, or CLI verb — an operator sets
 the two env vars (or accepts the dev default) before starting the server.
 
-Two other places construct a `LocalSigner`, and neither is the live decision
-path:
-- `capsule_ledger/report/replay.py`'s dry-run report builder uses its own
-  hardcoded key (`key_id="dry-run-report"`) to produce a read-only replay
-  artifact, unrelated to the MCP server's key.
-- The CLI's `capsule guard enforce` command (`capsule_ledger/cli/guard_cmds.py`)
-  does not sign anything — it is a local, honest telemetry marker that
-  records the operator declared enforcement-on; `GuardEngine.check(...,
-  dry_run=...)` is the only thing that ever gates a real decision, and the
-  CLI only ever drives it in dry-run mode.
+One other place constructs a `LocalSigner`, and it is not the live decision
+path: `capsule_ledger/report/replay.py`'s dry-run report builder uses its own
+hardcoded key (`key_id="dry-run-report"`) to produce a read-only replay
+artifact, unrelated to the MCP server's key. `GuardEngine.check(...,
+dry_run=...)` is the only thing that ever gates a real decision.
 
 ## The dev-default key is not a secret boundary
 

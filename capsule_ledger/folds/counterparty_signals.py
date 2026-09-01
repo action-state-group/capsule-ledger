@@ -17,11 +17,9 @@ per-session signal capsules (dicts with the signal's own numeric field) --
 it has no scorer, no prompt, no model call anywhere in it, which is §10.1's
 "folds CONSUME judgment capsules and NEVER call the judge harness" invariant
 applied to this family specifically. This module deliberately does not
-import ``capsule_ledger.judge`` at all: not "avoids calling it today", but
-structurally cannot call it (``test_counterparty_signal_folds.py`` asserts
-both the static absence of that import and, dynamically, that running a
-judged signal's trajectory through this module never touches
-``JudgeHarness``/``Scorer``).
+import a judge/scorer package at all: not "avoids calling it today", but
+structurally cannot call it, by construction -- it only imports from
+``folds/definition.py`` and ``folds/taxonomy.py``.
 
 Each signal here ``feeds_outcome_id``s one of the pack's own ``C*``
 fold_counterparty rows (standard-vendor pack.yaml family E) -- this module

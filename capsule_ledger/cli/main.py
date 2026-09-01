@@ -2,11 +2,10 @@
 """`capsule` CLI entry point: git-style verbs over the ledger query API
 (log/show/verify/bundle/diff/blame/bisect), the fold catalog (fold
 list/new/test/lint), the guard-check/action-class catalog (constraints
-list), a per-agent summary (agents --status), the guard API's dry-run
-report (guard dry-run), telemetry disclosure/funnel reporting (telemetry
-status/funnel), signing-key rotation (key rotate/status), and the local
-console UI (console) -- a record stream + per-record inspector served to
-localhost only.
+list), a per-agent summary (agents --status), telemetry disclosure/funnel
+reporting (telemetry status/funnel), signing-key rotation (key
+rotate/status), and the local console UI (console) -- a record stream +
+per-record inspector served to localhost only.
 
 `log`/`show`/`verify`/`bundle` are registered only in the "full" packaging
 arm -- see `capsule_ledger/packaging.py` for the two-arm switch. `diff`/`blame`/
@@ -31,20 +30,12 @@ from . import (
     console_cmd,
     constraints_cmd,
     diff_cmd,
-    enforce_cmds,
     fold_cmds,
-    guard_cmds,
-    init_cmds,
     key_cmds,
     log_cmd,
-    manifest_cmds,
     payload_cmd,
-    report_cmd,
-    setup_cmds,
     show_cmd,
     telemetry_cmd,
-    tenant_cmds,
-    thresholds_cmds,
     verify_cmd,
 )
 
@@ -59,20 +50,13 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
 
     fold_cmds.add_parser(sub)
     checkpoint_cmd.add_parser(sub)
-    init_cmds.add_parser(sub)
-    thresholds_cmds.add_parser(sub)
-    enforce_cmds.add_parser(sub)
     constraints_cmd.add_parser(sub)
     agents_cmd.add_parser(sub)
-    guard_cmds.add_parser(sub)
     key_cmds.add_parser(sub)
-    manifest_cmds.add_parser(sub)
-    tenant_cmds.add_parser(sub)
     diff_cmd.add_parser(sub)
     blame_cmd.add_parser(sub)
     bisect_cmd.add_parser(sub)
     telemetry_cmd.add_parser(sub)
-    setup_cmds.add_parser(sub)
     # The record-query/evidence verbs -- git-log-style listing, single-record
     # show, capsule verify, and the shareable bundle -- are the "evidence":
     # registered only in the "full" arm. See ``packaging.py``'s module
@@ -84,7 +68,6 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
         bundle_cmd.add_parser(sub)
         console_cmd.add_parser(sub)
         payload_cmd.add_parser(sub)
-        report_cmd.add_parser(sub)
 
     return parser
 
@@ -109,27 +92,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return args.func(args)
 
-    if args.command == "guard":
-        if getattr(args, "guard_command", None) is None:
-            args.guard_parser.print_help()
-            return 0
-        return args.func(args)
-
     if args.command == "key":
         if getattr(args, "key_command", None) is None:
             args.key_parser.print_help()
-            return 0
-        return args.func(args)
-
-    if args.command == "manifest":
-        if getattr(args, "manifest_command", None) is None:
-            args.manifest_parser.print_help()
-            return 0
-        return args.func(args)
-
-    if args.command == "tenant":
-        if getattr(args, "tenant_command", None) is None:
-            args.tenant_parser.print_help()
             return 0
         return args.func(args)
 
@@ -145,12 +110,6 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return args.func(args)
 
-    if args.command == "thresholds":
-        if getattr(args, "thresholds_command", None) is None:
-            args.thresholds_parser.print_help()
-            return 0
-        return args.func(args)
-
     if args.command == "payload":
         if getattr(args, "payload_command", None) is None:
             args.payload_parser.print_help()
@@ -160,12 +119,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "checkpoint":
         if getattr(args, "checkpoint_command", None) is None:
             args.cp_parser.print_help()
-            return 0
-        return args.func(args)
-
-    if args.command == "setup":
-        if getattr(args, "setup_command", None) is None:
-            args.setup_parser.print_help()
             return 0
         return args.func(args)
 

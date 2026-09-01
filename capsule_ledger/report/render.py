@@ -138,7 +138,6 @@ def to_fragment_payload(report: DryRunReport) -> dict:
         "actions_replayed": report.actions_replayed,
         "record_range": list(report.record_range),
         "checkpoint": report.checkpoint,
-        "replay_command": report.replay_command,
         "generated_at": report.generated_at,
         "guards": [_section_payload(s) for s in report.guards],
         "consequential": consequential,
@@ -357,8 +356,7 @@ def _static_html_shell(arm: str = FULL, *, telemetry: TelemetryConfig | None = N
       <p class="subtitle">Launch guards replayed over every action your agents took. All of these actions
         executed for real — this is what enforcement would have held for review.</p>
       <div class="meta mono">operator <span data-operator></span> · <span data-agent-count></span> agents ·
-        derived from records <span data-record-range></span> under checkpoint #<span data-checkpoint></span>
-        <span class="meta-verify-suggestion"> · replayable by anyone: <span data-verify-command></span></span></div>
+        derived from records <span data-record-range></span> under checkpoint #<span data-checkpoint></span></div>
     </div>
 
     <div class="headline-grid">
@@ -399,22 +397,6 @@ def _static_html_shell(arm: str = FULL, *, telemetry: TelemetryConfig | None = N
           <span class="model-quote" data-model-quote></span></div>
         <div class="model-byline mono" data-model-byline></div>
       </div>
-      <div class="tuning-box">
-        <div class="tuning-label">Tune before you enforce</div>
-        <div class="tuning-cmd mono">
-          capsule guard set &lt;action-class&gt;-cap &lt;new-value&gt;  <span style="color:#C8611A"># value from the note above — your call</span><br>
-          <span data-tuning-recheck></span>   <span style="color:#7A8C6E"># re-check</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="enforce-band">
-      <div style="flex:1">
-        <div class="enforce-title serif">Ready to make it real?</div>
-        <div class="enforce-body">Enforcement is one line. From then on, these <span data-enforce-count></span>
-          would have been held for review — each refusal a signed record, proof the guard ran.</div>
-      </div>
-      <span class="enforce-cmd mono">$ capsule guard enforce</span>
     </div>
   </div>
 

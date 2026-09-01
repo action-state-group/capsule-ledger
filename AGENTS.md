@@ -14,8 +14,8 @@ bottom — same data, same guarantees, structured tool calls instead of stdout.)
 Action Capsules. Every capsule is a signed, tamper-evident record of an agent
 action or a guard decision about one. `capsule` gives you four families of verb: read
 the ledger (`log`/`show`), verify it (`verify`/`bundle`), replay declared
-aggregates over it (`fold`), and inspect what's enforced (`constraints`/`agents`/
-`guard dry-run`). Every numeric answer this CLI prints carries its own proof —
+aggregates over it (`fold`), and inspect what's enforced (`constraints`/`agents`).
+Every numeric answer this CLI prints carries its own proof —
 a fold envelope (`fold <digest> · records N–M · checkpoint #X · as of <staleness>`)
 or a verification result — never a bare number you have to trust. If you're
 tempted to `cat` a ledger file and eyeball it, use the CLI instead: it enforces
@@ -158,71 +158,18 @@ breakdown, plus a pointer to the exact `capsule log --agent <id>` invocation tha
 shows the underlying records. This is the fastest way to answer "which agents
 have been active, and how much."
 
-### `capsule guard dry-run` — replay a ledger through the guard checks
-
-```bash
-capsule guard dry-run --ledger $CAPSULE_LEDGER --since 7d --cap money.transfer=10000000 --out report.html --share
-```
-
-Replays every record through the same three reference checks `GuardEngine.check`
-runs live (`dedupe`, `caps`, `verify_before_dispatch`), without ever appending
-anything — a what-if over history, not a new decision. `--cap CLASS=MINOR_UNITS`
-configures per-action-class caps (repeatable; an unconfigured class never
-triggers the caps guard). `--since` is a rolling window anchored to the ledger's
-own latest record (`7d`, or `all` for no filter). Writes a self-contained HTML
-report whose data lives only in the URL fragment; `--share` prints the full
-shareable link, `--verify` re-replays and re-verifies every cited capsule before
-exiting (use this in CI to catch a report that quietly stopped being
-reproducible). Prints `evaluated under manifest <digest>` when a policy
-manifest resolves (the default; `--no-manifest` skips it) — see below.
-
-### `capsule manifest show|activate|verify` — declare-attest-verify for guard policy
-
-```bash
-capsule manifest show                                             # resolve + print the digest
-capsule manifest activate --ledger $CAPSULE_LEDGER --operator acme --developer ops
-capsule manifest verify --ledger $CAPSULE_LEDGER --capsule <decision-capsule-id>
-```
-
-A policy manifest is one file listing the active fold and wicket ("wicket" =
-this workspace's name for a guard constraint — `dedupe`/`caps`/
-`verify_before_dispatch`) definitions *by digest* — a lockfile, never a copy.
-`show` resolves it against the real fold/wicket catalogs and fails closed if
-any pinned digest has drifted from what's actually there now. `activate`
-appends a signed, passive config-change record (`chain.relation=epoch_opens`,
-chained to the ledger's previous activation if any) citing the manifest's own
-digest — this *is* the adoption event. Every decision `GuardEngine.check()`
-makes while configured with a manifest's digest carries that same digest on
-`asg_payload.manifest_digest`, so "which policy governed this decision" is
-checkable directly off the capsule; `verify` confirms a given decision
-capsule's cited digest actually resolves to a real, loadable manifest.
-`capsule diff` renders a manifest activation as a distinct "manifest boundary
-event", never silently folded into an ordinary added-record count.
-
 ### Reserved, not yet implemented
 
 `capsule diff`, `capsule blame`, `capsule bisect` print a clear "not yet implemented" message
 and exit `1`. The verb names are reserved so scripts and docs referencing them
 don't silently typo into a shell error; don't build against them yet.
 
-### `capsule setup` — declare an outcome in English, get a compiled verdict
-
-**Not yet on `main`** — see [`docs/outcome-compiler.md`](docs/outcome-compiler.md)
-for which branch has it. `capsule setup propose --statement "..." --outcome-id
-... --drafter static` turns one plain-English statement into a candidate
-declaration and compiles it into a forward (before-the-action) verdict and a
-backward (from-the-record) verdict at once — `capsule setup confirm accept`
-freezes it, `capsule setup enforce shadow`/`promote`/`dispatch` take it live. A
-verdict of `REFUSED` is a real, working answer for a claim no evidence rule can
-check — not an error.
-
 ## Environment variables
 
 | Variable | Used by | Meaning |
 |---|---|---|
 | `$CAPSULE_LEDGER` | every ledger-backed verb | default `--ledger` |
-| `$CAPSULE_FOLD_DIR` | `fold`, `constraints list`, `agents --status`, `guard dry-run`, `manifest` | default fold catalog directory (falls back to the built-in catalog) |
-| `$CAPSULE_WICKET_DIR` | `guard dry-run`, `manifest` | default wicket catalog directory (falls back to the built-in catalog) |
+| `$CAPSULE_FOLD_DIR` | `fold`, `constraints list`, `agents --status` | default fold catalog directory (falls back to the built-in catalog) |
 | `$CAPSULE_VERIFY_BASE_URL` | `bundle` | base URL the verify permalink's fragment is appended to |
 
 ## Reading the output
@@ -252,9 +199,7 @@ Two conventions repeat across every verb, deliberately:
 - **"Why was this refused?"** → `capsule show <capsule_id>` — the constraints
   block *is* the answer; look for the check with `result: fail`.
 - **"Has this already happened?"** → `capsule log --agent <id> --action-type
-  <type>` and scan for a matching action, or run `capsule guard dry-run` if you
-  want the dedupe check's own verdict on a historical ledger rather than
-  reading records by hand.
+  <type>` and scan for a matching action.
 - **"Is this ledger intact?"** → `capsule verify <capsule_id>` for one record,
   or `capsule bundle` + `capsule verify --bundle` for a slice you want to hand off.
 - **"What's enforced here?"** → `capsule constraints list`, always, before you

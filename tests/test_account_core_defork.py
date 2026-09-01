@@ -115,20 +115,6 @@ def test_hand_authored_fold_is_deterministic_by_default():
     assert _ledger_fold().derivation_class == DERIVATION_DETERMINISTIC
 
 
-def test_model_assisted_marker_maps_onto_derivation_class():
-    from capsule_ledger.compiler.compile import Declaration, _model_assisted_fold
-
-    d = Declaration(
-        outcome_id="judgment.helpful/1.0.0",
-        statement="the agent acted in good faith",
-        requires_model_judgment=True,
-    )
-    fold = _model_assisted_fold(d)
-    assert fold.derivation_class == DERIVATION_MODEL_ASSISTED
-    # And it projects onto a model_assisted core AccountDefinition.
-    assert fold.to_account_definition().derivation_class == DERIVATION_MODEL_ASSISTED
-
-
 def test_unknown_derivation_class_is_refused():
     from capsule_ledger.folds.errors import FoldDefinitionError
 

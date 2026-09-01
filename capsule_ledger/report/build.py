@@ -140,7 +140,6 @@ def build_dry_run_report(
     resolved_operator = operator or (operators.most_common(1)[0][0] if operators else "")
     since_label = since
     checkpoint = result.record_range[1] if result.decisions else 0
-    replay_command = f"capsule guard dry-run --since {since_label or 'all-time'} --share"
 
     note = ModelNote(quote=model_note, model_id=model_id or "unspecified-model", record_count=sum(len(r) for r in sections.values())) if model_note else None
 
@@ -152,7 +151,6 @@ def build_dry_run_report(
         record_range=result.record_range,
         checkpoint=checkpoint,
         guards=guards,
-        replay_command=replay_command,
         generated_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         model_note=note,
         manifest_digest=manifest_digest,
