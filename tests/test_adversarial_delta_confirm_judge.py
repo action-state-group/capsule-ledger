@@ -1,12 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 """Delta adversarial pass: confirm-ingester + judge-harness (§7a, 2026-08-18).
 
-Five scope areas mirroring [ldg-adversarial-delta-confirm-judge]:
+Scope areas mirroring [ldg-adversarial-delta-confirm-judge]:
   SCOPE 1 — Input enumeration + assurance-grade tiering (no laundering)
   SCOPE 2 — Adversary cases: duplicate, mismatch, stale, malformed
   SCOPE 3 — Judge-harness verdict integrity
-  SCOPE 4 — CLI wiring: both new subcommands exercised end-to-end
   SCOPE 5 — (All tests in this file run from the fresh-clone pinned env)
+
+SCOPE 4 (CLI wiring, `confirm ingest`/`judge run`/`judge adjudicate` exercised
+end-to-end) retired here: the `judge`/`confirm` CLI verbs moved to
+capsule-judge/capsule-compiler (`[ldg-ledger-scope-re-extraction]` Phase 3);
+that coverage now lives in capsule-compiler's test_cli_confirm.py/
+test_cli_judge.py against the wired-together `capsule-compiler` CLI. This
+file keeps SCOPE 1-3 (the library-level confirm/judge package behavior,
+still owned by capsule_ledger.confirm/.judge pending their own move).
 
 Mutant pattern: each "MUTANT" variant patches away one safeguard, then asserts
 the *same* test assertion fails.  Red-before-green in one function body.
@@ -28,11 +35,7 @@ from capsule_ledger.confirm.errors import (
     CONFIRM_COMMITMENT_NOT_FOUND,
     ConfirmError,
 )
-from capsule_ledger.guards import LocalSigner, build_event_capsule
-from capsule_ledger.judge.capsules import (
-    EVENT_ADJUDICATION,
-    EVENT_JUDGMENT,
-)
+from capsule_ledger.guards import build_event_capsule
 from capsule_ledger.judge.errors import (
     ADJUDICATION_LABEL_MISMATCH,
     EMPTY_EVIDENCE_RANGE,
@@ -44,7 +47,6 @@ from capsule_ledger.judge.harness import JudgeHarness
 from capsule_ledger.judge.prompt import JudgePromptDefinition
 from capsule_ledger.judge.scorer import JudgeEvidence
 from capsule_ledger.judge.scorers.static import StaticScorer
-from capsule_ledger.ledger import LedgerStore
 
 # ---------------------------------------------------------------------------
 # Helpers shared across scopes
@@ -392,40 +394,6 @@ def test_s2_invalid_status_mutant_no_validation_accepts_pending(signer, monkeypa
     assert capsule["effect"]["status"] == "pending"
 
 
-# --- E: Malformed payloads at CLI parse boundary ---
-
-def test_s2_invalid_evidence_json_at_cli_boundary(tmp_path, capsys):
-    """Malformed --evidence-json at the CLI boundary should produce a clear
-    error, not a silent crash or a capsule built from garbage."""
-    from capsule_ledger.cli.main import main
-    from capsule_ledger.guards import build_event_capsule
-    from capsule_ledger.ledger import LedgerStore
-
-    ledger_dir = tmp_path / "ledger"
-    store = LedgerStore(ledger_dir)
-    try:
-        s = LocalSigner(key_id="test-key", secret=b"test-secret")
-        cap = build_event_capsule(
-            operator="acme", developer="dev", signer=s,
-            event="intent.declare", detail={"predicate": "mfa_enabled"},
-        )
-        store.append(cap)
-        cid = cap["capsule_id"]
-    finally:
-        store.close()
-
-    with pytest.raises((ValueError, json.JSONDecodeError, SystemExit)):
-        main([
-            "confirm", "ingest",
-            "--ledger", str(ledger_dir),
-            "--commitment", cid,
-            "--subject", "user-42", "--predicate", "mfa_enabled",
-            "--status", "confirmed", "--external-ref", "e1", "--observed-at", "2026-08-12T00:00:00Z",
-            "--evidence-json", "NOT_VALID_JSON{{",  # malformed
-            "--key-id", "test-key", "--secret", "test-secret",
-        ])
-
-
 def test_s2_empty_external_ref_is_still_a_dedupe_key(store, signer):
     """An empty-string external_ref is a valid key for dedup; a second call
     with the same (commitment, external_ref='') is ALREADY_RECORDED."""
@@ -611,181 +579,3 @@ def test_s3_corrupted_input_flips_harness_red(store, signer, monkeypatch):
     assert exc_info.value.reason == LABEL_NOT_IN_LABEL_SET
     assert list(store.scan()) == []  # nothing appended despite scorer ran
 
-
-# ===========================================================================
-# SCOPE 4 — CLI wiring: both #38 and #39 subcommands exercised end-to-end
-# ===========================================================================
-
-
-def test_s4_confirm_ingest_end_to_end_recorded(tmp_path, capsys, monkeypatch):
-    """End-to-end: `capsule confirm ingest` resolution EXECUTED (not just
-    compiled).  Exercises the full CLI→engine→capsule→ledger path for #38."""
-    monkeypatch.delenv("CAPSULE_LEDGER_ARM", raising=False)
-    monkeypatch.delenv("ASG_LEDGER_ARM", raising=False)
-    from capsule_ledger.cli.main import main
-    from capsule_ledger.guards import build_event_capsule
-    from capsule_ledger.ledger import LedgerStore
-
-    ledger_dir = tmp_path / "ledger_s4c"
-    store = LedgerStore(ledger_dir)
-    try:
-        s = LocalSigner(key_id="test-key", secret=b"test-secret")
-        cap = build_event_capsule(
-            operator="acme", developer="dev", signer=s,
-            event="intent.declare", detail={"predicate": "mfa_enabled"},
-        )
-        store.append(cap)
-        cid = cap["capsule_id"]
-    finally:
-        store.close()
-
-    rc = main([
-        "confirm", "ingest",
-        "--ledger", str(ledger_dir),
-        "--commitment", cid,
-        "--subject", "user-99", "--predicate", "mfa_enabled",
-        "--status", "confirmed", "--external-ref", "idp-s4-01",
-        "--observed-at", "2026-08-18T00:00:00Z",
-        "--key-id", "test-key", "--secret", "test-secret",
-    ])
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "recorded: confirmed" in out
-    assert "chained to" in out
-
-    # Verify a fulfillment capsule actually landed in the ledger:
-    store2 = LedgerStore(ledger_dir)
-    try:
-        fulfillments = [
-            r for r in store2.scan()
-            if (r.capsule.get("chain") or {}).get("parent_capsule_id") == cid
-        ]
-    finally:
-        store2.close()
-    assert len(fulfillments) == 1
-    assert fulfillments[0].capsule["effect"]["effect_attestation"] == "runtime_claimed"
-
-
-def test_s4_judge_run_end_to_end_recorded(tmp_path, capsys, monkeypatch):
-    """End-to-end: `capsule judge run` resolution EXECUTED (not just compiled).
-    Exercises the full CLI→harness→capsule→ledger path for #39."""
-    monkeypatch.setenv("CAPSULE_MCP_SIGNING_KEY_ID", "j-key")
-    monkeypatch.setenv("CAPSULE_MCP_SIGNING_SECRET", "j-secret")
-    from capsule_ledger.cli.main import main
-    from capsule_ledger.conversation import ConversationSession
-    from capsule_ledger.guards.signing import LocalSigner
-
-    ledger_dir = tmp_path / "ledger_s4j"
-    signer_seed = LocalSigner(key_id="seed-key", secret=b"seed-secret")
-    store = LedgerStore(ledger_dir)
-    try:
-        sess = ConversationSession(
-            ledger=store, session_id="sess-s4", operator="op", developer="dev",
-            signer_provider=lambda: signer_seed,
-        )
-        sess.record_turn(speaker_role="user", content_digest="a" * 64)
-        sess.record_turn(speaker_role="assistant", content_digest="b" * 64)
-        sess.close()
-    finally:
-        store.close()
-
-    prompt_path = tmp_path / "prompt.yaml"
-    prompt_path.write_text(
-        "prompt_id: conversation.agreement_reached/1.0.0\n"
-        "label_set: [agreement_reached, no_agreement]\n"
-        "instructions: Did they agree?\n"
-    )
-
-    rc = main([
-        "judge", "run",
-        "--ledger", str(ledger_dir),
-        "--prompt", str(prompt_path),
-        "--session", "sess-s4",
-        "--evidence-text", "They reached a clear agreement.",
-        "--scorer", "static",
-        "--static-label", "agreement_reached",
-        "--static-confidence", "0.95",
-    ])
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "judgment recorded:" in out
-
-    # Confirm the capsule is actually in the ledger:
-    from capsule_ledger.judge.capsules import EVENT_JUDGMENT
-    store2 = LedgerStore(ledger_dir)
-    try:
-        judgments = [r for r in store2.scan() if r.capsule["asg_payload"]["event"] == EVENT_JUDGMENT]
-    finally:
-        store2.close()
-    assert len(judgments) == 1
-    assert judgments[0].capsule["asg_payload"]["detail"]["confidence_micros"] == 950_000
-
-
-def test_s4_judge_adjudicate_end_to_end_recorded(tmp_path, capsys, monkeypatch):
-    """End-to-end: `capsule judge adjudicate` resolution EXECUTED.  Exercises
-    the human-spot-check path (the second new #39 subcommand)."""
-    monkeypatch.setenv("CAPSULE_MCP_SIGNING_KEY_ID", "j2-key")
-    monkeypatch.setenv("CAPSULE_MCP_SIGNING_SECRET", "j2-secret")
-    from capsule_ledger.cli.main import main
-    from capsule_ledger.conversation import ConversationSession
-    from capsule_ledger.guards.signing import LocalSigner
-    from capsule_ledger.ledger import LedgerStore
-
-    ledger_dir = tmp_path / "ledger_s4ja"
-    signer_seed = LocalSigner(key_id="seed2-key", secret=b"seed2-secret")
-    store = LedgerStore(ledger_dir)
-    try:
-        sess = ConversationSession(
-            ledger=store, session_id="sess-s4ja", operator="op", developer="dev",
-            signer_provider=lambda: signer_seed,
-        )
-        sess.record_turn(speaker_role="user", content_digest="c" * 64)
-        sess.close()
-    finally:
-        store.close()
-
-    prompt_path = tmp_path / "prompt.yaml"
-    prompt_path.write_text(
-        "prompt_id: conversation.agreement_reached/1.0.0\n"
-        "label_set: [agreement_reached, no_agreement]\n"
-        "instructions: Did they agree?\n"
-    )
-
-    # First: run the judge
-    main([
-        "judge", "run",
-        "--ledger", str(ledger_dir), "--prompt", str(prompt_path),
-        "--session", "sess-s4ja", "--evidence-text", "ev",
-        "--scorer", "static", "--static-label", "agreement_reached",
-        "--static-confidence", "0.7",
-    ])
-    capsys.readouterr()
-
-    store2 = LedgerStore(ledger_dir)
-    try:
-        jid = next(r.capsule_id for r in store2.scan() if r.capsule["asg_payload"]["event"] == EVENT_JUDGMENT)
-    finally:
-        store2.close()
-
-    # Second: adjudicate
-    rc = main([
-        "judge", "adjudicate",
-        "--ledger", str(ledger_dir),
-        "--judgment", jid,
-        "--label", "agreement_reached",
-        "--agree",
-        "--rationale", "spot-check passed",
-    ])
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "adjudication recorded:" in out
-    assert "accept" in out
-
-    store3 = LedgerStore(ledger_dir)
-    try:
-        adjs = [r for r in store3.scan() if r.capsule["asg_payload"]["event"] == EVENT_ADJUDICATION]
-    finally:
-        store3.close()
-    assert len(adjs) == 1
-    assert adjs[0].capsule["disposition"]["human_disposed"] is True
-    assert adjs[0].capsule["chain"]["parent_capsule_id"] == jid
