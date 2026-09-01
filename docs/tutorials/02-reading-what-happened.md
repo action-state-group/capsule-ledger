@@ -155,71 +155,10 @@ value crosses a line (e.g. the first record where a running spend total
 passed some number) — that path needs the fold's window resolved, same
 caveat as `diff --fold` above.
 
-## Structural lenses: novelty, shape, blast-radius
-
-`capsule lens` doesn't read record content — it looks at the *shape* of the
-sequence.
-
-**Novelty** — first time this agent has ever done this verb:
-
-```console
-$ capsule lens novelty --ledger /tmp/demo-ledger.jsonl
-```
-
-```
-2 novel action(s):
-  capsule ee291fae9e673d1b  seq #6  checkout-agent-alpha@v1   verb='intent.declare'  (never seen before for this agent; prior verbs: send_compliance_report)
-  capsule 595847ca81caff1b  seq #7  checkout-agent-alpha@v1   verb='renew_vendor_contract'  (never seen before for this agent; prior verbs: intent.declare, send_compliance_report)
-
-≡ capsule lens novelty --min-history 1
-```
-
-An agent's first `--min-history` records are never judged novel — there's
-no baseline yet to be novel against.
-
-**Shape** — retry storms (the same verb repeated fast) and A↔B cycles:
-
-```console
-$ capsule lens shape --ledger /tmp/demo-ledger.jsonl
-```
-
-```
-no retry storms or cyclic patterns found
-≡ capsule lens shape --min-repeats 3 --window 60s --min-cycle-length 4
-```
-
-Nothing to see in this 7-record fixture — that's an honest "no" from the
-tool, not a silent skip. (The `nanda_transaction_ledger.jsonl` fixture,
-mentioned in [test-data.md](../test-data.md), is a better fixture for
-actually tripping this lens: 36 near-identical `record_transaction`
-capsules in a row.)
-
-**Blast-radius** — how many downstream records cite this one, directly or
-transitively, via chain links:
-
-```console
-$ capsule lens blast-radius 25af0ca6 --ledger /tmp/demo-ledger.jsonl
-```
-
-```
-capsule 25af0ca6c727239efe8bbf1b7e081b32b61787e6d424e4cd8c972ec1e5f86ab8
-  seq: #3
-
-blast radius: 1 downstream record(s) cite this capsule (directly or transitively):
-  capsule 3f469ffa09b1f0e3  seq #4  checkout-agent-alpha@v1   chain.relation='confirms'  parent=25af0ca6c727239e
-
-≡ capsule lens blast-radius 25af0ca6
-```
-
-That's the same dedupe-collision link `blame` found, seen from the other
-direction: "what does this record's fate touch downstream" instead of
-"what led to this record."
-
 ## You just
 
 Went from a raw ledger to concrete answers — what got blocked, what
-changed between two points, what led to a given record, when the first
-bad verdict landed, and whether the sequence itself looked off (novel
-verbs, retry storms, blast radius) — without writing a line of code.
+changed between two points, what led to a given record, and when the first
+bad verdict landed — without writing a line of code.
 
 **Next:** [Folds and caps →](03-folds-and-caps.md)
