@@ -1,0 +1,29 @@
+# §3.3 process gate — a PR whose own title says it isn't ready must not be
+# mergeable. PR #105 merged with a title containing "DO NOT MERGE — manager
+# review" (2026-08-30); nothing enforced that the title meant what it said.
+# This is the re-arm: fail closed on the marker string, checked on open/edit/
+# sync so relabeling the title re-runs the check.
+name: pr-title-gate
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-title-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if the PR title says it isn't ready to merge
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          shopt -s nocasematch
+          if [[ "$TITLE" == *"DO NOT MERGE"* || "$TITLE" == *"manager-review"* || "$TITLE" == *"manager review"* ]]; then
+            echo "PR title marks this as not ready to merge: \"$TITLE\""
+            echo "Remove the marker from the title once the review it names has happened."
+            exit 1
+          fi
+          echo "OK: title carries no not-ready marker."

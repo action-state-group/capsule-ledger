@@ -1,0 +1,36 @@
+# F.3 re-arm gate — bounces any PR that adds/modifies content under a path
+# already assigned (by the ratified [ldg-ledger-scope-re-extraction] map) to
+# capsule-engine, capsule-compiler, or capsule-judge. See
+# .github/bucket_scope_gate.py for the full path list and the "why deletions
+# are exempt" reasoning.
+#
+# No secrets involved, so plain `pull_request` (not `_target`) is safe here —
+# unlike neutrality.yml, there is nothing for a fork PR to exfiltrate.
+#
+# To make this a required pre-merge gate, enable branch protection on `main`
+# and require the "bucket-scope-gate" status check.
+name: bucket-scope-gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  bucket-scope-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check no moved-out bucket path grew
+        run: |
+          python .github/bucket_scope_gate.py \
+            "origin/${{ github.event.pull_request.base.ref }}" \
+            "${{ github.event.pull_request.head.sha }}"
