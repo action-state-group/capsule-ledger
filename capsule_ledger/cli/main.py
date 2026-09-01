@@ -2,8 +2,7 @@
 """`capsule` CLI entry point: git-style verbs over the ledger query API
 (log/show/verify/bundle/diff/blame/bisect), the fold catalog (fold
 list/new/test/lint), the guard-check/action-class catalog (constraints
-list), a per-agent summary (agents --status), telemetry disclosure/funnel
-reporting (telemetry status/funnel), and signing-key rotation (key
+list), a per-agent summary (agents --status), and signing-key rotation (key
 rotate/status).
 
 `log`/`show`/`verify`/`bundle` are registered only in the "full" packaging
@@ -33,7 +32,6 @@ from . import (
     log_cmd,
     payload_cmd,
     show_cmd,
-    telemetry_cmd,
     verify_cmd,
 )
 
@@ -54,7 +52,6 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     diff_cmd.add_parser(sub)
     blame_cmd.add_parser(sub)
     bisect_cmd.add_parser(sub)
-    telemetry_cmd.add_parser(sub)
     # The record-query/evidence verbs -- git-log-style listing, single-record
     # show, capsule verify, and the shareable bundle -- are the "evidence":
     # registered only in the "full" arm. See ``packaging.py``'s module
@@ -79,10 +76,6 @@ def main(argv: list[str] | None = None) -> int:
         print(__version__)
         return 0
 
-    from ..telemetry.record import record_install_seen
-
-    record_install_seen(packaging.current_arm())
-
     if args.command == "fold":
         if getattr(args, "fold_command", None) is None:
             args.fold_parser.print_help()
@@ -98,12 +91,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "constraints":
         if getattr(args, "constraints_command", None) is None:
             args.constraints_parser.print_help()
-            return 0
-        return args.func(args)
-
-    if args.command == "telemetry":
-        if getattr(args, "telemetry_command", None) is None:
-            args.telemetry_parser.print_help()
             return 0
         return args.func(args)
 

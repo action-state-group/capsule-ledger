@@ -20,9 +20,9 @@ remaining cli/ surface is known, extend BLOCKED_PREFIXES with the specific
 cli/*_cmds.py files that stayed bucket-owned (confirm_cmds.py, judge_cmds.py,
 setup_cmds.py, report_cmd.py, enforce_cmds.py, guard_cmds.py, fold_cmds.py,
 fold_ref.py, tenant_cmds.py, lens_cmds.py, manifest_cmds.py,
-thresholds_cmds.py, agents_cmd.py, constraints_cmd.py). console_cmd.py was
-deleted outright and telemetry_cmd.py turned out to be core (see the RESIDUALS
-correction below), so both are off this candidate list now.
+thresholds_cmds.py, agents_cmd.py, constraints_cmd.py). console_cmd.py and
+telemetry_cmd.py were both deleted outright (see the RESIDUALS corrections
+below), so both are off this candidate list now.
 
 Only ADDED or MODIFIED files under a blocked prefix trip the gate --
 deletions/renames-away are the eventual move-out PRs this re-extraction
@@ -100,6 +100,25 @@ without breaking core. It is core, not engine-destined, for the same reason
 below. ``telemetry_cmd.py`` (the ``capsule telemetry status/funnel`` verb)
 was never a separate question once its underlying package is core.
 
+**CORRECTION (2026-09-01, [ldg-extraction-adversarial-fixpass] FIX-A,
+Steven-ruled -- REVERSES the telemetry finding above):** the "hard-import,
+not behind a flag" premise was accurate as description but wrong as
+classification. Steven ruled: the consent-gated adoption funnel is
+operational (company-side, under Amendment H) and must not live in the
+donated neutral core, full stop -- "hard-imported by core" was a defect to
+fix, not a property that makes the dependency belong here. This pass
+removed the four fire-and-forget call sites (``cli/main.py``'s
+``record_install_seen``; ``cli/verify_cmd.py``, ``cli/show_cmd.py``,
+``cli/bundle_cmd.py``'s ``record_evidence_touch``) and the ``capsule
+telemetry status/funnel`` verb (``cli/telemetry_cmd.py``) outright, so
+nothing in core imports ``telemetry/`` any more -- the dependency that made
+it "cannot move without breaking core" no longer exists.
+``capsule_ledger/telemetry/`` moved to capsule-engine (which already
+carried a byte-identical, independently wired copy from before the
+extraction split -- no new add-side PR was needed there). ``telemetry/`` is
+restored to _ENGINE below, the same disposition as ``console/``/``mcp/``: a
+guard against anything new landing back under this path.
+
 Usage: python .github/bucket_scope_gate.py <base-sha> <head-sha>
 Exit 0 = clean; 1 = a blocked path grew; 2 = misconfig/usage.
 """
@@ -114,13 +133,14 @@ import sys
 # static JS specifically, not the whole directory -- viewer.py/offline_shell.html
 # are core and must stay modifiable here. registry/ is narrowed the same way
 # to just cpb_registry.json -- the describe_action_class shim stays core.
-# telemetry/ is also core now (see the console/telemetry trace correction
-# above) and removed from this list; console/ was deleted outright and its
-# entry stays only as a re-add guard.
+# telemetry/ is back on this list (2026-09-01 FIX-A correction, see above):
+# core no longer imports it at all, so it moved to capsule-engine; its entry
+# here is a re-add guard, the same disposition as console/ and mcp/.
 _ENGINE = [
     "capsule_ledger/packs/",
     "capsule_ledger/console/",
     "capsule_ledger/mcp/",
+    "capsule_ledger/telemetry/",
     "capsule_ledger/lenses/",
     "capsule_ledger/report/",
     "capsule_ledger/tenants.py",
