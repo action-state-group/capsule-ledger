@@ -66,7 +66,6 @@ include = ["capsule_ledger*"]
 
 [tool.setuptools.package-data]
 capsule_ledger = [
-    "report/static/*.js",
     "bundle_viewer/static/*.html",
     "console/*.css",
     "console/*.html",

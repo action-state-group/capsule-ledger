@@ -207,8 +207,8 @@ def test_gallery_renders_every_required_component_and_state():
 
 def test_gallery_makes_no_outbound_network_requests():
     """Matches the repo's existing verify-surface discipline
-    (capsule_ledger/report/render.py): no external network calls in a page
-    meant to be served locally."""
+    (capsule_ledger/bundle_viewer/viewer.py): no external network calls in a
+    page meant to be served locally."""
     for match in re.finditer(r'(?:href|src)\s*=\s*"([^"]+)"', GALLERY_HTML):
         url = match.group(1)
         assert not url.startswith(("http://", "https://", "//")), f"external resource: {url}"
