@@ -127,31 +127,23 @@ consults a wall clock to backfill a reference time for you, on purpose.
 
 ### Policy manifest
 The declared, pinned list of which fold and wicket (guard-check) definitions are
-active — by digest, not by copy. `capsule manifest show` resolves the built-in default
-manifest against the real catalogs:
-
-```
-manifest default/1.0.0  0e99f3ee3a6ebf3ee93aa464f27e8fcd1a401ccc45460eb267efde327f5c218c
-  source: .../policy/catalog_defs/default.yaml
-  fold    spend.weekly/1.0.0       3e7f6a3e8707de92b120bbc2aa0b5a78032df5d36e99f9955dd3ba948bba5e9c  OK
-  wicket  dedupe/1.0.0             18ab5d489f1e5774d576b8f99897edd4f4b20f609b85683456a3e3b6b4912abb  OK
-  wicket  caps/1.0.0               906a75a0b908d38fa7b05823ba11f229c3d593516119ad757b541cee7083f54b  OK
-  wicket  verify_before_dispatch/1.0.0 a721624813f785de49f3dcef2090662e7045bc393e59db72defcdbf47269453c  OK
-```
-
-Each `OK` means: the digest the manifest cites for that fold/wicket matches what's
-actually sitting in the catalog right now. The manifest itself gets a digest the same
-way (`manifest_digest()` in `capsule_ledger/policy/manifest.py`) — declare, attest,
-verify, same pattern as the fold digests above.
+active — by digest, not by copy (`capsule_ledger/policy/manifest.py`,
+`Manifest`/`parse_manifest`). Resolving one (`resolve_manifest` in
+`capsule_ledger/policy/resolve.py`) checks every fold and wicket digest it cites
+against what's actually sitting in the catalog right now, and fails closed if any
+digest has drifted. The manifest itself gets a digest the same way
+(`manifest_digest()`) — declare, attest, verify, same pattern as the fold digests
+above. `GuardEngine.check()` stamps that digest onto `asg_payload.manifest_digest`
+on every decision it makes while configured with a manifest, so "which policy
+governed this decision" is checkable directly off the capsule.
 
 ### Epoch
-A policy manifest doesn't get edited in place — activating a new one appends a capsule
-whose `chain.relation` is `epoch_opens` (see `capsule_ledger/policy/activation.py`),
-pointing back at the previous activation if there was one. That gives the ledger a
-walkable history of policy epochs: which manifest digest was active, from which capsule
-onward. `capsule manifest activate` is what appends that record; `capsule diff` and
-`capsule blame` are how you compare state across, or trace a record back to, one of
-those boundaries.
+`chain.relation == "epoch_opens"` (`agent_action_capsule.history`'s chain-relation
+registry) marks a record as a legal chain-start rather than a gap — the marker a
+policy-epoch boundary would use if something in your integration produces one.
+`capsule diff` and `capsule blame` (both reserved, not yet implemented in this
+CLI — see [AGENTS.md](../AGENTS.md)) are how you'd compare state across, or trace
+a record back to, one of those boundaries.
 
 ### Bundle
 A self-contained, offline-verifiable slice of the ledger. `capsule bundle` writes one:
@@ -178,22 +170,6 @@ bundle /tmp/bundle.json: 7 record(s), verifies clean
 
 Verification is free and unmetered — anyone with the bundle file can run `capsule
 verify` themselves, no account, no server call back to this project.
-
-### Declaration, outcome, compiler
-
-**Not yet on `main`** — see [the outcome compiler](outcome-compiler.md) for which
-branch to check out; the concepts are documented here now because the code exists
-and a stranger reading this file should be able to find it.
-
-A **declaration** is one plain-English statement about an outcome you want checked
-— "a refund was confirmed by the billing system." `capsule setup propose
---statement "..." --outcome-id ...` turns it into a candidate; the **compiler**
-grades that candidate on two axes at once — forward (checkable *before* the
-action, e.g. `DETERMINISTIC`) and backward (provable *from the record*, e.g.
-`provable from the record alone`) — and can honestly answer `REFUSED` for a
-statement no evidence rule could ever check, rather than fake a number.
-`capsule setup status` shows every declaration you've authored and its verdict
-pair in this same plain English.
 
 ---
 

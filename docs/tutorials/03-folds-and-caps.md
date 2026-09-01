@@ -146,40 +146,11 @@ ok  spend.weekly/1.0.0  3e7f6a3e8707de92b120bbc2aa0b5a78032df5d36e99f9955dd3ba94
 resolvable digest) — it doesn't replay it against any ledger; `fold test`
 is what actually runs it.
 
-## Declare–attest–verify: `capsule manifest show`
-
-A **manifest** is the pinned bundle of fold + guard-check definitions a
-deployment declares itself bound to — declare it, attest it (activate),
-and any later decision can be verified against exactly that pinned set.
-
-```console
-$ capsule manifest show
-```
-
-```
-manifest default/1.0.0  0e99f3ee3a6ebf3ee93aa464f27e8fcd1a401ccc45460eb267efde327f5c218c
-  source: /tmp/cl/capsule_ledger/policy/catalog_defs/default.yaml
-  fold    spend.weekly/1.0.0       3e7f6a3e8707de92b120bbc2aa0b5a78032df5d36e99f9955dd3ba948bba5e9c  OK
-  wicket  dedupe/1.0.0             18ab5d489f1e5774d576b8f99897edd4f4b20f609b85683456a3e3b6b4912abb  OK
-  wicket  caps/1.0.0               906a75a0b908d38fa7b05823ba11f229c3d593516119ad757b541cee7083f54b  OK
-  wicket  verify_before_dispatch/1.0.0 a721624813f785de49f3dcef2090662e7045bc393e59db72defcdbf47269453c  OK
-```
-
-Every fold and check the manifest declares is **digest-listed** — `OK`
-means that digest actually resolves against the real catalog on disk, not
-just that a name matched. `manifest activate` appends a signed
-config-change record citing this manifest's own digest (`0e99f3ee…`), and
-`manifest verify` confirms a given decision capsule's cited manifest digest
-still resolves to a real, loadable manifest — so "which policy was live
-when this decision was made" is answerable from the ledger itself, not
-from a separate change log you have to trust.
-
 ## You just
 
 Read a real caps escalation end to end — two agents, one pooled identity,
 one shared cap, an `approver_role` turning a failed check into
-`hitl_dispatched` instead of a hard deny — and saw the fold and manifest
-machinery underneath every verdict, always with its envelope, never a bare
-number.
+`hitl_dispatched` instead of a hard deny — and saw the fold machinery
+underneath every verdict, always with its envelope, never a bare number.
 
 **Next:** [Bundle and verify →](04-bundle-and-verify.md)

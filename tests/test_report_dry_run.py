@@ -20,7 +20,6 @@ from pathlib import Path
 import pytest
 from agent_action_capsule import compute_capsule_id
 
-from capsule_ledger.cli.main import main as cli_main
 from capsule_ledger.report import build_dry_run_report, render_report_html
 from capsule_ledger.report.render import decode_fragment, to_fragment_payload
 
@@ -236,86 +235,3 @@ def test_js_digest_flips_on_tamper(caps_fold):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() != tampered["capsule_id"]
-
-
-# -- CLI ------------------------------------------------------------------
-
-
-def test_cli_dry_run_writes_report_and_verifies(tmp_path):
-    out = tmp_path / "report.html"
-    rc = cli_main(
-        [
-            "guard",
-            "dry-run",
-            "--ledger",
-            str(AMAURY),
-            "--since",
-            "7d",
-            "--cap",
-            "money.transfer=10000000",
-            "--out",
-            str(out),
-            "--verify",
-        ]
-    )
-    assert rc == 0
-    assert out.exists()
-    html = out.read_text()
-    assert "acme-research" not in html  # no ledger data server-side either
-
-
-def test_cli_share_prints_full_fragment_url(tmp_path, capsys):
-    out = tmp_path / "report.html"
-    rc = cli_main(
-        ["guard", "dry-run", "--ledger", str(NANDA), "--since", "7d", "--out", str(out), "--share"]
-    )
-    assert rc == 0
-    printed = capsys.readouterr().out
-    assert f"file://{out.resolve()}#" in printed
-
-
-def test_cli_rejects_malformed_cap(tmp_path, capsys):
-    out = tmp_path / "report.html"
-    rc = cli_main(["guard", "dry-run", "--ledger", str(AMAURY), "--cap", "not-a-cap", "--out", str(out)])
-    assert rc == 1
-    assert not out.exists()
-
-
-def test_cli_requires_model_id_alongside_model_note(tmp_path):
-    out = tmp_path / "report.html"
-    rc = cli_main(
-        ["guard", "dry-run", "--ledger", str(AMAURY), "--model-note", "a quote", "--out", str(out)]
-    )
-    assert rc == 1
-    assert not out.exists()
-
-
-def test_cli_ledger_directory_binding_reads_a_real_store(tmp_path):
-    """The real-deployment path: --ledger pointed at a LedgerStore directory,
-    not a loose JSONL file."""
-    from capsule_ledger.ledger import LedgerStore
-
-    store_dir = tmp_path / "store"
-    store = LedgerStore(store_dir)
-    n = store.import_jsonl(AMAURY)
-    store.close()
-    assert n == 4
-
-    out = tmp_path / "report.html"
-    rc = cli_main(
-        [
-            "guard",
-            "dry-run",
-            "--ledger",
-            str(store_dir),
-            "--since",
-            "7d",
-            "--cap",
-            "money.transfer=10000000",
-            "--out",
-            str(out),
-            "--verify",
-        ]
-    )
-    assert rc == 0
-    assert out.exists()

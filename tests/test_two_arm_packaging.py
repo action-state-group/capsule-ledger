@@ -21,11 +21,6 @@ NANDA = FIXTURES / "nanda_transaction_ledger.jsonl"
 
 
 @pytest.fixture
-def full_arm(monkeypatch):
-    monkeypatch.delenv("CAPSULE_LEDGER_ARM", raising=False)
-
-
-@pytest.fixture
 def guards_only_arm(monkeypatch):
     monkeypatch.setenv("CAPSULE_LEDGER_ARM", "guards-only")
 
@@ -49,8 +44,8 @@ def test_guards_only_arm_hides_evidence_verbs():
     subs = _subcommands("guards-only")
     for verb in ("log", "show", "verify", "bundle"):
         assert verb not in subs
-    # the guard/constraints/fold/agents/telemetry surface stays available
-    for verb in ("guard", "constraints", "fold", "agents", "telemetry"):
+    # the constraints/fold/agents/telemetry surface stays available
+    for verb in ("constraints", "fold", "agents", "telemetry"):
         assert verb in subs
 
 
@@ -61,49 +56,6 @@ def test_guards_only_arm_evidence_verbs_are_unregistered(guards_only_arm, verb, 
     assert exc.value.code == 2  # argparse's own "invalid choice" exit code
     err = capsys.readouterr().err
     assert "invalid choice" in err
-
-
-# -- guard dry-run CLI output -------------------------------------------------
-
-
-def test_full_arm_share_prints_the_permalink(full_arm, tmp_path, capsys):
-    out = tmp_path / "report.html"
-    rc = cli_main(["guard", "dry-run", "--ledger", str(NANDA), "--since", "7d", "--out", str(out), "--share"])
-    assert rc == 0
-    printed = capsys.readouterr().out
-    assert f"file://{out.resolve()}#" in printed
-
-
-def test_guards_only_arm_share_prints_no_permalink(guards_only_arm, tmp_path, capsys):
-    out = tmp_path / "report.html"
-    rc = cli_main(["guard", "dry-run", "--ledger", str(NANDA), "--since", "7d", "--out", str(out), "--share"])
-    assert rc == 0
-    printed = capsys.readouterr().out
-    assert "file://" not in printed
-    assert out.exists()  # the report itself is still written
-
-
-def test_full_arm_verify_wording_mentions_capsule(full_arm, tmp_path, capsys):
-    out = tmp_path / "report.html"
-    rc = cli_main(["guard", "dry-run", "--ledger", str(NANDA), "--since", "7d", "--out", str(out), "--verify"])
-    assert rc == 0
-    assert "capsule" in capsys.readouterr().out
-
-
-def test_guards_only_arm_verify_wording_never_mentions_capsule(guards_only_arm, tmp_path, capsys):
-    out = tmp_path / "report.html"
-    rc = cli_main(["guard", "dry-run", "--ledger", str(NANDA), "--since", "7d", "--out", str(out), "--verify"])
-    assert rc == 0
-    printed = capsys.readouterr().out
-    assert "capsule" not in printed.lower()
-    assert "OK: report is reproducible" in printed
-
-
-def test_guard_enforce_records_locally_without_pretending_to_gate(guards_only_arm, monkeypatch, tmp_path, capsys):
-    monkeypatch.setenv("CAPSULE_LEDGER_STATE_DIR", str(tmp_path))
-    rc = cli_main(["guard", "enforce"])
-    assert rc == 0
-    assert "does not itself gate actions" in capsys.readouterr().out
 
 
 # -- report rendering ---------------------------------------------------------

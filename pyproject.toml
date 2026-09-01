@@ -53,15 +53,6 @@ dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0"]
 # mcp-types) and dropped the `mcp.server.fastmcp` import path this server
 # uses -- see capsule_ledger/mcp/server.py.
 mcp = ["mcp>=1.0,<2.0"]
-# capsule_ledger/judge/scorers/deepeval_scorer.py -- the judge harness's
-# default (BYOM) Scorer -- and capsule_ledger/setup/prose_drafter.py's
-# opt-in DeepEvalRationaleDrafter (`capsule setup propose --drafter
-# deepeval`) are the only things that import deepeval; the rest of the
-# judge harness and setup/propose.py's deterministic pipeline have no hard
-# dependency on it. Both import it lazily and raise a named, actionable
-# error if this extra isn't installed, so `capsule_ledger.judge` and
-# `capsule_ledger.setup` both stay importable without it.
-judge = ["deepeval>=1.0"]
 # capsule_ledger/mmr/checkpoint.py uses scitt-cose for offline COSE receipt
 # verification and `cryptography` for Ed25519 key conversion. Both are
 # soft-imported (actionable ImportError if absent). Install this extra to
@@ -99,11 +90,6 @@ capsule_ledger = [
     "vectors/fixtures/must_fail/*/*.yaml",
     "vectors/fixtures/must_fail/*/*.jsonl",
     "vectors/fixtures/must_fail/*/*.txt",
-    "packs/catalog/*/pack.yaml",
-    "packs/catalog/*/AI-BOOTSTRAP.md",
-    "packs/catalog/*/folds/*.yaml",
-    "packs/catalog/*/wickets/*.yaml",
-    "packs/catalog/*/fixtures/*.jsonl",
     "registry/*.json",
 ]
 

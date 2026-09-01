@@ -8,16 +8,12 @@ from __future__ import annotations
 
 import json
 import uuid
-from pathlib import Path
 
 import pytest
 
 from capsule_ledger.cli.main import main as cli_main
 from capsule_ledger.telemetry import consent, events, funnel, record
 from capsule_ledger.telemetry.sink import LocalJSONLSink, emit
-
-FIXTURES = Path(__file__).parent / "fixtures"
-NANDA = FIXTURES / "nanda_transaction_ledger.jsonl"
 
 
 @pytest.fixture
@@ -30,11 +26,6 @@ def state_dir(tmp_path, monkeypatch):
 @pytest.fixture
 def opted_out(monkeypatch):
     monkeypatch.delenv(consent.ENV_VAR, raising=False)
-
-
-@pytest.fixture
-def opted_in(monkeypatch):
-    monkeypatch.setenv(consent.ENV_VAR, "1")
 
 
 # -- consent / opt-in default -------------------------------------------------
@@ -140,40 +131,6 @@ def test_emit_is_a_noop_when_not_opted_in(tmp_path):
     sink = LocalJSONLSink(tmp_path / "events.jsonl")
     assert emit(event, opted_in=False, sink=sink) is False
     assert not (tmp_path / "events.jsonl").exists()
-
-
-# -- CLI hooks: real usage -> real facts, only when opted in -----------------
-
-
-def test_guard_dry_run_configuring_a_cap_emits_m1_when_opted_in(opted_in, state_dir, tmp_path):
-    sink_path = tmp_path / "events.jsonl"
-    import os
-
-    os.environ["CAPSULE_LEDGER_TELEMETRY_SINK_PATH"] = str(sink_path)
-    try:
-        out = tmp_path / "report.html"
-        rc = cli_main(
-            ["guard", "dry-run", "--ledger", str(NANDA), "--since", "7d", "--out", str(out), "--cap", "money.transfer=1"]
-        )
-        assert rc == 0
-    finally:
-        del os.environ["CAPSULE_LEDGER_TELEMETRY_SINK_PATH"]
-
-    lines = [json.loads(line) for line in sink_path.read_text().splitlines()]
-    metrics = {line["metric"] for line in lines}
-    assert "m1_activation" in metrics
-    assert "install_seen" in metrics
-    for line in lines:
-        assert set(line) == events.ALLOWED_FIELDS
-
-
-def test_guard_dry_run_without_opt_in_emits_nothing(opted_out, state_dir, tmp_path):
-    out = tmp_path / "report.html"
-    rc = cli_main(
-        ["guard", "dry-run", "--ledger", str(NANDA), "--since", "7d", "--out", str(out), "--cap", "money.transfer=1"]
-    )
-    assert rc == 0
-    assert not state_dir.exists()
 
 
 # -- the funnel report: raw values only, over synthetic or real events ------

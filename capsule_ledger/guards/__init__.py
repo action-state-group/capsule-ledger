@@ -19,7 +19,6 @@ from .revocation import (
     check_time_fenced_revocation,
 )
 from .signing import LocalSigner, Signer, SigningKeyUnavailable, key_fingerprint
-from .tool_call import TOOL_CALL_LANE, ToolCallLane
 
 __all__ = [
     "Action",
@@ -45,6 +44,4 @@ __all__ = [
     "RevocationFinding",
     "build_key_timeline",
     "check_time_fenced_revocation",
-    "TOOL_CALL_LANE",
-    "ToolCallLane",
 ]

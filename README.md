@@ -52,32 +52,15 @@ verifiable record — see [`docs/onboarding.md`](docs/onboarding.md). **Two of
 the four paths aren't built yet; the doc says so plainly rather than
 inventing them** — Goose and Dapr have no integration code in this repo yet.
 
-## Declaring outcomes (the outcome compiler)
-
-Beyond checking individual actions, capsule-ledger can compile **one plain-English
-statement** ("every refund over $500 is approved by a manager first") into a
-before-the-fact guard and an after-the-fact fold, bound together so they can't
-silently disagree — and it will honestly refuse a statement it can't check, in one
-sentence, rather than fake a verdict. **Not yet merged to `main`** — see
-[`docs/outcome-compiler.md`](docs/outcome-compiler.md) for the concept, a
-two-command working example, and which branch to check out today.
-
 ## What's here
 
 - `capsule_ledger/ledger/` — append-only store and the query API (agent, time range, counterparty, verdict, action type).
 - `capsule_ledger/folds/` — declarative fold definitions (count/sum/min/max/last, keyed and windowed) and their replay evaluation.
 - `capsule_ledger/guards/` — the guard API: `check(action) -> allow | deny | escalate`, plus `dry_run`.
-- `capsule_ledger/report/` — `capsule guard dry-run`: replays a ledger through the guard checks and emits a
-  self-contained HTML report. The report's cited records travel only in the shared link's URL
-  fragment (after `#`), never server-side or fetched — the page re-derives its own numbers and
-  re-verifies every cited capsule's digest from that fragment when opened.
-- `capsule_ledger/audit_report/` — `capsule report --period <range> --audience <internal|counterparty|auditor>`:
-  a period, audience-scoped record in three blocks — what was promised (accepted declarations, scope
-  census), what happened (per-outcome coverage as N of M with the Enforced-by/Evidenced-by pair, a
-  not-claimable register, deferral aging), and can I check it (every cited row resolves to a capsule id
-  and an offline `capsule verify --bundle` command — no network, no permission from anyone, required).
-  Hand-running this against your own ledger is the whole capability, open source and free
-  forever — nothing about it is a preview or a subset of anything larger.
+- `capsule_ledger/report/` — replays a ledger through the guard checks and emits a self-contained HTML
+  report. The report's cited records travel only in the shared link's URL fragment (after `#`), never
+  server-side or fetched — the page re-derives its own numbers and re-verifies every cited capsule's
+  digest from that fragment when opened.
 - `capsule_ledger/cli/` — the `capsule` command line (git-verb shaped: `log`, `show`, `verify`, `bundle`, `fold`, ...).
 - `capsule_ledger/mcp/` — an MCP advisory server exposing the same ledger, folds, and guards to agent harnesses (nine read-only tools, plus `intent_declare` — the only tool that writes).
 - `capsule_ledger/vectors/` — pinned test vectors: known-answer results, determinism probes, and MUST-FAIL cases.
@@ -101,14 +84,6 @@ Off by default. If explicitly turned on (`CAPSULE_LEDGER_TELEMETRY=1`), this ins
 The guard fails closed by default and records every degradation — see
 [`docs/failure-semantics.md`](docs/failure-semantics.md) for the full table.
 
-## CI Action for downstream repos
-
-`.github/actions/guard-check` is a composite GitHub Action other repos can
-`uses:` in their own CI to lint a guard config, replay it against a
-snapshot ledger, and epoch-diff guard behavior on PRs — see
-[`docs/ci-action.md`](docs/ci-action.md), including the honesty line on
-what pre-merge CI does and does not guarantee versus the live guard.
-
 ## Capsule parsing
 
 Records are parsed and verified through the public [`agent-action-capsule`](https://github.com/action-state-group/agent-action-capsule) reference library (published as `agent-action-capsule` on PyPI), declared as a normal dependency. It is never vendored or copied into this repo.
@@ -128,5 +103,5 @@ pytest -q
 
 ## Status
 
-315 files, 700+ passing tests, a working guard engine, and adversarial review.
+~290 files, 540+ passing tests, a working guard engine, and adversarial review.
 Community supported open source.

@@ -257,8 +257,6 @@
     setText("[data-agent-count]", String((payload.agents || []).length));
     setText("[data-record-range]", payload.record_range[0] + "–" + payload.record_range[1]);
     setText("[data-checkpoint]", String(payload.checkpoint));
-    setText("[data-verify-command]", (payload.replay_command || "").replace("--share", "--verify"));
-    setText("[data-enforce-count]", String(flattenRows(payload).length));
   }
 
   function renderGuardSections(payload) {
@@ -327,7 +325,6 @@
       "[data-model-byline]",
       "drafted by " + payload.model_note.model_id + ", reading the " + payload.model_note.record_count + " records above · interpretation, not evidence"
     );
-    setText("[data-tuning-recheck]", "capsule guard dry-run --since " + (payload.since || "7d") + " --share");
   }
 
   function renderPermalink(payload) {

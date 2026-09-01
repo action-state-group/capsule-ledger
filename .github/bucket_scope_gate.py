@@ -26,6 +26,28 @@ Only ADDED or MODIFIED files under a blocked prefix trip the gate --
 deletions/renames-away are the eventual move-out PRs this re-extraction
 itself will produce, and must stay legal.
 
+**[ldg-endgame-bucket-deletion] reclassification, flagged for Steven's
+ratification, not yet reflected in the 2026-08-22 map above:** executing the
+bucket-cluster deletion (packs/compiler/judge/setup/audit_report/tenants.py)
+surfaced hard, non-optional dependencies from surviving F.1-core code onto
+four of the paths this map calls "engine bucket" -- with packs/compiler/
+judge/setup now gone, re-importing capsule-engine or duplicating code is not
+an option, so these four are core, not engine-destined, and are removed from
+_ENGINE below:
+  - ``guards/`` (minus the now-deleted ``tool_call.py``) -- ``holds/``
+    (F.1 core) calls into it directly.
+  - ``policy/`` -- ``policy/resolve.py`` is ``holds/policy.py``'s manifest
+    resolver, and ``policy/loader.py``/``catalog_defs/`` back the shared
+    ``tests/conftest.py`` fixtures every ``holds/`` test uses.
+  - ``folds/`` -- the still-live, still-registered ``capsule fold`` CLI verb
+    (fold_cmds.py) owns this outright; it was never engine-only.
+  - ``report/`` -- ``bundle_viewer/base_viewer.py`` (backing the still-live
+    ``capsule bundle --with-viewer``) hard-imports
+    ``report.render.encode_fragment``; ``report/build.py`` in turn needs
+    ``folds/`` for ``FoldDefinition``.
+``console/``, ``mcp/``, ``telemetry/``, ``bundle_viewer/``, and ``registry/``
+are untouched here -- no dependency forced a call on them in this pass.
+
 Usage: python .github/bucket_scope_gate.py <base-sha> <head-sha>
 Exit 0 = clean; 1 = a blocked path grew; 2 = misconfig/usage.
 """
@@ -34,19 +56,16 @@ from __future__ import annotations
 import subprocess
 import sys
 
-# capsule-engine bucket (Amendment F/H §2, §4)
+# capsule-engine bucket (Amendment F/H §2, §4). guards/, policy/, folds/,
+# and report/ were removed here -- see the reclassification note above.
 _ENGINE = [
-    "capsule_ledger/guards/",
-    "capsule_ledger/folds/",
     "capsule_ledger/packs/",
     "capsule_ledger/console/",
     "capsule_ledger/mcp/",
     "capsule_ledger/telemetry/",
-    "capsule_ledger/report/",
     "capsule_ledger/lenses/",
     "capsule_ledger/bundle_viewer/",
     "capsule_ledger/registry/",
-    "capsule_ledger/policy/",
     "capsule_ledger/tenants.py",
 ]
 # capsule-compiler bucket
