@@ -3,9 +3,9 @@
 """Minimal framework-adapter integration: the same `GuardEngine.check()` call
 a LangGraph node, CrewAI tool wrapper, or ADK tool handler would make before
 letting an agent's action through. No MCP, no subprocess -- this is the
-public in-process API (`capsule_ledger.guards`), the same one `capsule-mcp`'s
-`intent_declare` tool wraps. See `../onboarding.md` ("Path 3: framework
-adapter") for how to run this and confirm the record it produces.
+public in-process API (`capsule_ledger.guards`), the same one an MCP
+server's `intent_declare` tool would wrap. See `../onboarding.md` ("Path 2:
+framework adapter") for how to run this and confirm the record it produces.
 
 Run: CAPSULE_LEDGER=/some/dir python3 docs/onboarding/framework_adapter_example.py
 """

@@ -15,7 +15,6 @@ $ wc -l /tmp/cl/tests/fixtures/*.jsonl /tmp/cl/tests/fixtures/*.json
    36 nanda_transaction_ledger.jsonl
     4 sample_ledger.jsonl
     7 two_agents_sim_ledger.jsonl
-  432 mcp_tool_schema_snapshot.json
 ```
 
 - **`sample_ledger.jsonl`** (4 capsules) — a checked-in copy of
@@ -49,17 +48,6 @@ $ wc -l /tmp/cl/tests/fixtures/*.jsonl /tmp/cl/tests/fixtures/*.json
   read from this checked-in copy — see "the simulator as fixture generator"
   below for why those two are byte-identical, checked directly rather than
   assumed.
-
-- **`mcp_tool_schema_snapshot.json`** (432 lines, 10 tool entries: e.g.
-  `action_been_done`, `budget_remaining`, `constraints_list`,
-  `decision_explain`, `fold_get`, `fold_list`, `intent_declare`,
-  `ledger_query`, `record_get`, `record_verify`) — not a ledger at all. Per
-  `tests/test_mcp_schema.py`'s docstring, it "pins the exact
-  name/description/inputSchema of every MCP tool this server exposes, so a
-  future accidental signature change ... is caught by a diff against"
-  this file, "rather than discovered by a caller at runtime." It's a schema
-  snapshot, checked against `capsule_ledger.mcp.server`'s live tool
-  registration — no ledger is opened to produce or check it.
 
 ## The two-agent simulator doubles as fixture generator
 

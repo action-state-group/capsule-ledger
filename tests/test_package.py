@@ -7,11 +7,10 @@ def test_import_subpackages():
     import capsule_ledger.folds
     import capsule_ledger.guards
     import capsule_ledger.ledger
-    import capsule_ledger.mcp
     import capsule_ledger.vectors
 
     assert capsule_ledger.ledger and capsule_ledger.folds and capsule_ledger.guards
-    assert capsule_ledger.cli and capsule_ledger.mcp and capsule_ledger.vectors
+    assert capsule_ledger.cli and capsule_ledger.vectors
 
 
 def test_cli_version(capsys):

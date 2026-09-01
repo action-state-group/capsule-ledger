@@ -48,11 +48,7 @@ Homepage = "https://github.com/action-state-group/capsule-ledger"
 Source = "https://github.com/action-state-group/capsule-ledger"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff>=0.4", "mcp>=1.0,<2.0"]
-# Pinned below 2.0: the 2.0 release restructured the package (split out
-# mcp-types) and dropped the `mcp.server.fastmcp` import path this server
-# uses -- see capsule_ledger/mcp/server.py.
-mcp = ["mcp>=1.0,<2.0"]
+dev = ["pytest>=7.0", "ruff>=0.4"]
 # capsule_ledger/mmr/checkpoint.py uses scitt-cose for offline COSE receipt
 # verification and `cryptography` for Ed25519 key conversion. Both are
 # soft-imported (actionable ImportError if absent). Install this extra to
@@ -61,10 +57,8 @@ checkpoint = ["scitt-cose>=0.2.0", "cryptography>=42.0"]
 
 [project.scripts]
 capsule = "capsule_ledger.cli:main"
-capsule-mcp = "capsule_ledger.mcp.server:main"
-# Hidden aliases, undocumented: kept working for one release post-rename to `capsule`.
+# Hidden alias, undocumented: kept working for one release post-rename to `capsule`.
 asg = "capsule_ledger.cli:main"
-asg-mcp = "capsule_ledger.mcp.server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
