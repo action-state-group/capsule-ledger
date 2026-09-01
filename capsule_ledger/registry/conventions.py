@@ -4,6 +4,16 @@ where a capsule's ``asg_payload.action_class`` matches a registered
 convention, every display surface shows its human label/description from
 this module instead of a hardcoded string.
 
+**Scope note ([ldg-ledger-scope-re-extraction] RESIDUALS pass §3.1):** this
+is a MINIMAL, self-contained shim -- capsule-ledger's own core read/verify
+display surface (``cli/format.py``, ``console/api.py``) needs only
+``describe_action_class``. The full vendored CPB + provisional-field-value
+registry (``describe_field_value``, ``conventions_digest``, the
+``cpb_registry.json`` live tables) moved to capsule-engine as the interim
+vendor-of-record (§3.1(a)) -- this module never imports capsule-engine and
+carries its own tiny label table, so the two are independent, not two forks
+of one truth.
+
 ``action_class`` -- not the -02 spec's own closed ``action_type`` field
 (restricted to ``fyi``/``decide``, see ``guards/action.py``) -- is the
 namespaced convention field the "Agent Action Semantics" layer
@@ -33,15 +43,7 @@ from functools import lru_cache
 from importlib import resources
 from typing import Any
 
-from agent_action_capsule import json_digest
-
-__all__ = [
-    "ActionConvention",
-    "describe_action_class",
-    "conventions_digest",
-    "FieldConvention",
-    "describe_field_value",
-]
+__all__ = ["ActionConvention", "describe_action_class"]
 
 
 @dataclass(frozen=True)
@@ -49,26 +51,6 @@ class ActionConvention:
     action_class: str | None
     label: str
     description: str | None
-    registered: bool
-
-
-@dataclass(frozen=True)
-class FieldConvention:
-    """A resolved convention label for one AAC six-registry field value
-    (``effect.type``, ``effect_attestation``, ``chain.relation``, ...).
-
-    ``status`` is ``"provisional"`` when the value is resolved from the vendored
-    CPB *provisional* payload-class snapshot (a known-with-status-provisional
-    value, never a rejection -- the never-reject invariant); ``None`` when the
-    value carries no convention entry here (renders as-is, unregistered).
-    ``payload_class`` names the CPB provisional payload class that sets the
-    value, when known."""
-    field: str
-    value: str
-    label: str
-    description: str | None
-    status: str | None
-    payload_class: str | None
     registered: bool
 
 
@@ -82,22 +64,6 @@ def _table() -> dict[str, Any]:
     return _load_raw().get("action_class_conventions", {})
 
 
-@lru_cache(maxsize=1)
-def _provisional_field_table() -> dict[str, Any]:
-    """The vendored provisional field-value conventions, keyed by AAC registry
-    field name (``effect.type`` etc.). Empty when none are vendored."""
-    return _load_raw().get("provisional_field_conventions", {})
-
-
-@lru_cache(maxsize=1)
-def conventions_digest() -> str:
-    """The vendored snapshot's own content digest -- lets any surface state
-    exactly which convention-table version it rendered a label from,
-    offline, without a version number this file could drift out of sync
-    with."""
-    return json_digest(_load_raw())
-
-
 def describe_action_class(action_class: str | None) -> ActionConvention:
     if not action_class:
         return ActionConvention(action_class=None, label="(no action class recorded)", description=None, registered=False)
@@ -106,33 +72,4 @@ def describe_action_class(action_class: str | None) -> ActionConvention:
         return ActionConvention(action_class=action_class, label=action_class, description=None, registered=False)
     return ActionConvention(
         action_class=action_class, label=entry["label"], description=entry.get("description"), registered=True
-    )
-
-
-def describe_field_value(field: str, value: str | None) -> FieldConvention:
-    """Resolve a convention label for one AAC six-registry field value.
-
-    A value carried by a vendored CPB *provisional* payload class resolves
-    known-with-status-``provisional`` (``registered=True``, ``status=
-    "provisional"``); any other value renders as-is, unregistered -- never an
-    error (the never-reject invariant, mirroring ``describe_action_class`` and
-    the spec-level §12 binding)."""
-    if not value:
-        return FieldConvention(
-            field=field, value="", label="(no value recorded)", description=None,
-            status=None, payload_class=None, registered=False,
-        )
-    entry = _provisional_field_table().get(field, {}).get(value)
-    if entry is None:
-        return FieldConvention(
-            field=field, value=value, label=value, description=None,
-            status=None, payload_class=None, registered=False,
-        )
-    return FieldConvention(
-        field=field, value=value,
-        label=entry.get("label", value),
-        description=entry.get("description"),
-        status=entry.get("status", "provisional"),
-        payload_class=entry.get("payload_class"),
-        registered=True,
     )

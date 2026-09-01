@@ -62,11 +62,22 @@ itself is REMOVED from _ENGINE: ``viewer.py``/``offline_shell.html`` (the
 actual ``--with-viewer`` backing) are genuinely core and must stay
 modifiable here; only ``base_viewer.py`` and its two static JS files moved.
 
-``console/``, ``telemetry/``, and ``registry/`` are untouched by either
-correction -- no dependency forced a call on them. ``mcp/`` was deleted
-outright in an earlier RESIDUALS-pass PR (capsule-engine already carried a
-current, self-sufficient copy); its _ENGINE entry stays as a guard against
-anything new landing back under that path.
+**CORRECTION (2026-09-01, [ldg-ledger-scope-re-extraction] RESIDUALS pass
+§3.1):** ``registry/`` is NOT a blanket engine-bucket directory -- per
+Steven's ruling, capsule-ledger keeps a minimal, self-contained
+``describe_action_class`` shim (its own tiny embedded label data, no
+capsule-engine import) for its core read/verify display surface
+(``cli/format.py``, ``console/api.py``); only the full vendored CPB registry
+(``cpb_registry.json`` + the ``provisional_field_conventions`` half of
+``conventions.json``) moved to capsule-engine as the interim vendor-of-record.
+_ENGINE below narrows from the whole ``registry/`` directory to the one file
+that's actually gone.
+
+``console/`` and ``telemetry/`` are untouched by either correction -- no
+dependency forced a call on them. ``mcp/`` was deleted outright in an
+earlier RESIDUALS-pass PR (capsule-engine already carried a current,
+self-sufficient copy); its _ENGINE entry stays as a guard against anything
+new landing back under that path.
 
 Usage: python .github/bucket_scope_gate.py <base-sha> <head-sha>
 Exit 0 = clean; 1 = a blocked path grew; 2 = misconfig/usage.
@@ -80,7 +91,8 @@ import sys
 # stay core -- see the reclassification note above. report/ is back (2026-09-01
 # correction, see above); bundle_viewer/ is narrowed to base_viewer.py + its
 # static JS specifically, not the whole directory -- viewer.py/offline_shell.html
-# are core and must stay modifiable here.
+# are core and must stay modifiable here. registry/ is narrowed the same way
+# to just cpb_registry.json -- the describe_action_class shim stays core.
 _ENGINE = [
     "capsule_ledger/packs/",
     "capsule_ledger/console/",
@@ -88,7 +100,6 @@ _ENGINE = [
     "capsule_ledger/telemetry/",
     "capsule_ledger/lenses/",
     "capsule_ledger/report/",
-    "capsule_ledger/registry/",
     "capsule_ledger/tenants.py",
     # File-level, not directory-level: bundle_viewer/viewer.py +
     # static/offline_shell.html (the actual `--with-viewer` backing) are
@@ -96,6 +107,10 @@ _ENGINE = [
     "capsule_ledger/bundle_viewer/base_viewer.py",
     "capsule_ledger/bundle_viewer/static/capsule_viewer.js",
     "capsule_ledger/bundle_viewer/static/conversation_exchange_card.js",
+    # File-level, not directory-level (2026-09-01 correction, see above):
+    # registry/ itself stays core (a minimal shim); only the full vendored
+    # CPB table moved.
+    "capsule_ledger/registry/cpb_registry.json",
 ]
 # capsule-compiler bucket
 _COMPILER = [
