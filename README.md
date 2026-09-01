@@ -46,11 +46,13 @@ See [`docs/reference/tau2-airline-reference.md`](docs/reference/tau2-airline-ref
 
 ## Onboarding your own agent
 
-Four ways to hook a real agent up to a capsule-ledger instance (Claude Code,
-Goose, a framework adapter, Dapr), each ending in a real, independently
-verifiable record — see [`docs/onboarding.md`](docs/onboarding.md). **Two of
-the four paths aren't built yet; the doc says so plainly rather than
-inventing them** — Goose and Dapr have no integration code in this repo yet.
+Three ways to hook a real agent up to a capsule-ledger instance (Goose, a
+framework adapter, Dapr), each ending in a real, independently verifiable
+record — see [`docs/onboarding.md`](docs/onboarding.md). **Two of the three
+paths aren't built yet; the doc says so plainly rather than inventing
+them** — Goose and Dapr have no integration code in this repo yet. Want an
+MCP-server integration (Claude Code and similar)? That server now ships
+from `capsule-engine`, not this repo.
 
 ## What's here
 
@@ -62,7 +64,6 @@ inventing them** — Goose and Dapr have no integration code in this repo yet.
   server-side or fetched — the page re-derives its own numbers and re-verifies every cited capsule's
   digest from that fragment when opened.
 - `capsule_ledger/cli/` — the `capsule` command line (git-verb shaped: `log`, `show`, `verify`, `bundle`, `fold`, ...).
-- `capsule_ledger/mcp/` — an MCP advisory server exposing the same ledger, folds, and guards to agent harnesses (nine read-only tools, plus `intent_declare` — the only tool that writes).
 - `capsule_ledger/vectors/` — pinned test vectors: known-answer results, determinism probes, and MUST-FAIL cases.
 - `capsule_ledger/telemetry/` — opt-in-disclosed, aggregate-only usage instrumentation and the 6-metric funnel report generator (see below).
 

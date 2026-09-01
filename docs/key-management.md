@@ -12,47 +12,37 @@ a cryptography dependency this package doesn't otherwise need.
 | Question | Current answer |
 |---|---|
 | Key type | HMAC-SHA256 shared secret (`LocalSigner`), not an asymmetric keypair |
-| Provisioning | Set two env vars on the MCP server process: `CAPSULE_MCP_SIGNING_KEY_ID`, `CAPSULE_MCP_SIGNING_SECRET` |
-| Default if unset | A **fixed, checked-in dev key** (`key_id="capsule-mcp-server"`, secret `b"capsule-mcp-server-dev-key"`) so the server runs out of the box for local experimentation |
-| Where the key lives on disk | Nowhere, by design — it exists only as an env var value or the in-source dev-key fallback; there is no key file, keystore, or on-disk secret store in this package |
-| Scope | One key per running server process, held in memory for the process lifetime; not shared across processes or persisted between restarts unless the same env vars are set again |
-| Rotation | Not implemented. Restarting the process with new env vars starts signing new decisions with the new key; nothing in this package records that a rotation happened, revokes the old key, or re-signs anything |
-| Key loss / compromise | Not detected or handled specially. A compromised secret can forge capsules indistinguishable from genuine ones until an operator rotates it out-of-band; there is no revocation list, no key-compromise event, and no way to invalidate capsules signed under a known-bad key |
+| Provisioning | Caller-supplied: whatever constructs a `LocalSigner` (or a `signer_provider` passed to `GuardEngine`) picks the key id/secret. This package itself has no live decision-producing entry point (CLI is read/verify only) — see "Provisioning today" below for where provisioning actually happens now |
+| Where the key lives on disk | Nowhere, by design — `LocalSigner` takes the key id/secret as constructor arguments; there is no key file, keystore, or on-disk secret store in this package |
+| Scope | One key per `LocalSigner` instance, held in memory for the caller's process lifetime; not shared across processes or persisted |
+| Rotation | Not implemented. Constructing a new `LocalSigner` with a new key starts signing new decisions with it; nothing in this package records that a rotation happened, revokes the old key, or re-signs anything |
+| Key loss / compromise | Not detected or handled specially. A compromised secret can forge capsules indistinguishable from genuine ones until the caller rotates it out-of-band; there is no revocation list, no key-compromise event, and no way to invalidate capsules signed under a known-bad key |
 
 ## Provisioning today
 
-The only live signing path is the MCP server's `intent.declare` tool
-(`capsule_ledger/mcp/server.py`, `_get_guard`): it builds one `LocalSigner` from
-`ServerConfig.signing_key_id` / `signing_secret` at first use and reuses it
-for the life of the process (`capsule_ledger/mcp/config.py`, `load_config`).
-There is no key-generation step, ceremony, or CLI verb — an operator sets
-the two env vars (or accepts the dev default) before starting the server.
+`LocalSigner` (`capsule_ledger/guards/signing.py`) is a plain constructor — this
+package has no key-generation step, ceremony, or CLI verb of its own; every
+caller supplies its own key id/secret. The MCP advisory server that used to
+live here (`capsule_ledger/mcp/`, `intent_declare` tool) provisioned one via
+two env vars and shipped a checked-in dev-default key; that server — and its
+provisioning story — now lives in `capsule-engine`, not this package. See
+`docs/onboarding.md`'s Path 2 (`framework_adapter_example.py`) for how an
+in-process caller in this repo constructs one directly.
 
-One other place constructs a `LocalSigner`, and it is not the live decision
-path: `capsule_ledger/report/replay.py`'s dry-run report builder uses its own
-hardcoded key (`key_id="dry-run-report"`) to produce a read-only replay
-artifact, unrelated to the MCP server's key. `GuardEngine.check(...,
-dry_run=...)` is the only thing that ever gates a real decision.
-
-## The dev-default key is not a secret boundary
-
-`_DEFAULT_SIGNING_SECRET` in `capsule_ledger/mcp/config.py` is a literal string
-checked into source. It exists so the server runs immediately with no setup;
-it provides no confidentiality once the source is public (flagged in PR
-#13). Anything beyond local experimentation must set both
-`CAPSULE_MCP_SIGNING_KEY_ID` and `CAPSULE_MCP_SIGNING_SECRET` explicitly — running
-the dev default in a shared or production deployment means anyone who has
-read the source can forge signed capsules.
+One other place constructs a `LocalSigner`: `capsule_ledger/report/replay.py`'s
+dry-run report builder uses its own hardcoded key (`key_id="dry-run-report"`)
+to produce a read-only replay artifact, unrelated to any live decision path.
+`GuardEngine.check(..., dry_run=...)` is the only thing that ever gates a
+real decision.
 
 ## Key loss or compromise, today
 
-There is no rotation or revocation mechanism, so recovery is entirely
-out-of-band and manual:
-1. Generate a new secret and set it via `CAPSULE_MCP_SIGNING_SECRET` /
-   `CAPSULE_MCP_SIGNING_KEY_ID`.
-2. Restart the MCP server process. It picks up the new key on next launch
-   (`load_config()` reads the environment once, at construction).
-3. Nothing marks the old key as revoked, records the compromise, or
+There is no rotation or revocation mechanism in `LocalSigner` itself, so
+recovery is entirely out-of-band and manual for whatever caller provisions
+it:
+1. Generate a new secret and construct a new `LocalSigner` (or reconfigure
+   whatever `signer_provider` supplies one) with it.
+2. Nothing marks the old key as revoked, records the compromise, or
    distinguishes capsules signed before vs. after the change — a verifier
    checking `key_id` will see the two periods only as different `key_id`
    values, with no signal that one of them should not be trusted.

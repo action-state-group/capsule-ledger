@@ -10,9 +10,8 @@ verify -- one request/response shape per ``LedgerAPI`` method, no invented
 wire shapes. 
 
 ``find_gaps`` has no server endpoint yet, so it raises rather than guessing
-at one -- the same "fail loud, not silently" rule
-``capsule_ledger.mcp.config.open_backend`` already applies to its own local/
-remote backend seam.
+at one -- the same "fail loud, not silently" rule capsule-engine's MCP
+server config applies to its own local/remote backend seam.
 
 Uses only the standard library (``urllib``) -- this stays a zero-extra-
 dependency seam; the only new dependency this example set introduces is
