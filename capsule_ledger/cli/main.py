@@ -10,7 +10,7 @@ localhost only.
 
 `log`/`show`/`verify`/`bundle` are registered only in the "full" packaging
 arm -- see `capsule_ledger/packaging.py` for the two-arm switch. `diff`/`blame`/
-`bisect`/`lens` are structural lenses over the query API, not evidence
+`bisect` are structural lenses over the query API, not evidence
 artifacts, so they stay registered in both arms.
 
 This module is a thin dispatcher; each verb's logic lives in its own
@@ -36,7 +36,6 @@ from . import (
     guard_cmds,
     init_cmds,
     key_cmds,
-    lens_cmds,
     log_cmd,
     manifest_cmds,
     payload_cmd,
@@ -72,7 +71,6 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     diff_cmd.add_parser(sub)
     blame_cmd.add_parser(sub)
     bisect_cmd.add_parser(sub)
-    lens_cmds.add_parser(sub)
     telemetry_cmd.add_parser(sub)
     setup_cmds.add_parser(sub)
     # The record-query/evidence verbs -- git-log-style listing, single-record
@@ -144,12 +142,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "telemetry":
         if getattr(args, "telemetry_command", None) is None:
             args.telemetry_parser.print_help()
-            return 0
-        return args.func(args)
-
-    if args.command == "lens":
-        if getattr(args, "lens_command", None) is None:
-            args.lens_parser.print_help()
             return 0
         return args.func(args)
 

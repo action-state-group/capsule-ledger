@@ -40,10 +40,7 @@ $ wc -l /tmp/cl/tests/fixtures/*.jsonl /tmp/cl/tests/fixtures/*.json
   `record_transaction` capsules: same operator/developer/action_type, no
   discriminating amount or target. `tests/test_guard_dry_run.py` spells out
   why: "replaying them one at a time is exactly the dedupe check's target
-  case: the first occurrence passes, every repeat would-have-held." It's
-  also the fixture that's actually large enough to exercise `capsule lens
-  shape`'s retry-storm detection meaningfully (tutorial 2's fixture only has
-  7 records — too few to trip it).
+  case: the first occurrence passes, every repeat would-have-held."
 
 - **`two_agents_sim_ledger.jsonl`** (7 capsules) — the byte-identical output
   of the two-agent simulator (`python -m capsule_ledger.examples.two_agents`)
