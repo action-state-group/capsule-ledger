@@ -28,7 +28,6 @@ from . import (
     blame_cmd,
     bundle_cmd,
     checkpoint_cmd,
-    confirm_cmds,
     console_cmd,
     constraints_cmd,
     diff_cmd,
@@ -36,7 +35,6 @@ from . import (
     fold_cmds,
     guard_cmds,
     init_cmds,
-    judge_cmds,
     key_cmds,
     lens_cmds,
     log_cmd,
@@ -76,14 +74,11 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     bisect_cmd.add_parser(sub)
     lens_cmds.add_parser(sub)
     telemetry_cmd.add_parser(sub)
-    judge_cmds.add_parser(sub)
     setup_cmds.add_parser(sub)
     # The record-query/evidence verbs -- git-log-style listing, single-record
-    # show, capsule verify, the shareable bundle, and confirm-ingester (its
-    # whole job is producing a fulfillment *capsule*, capsule vocabulary
-    # throughout its CLI output) -- are the "evidence": registered only
-    # in the "full" arm. See ``packaging.py``'s module docstring for why an
-    # env var, not a fork, drives this.
+    # show, capsule verify, and the shareable bundle -- are the "evidence":
+    # registered only in the "full" arm. See ``packaging.py``'s module
+    # docstring for why an env var, not a fork, drives this.
     if packaging.evidence_visible(arm):
         log_cmd.add_parser(sub)
         show_cmd.add_parser(sub)
@@ -91,7 +86,6 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
         bundle_cmd.add_parser(sub)
         console_cmd.add_parser(sub)
         payload_cmd.add_parser(sub)
-        confirm_cmds.add_parser(sub)
         report_cmd.add_parser(sub)
 
     return parser
@@ -120,12 +114,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "guard":
         if getattr(args, "guard_command", None) is None:
             args.guard_parser.print_help()
-            return 0
-        return args.func(args)
-
-    if args.command == "confirm":
-        if getattr(args, "confirm_command", None) is None:
-            args.confirm_parser.print_help()
             return 0
         return args.func(args)
 
@@ -174,12 +162,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "payload":
         if getattr(args, "payload_command", None) is None:
             args.payload_parser.print_help()
-            return 0
-        return args.func(args)
-
-    if args.command == "judge":
-        if getattr(args, "judge_command", None) is None:
-            args.judge_parser.print_help()
             return 0
         return args.func(args)
 
