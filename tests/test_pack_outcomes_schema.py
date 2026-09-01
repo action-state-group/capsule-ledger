@@ -424,25 +424,10 @@ def test_measured_outcome_may_still_declare_an_evidence_instrument(tmp_path):
     assert pack.outcomes[0].evidence_instrument.name == "offer_alternative"
 
 
-def test_the_real_airline_engagement_pack_loads_clean_with_expected_measurability_split():
-    """The real, committed catalog pack this task templatizes -- not a
-    synthetic fixture. 3 measured (A4, A6, A7), 5 declared_not_measured
-    (A1, A2, A3a, A3b, A5). ``[remove-keyword-scorers]`` moved A3b from
-    measured (a keyword regex reported as a finding) to declared_not_measured
-    (honest pending-judge state); ``[ldg-bj-91-a1-to-llm-judge]`` (review
-    bounce B2) did the identical move for A1 -- it no longer matches
-    ``record_grounding_bench.judge_run.airline_terms``'s split over the tau2
-    airline corpus for either row."""
-    pack_dir = Path(__file__).parent.parent / "capsule_ledger" / "packs" / "catalog" / "airline-engagement"
-    pack = load_pack_dir(pack_dir)
-    by_id = {o.id: o for o in pack.outcomes}
-    assert set(by_id) == {"A1", "A2", "A3a", "A3b", "A4", "A5", "A6", "A7"}
-    measured = {oid for oid, o in by_id.items() if o.measurability == "measured"}
-    declared_not_measured = {oid for oid, o in by_id.items() if o.measurability == "declared_not_measured"}
-    assert measured == {"A4", "A6", "A7"}
-    assert declared_not_measured == {"A1", "A2", "A3a", "A3b", "A5"}
-    for oid in declared_not_measured:
-        assert by_id[oid].evidence_instrument is not None
+# NOTE: the "real airline-engagement pack loads clean" regression test that
+# used to live here moved to capsule-engine with packs/catalog/airline-engagement/
+# ([ldg-outcomes-lifecycle-convergence] B1, H.4) -- packs/loader.py and the
+# catalog it exercises both live there now.
 
 
 # --- tier ([ldg-bj-tier-field], backward-judge design §8.2) ---------------
