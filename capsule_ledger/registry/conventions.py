@@ -6,13 +6,13 @@ this module instead of a hardcoded string.
 
 **Scope note ([ldg-ledger-scope-re-extraction] RESIDUALS pass §3.1):** this
 is a MINIMAL, self-contained shim -- capsule-ledger's own core read/verify
-display surface (``cli/format.py``, ``console/api.py``) needs only
-``describe_action_class``. The full vendored CPB + provisional-field-value
-registry (``describe_field_value``, ``conventions_digest``, the
-``cpb_registry.json`` live tables) moved to capsule-engine as the interim
-vendor-of-record (§3.1(a)) -- this module never imports capsule-engine and
-carries its own tiny label table, so the two are independent, not two forks
-of one truth.
+display surface (``cli/format.py``, its sole consumer now that ``console/``
+is deleted) needs only ``describe_action_class``. The full vendored CPB +
+provisional-field-value registry (``describe_field_value``,
+``conventions_digest``, the ``cpb_registry.json`` live tables) moved to
+capsule-engine as the interim vendor-of-record (§3.1(a)) -- this module
+never imports capsule-engine and carries its own tiny label table, so the
+two are independent, not two forks of one truth.
 
 ``action_class`` -- not the -02 spec's own closed ``action_type`` field
 (restricted to ``fyi``/``decide``, see ``guards/action.py``) -- is the

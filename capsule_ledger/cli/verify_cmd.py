@@ -44,12 +44,6 @@ def _print_result(capsule_id: str, result) -> bool:
 
 
 def run(args: argparse.Namespace) -> int:
-    # ``verify`` only exists at all in the "full" packaging arm -- see
-    # ``cli/main.py`` -- so any use of it is M5's "verify run" fact.
-    from ..telemetry.record import record_evidence_touch
-
-    record_evidence_touch("full")
-
     if args.bundle:
         return _run_bundle(args)
     if not args.capsule_id:

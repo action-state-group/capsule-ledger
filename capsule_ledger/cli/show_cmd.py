@@ -29,13 +29,6 @@ def add_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> int:
-    # This command only exists at all in the "full" packaging arm (see
-    # ``cli/main.py``), so unprompted use of it is exactly M5's
-    # "evidence feature touched" -- record once per install.
-    from ..telemetry.record import record_evidence_touch
-
-    record_evidence_touch("full")
-
     ledger_path = require_ledger_path("show", args)
     if ledger_path is None:
         return 2

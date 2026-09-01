@@ -61,7 +61,6 @@ from `capsule-engine`, not this repo.
 - `capsule_ledger/guards/` — the guard API: `check(action) -> allow | deny | escalate`, plus `dry_run`.
 - `capsule_ledger/cli/` — the `capsule` command line (git-verb shaped: `log`, `show`, `verify`, `bundle`, `fold`, ...).
 - `capsule_ledger/vectors/` — pinned test vectors: known-answer results, determinism probes, and MUST-FAIL cases.
-- `capsule_ledger/telemetry/` — opt-in-disclosed, aggregate-only usage instrumentation and the 6-metric funnel report generator (see below).
 
 ## Packaging
 
@@ -71,10 +70,6 @@ Select runtime with `$CAPSULE_LEDGER_ARM`
 - `guards-only` (`CAPSULE_LEDGER_ARM=guards-only`) — a minimal profile registering only the guard commands.
 
 See `capsule_ledger/packaging.py` for the mechanism and the reasoning behind picking an env var over a pip extra, a config file, or a per-command flag.
-
-## Telemetry
-
-Off by default. If explicitly turned on (`CAPSULE_LEDGER_TELEMETRY=1`), this install reports a handful of yes/no or count-shaped facts about how the package gets used (e.g. "was a guard configured shortly after install") — never what was configured, blocked, or held, and never any ledger content. Run `capsule telemetry status` to see the full disclosure text and current state, and `capsule telemetry funnel --dry-run` to see the report shape rendered against synthetic data. See `capsule_ledger/telemetry/` for the implementation.
 
 ## Failure semantics
 

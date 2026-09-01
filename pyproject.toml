@@ -67,7 +67,6 @@ include = ["capsule_ledger*"]
 [tool.setuptools.package-data]
 capsule_ledger = [
     "bundle_viewer/static/*.html",
-    "telemetry/fixtures/*.jsonl",
     "folds/catalog_defs/*.yaml",
     "guards/wickets/catalog_defs/*.yaml",
     "policy/catalog_defs/*.yaml",
