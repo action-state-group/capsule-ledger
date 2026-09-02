@@ -30,8 +30,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agent_action_capsule import verify as verify_capsule
-from capsule_emit.checkpoint import MmrLedger
-from capsule_emit.checkpoint import core as mmr_core
+from cll.checkpoint import MmrLedger
+from cll.checkpoint import core as mmr_core
 
 from ..envcompat import env_get
 from ..ledger.api import ScanQuery
