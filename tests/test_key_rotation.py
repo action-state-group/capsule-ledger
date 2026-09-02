@@ -5,14 +5,15 @@ revocation timestamp, and rejected for anything claiming to postdate it
 (gating §2 parking lot)."""
 from __future__ import annotations
 
-from capsule_ledger.cli.main import main
 from capsule_ledger.guards.capsule import build_event_capsule
-from capsule_ledger.ledger import LedgerStore
-from capsule_ledger.ledger.revocation import (
+from cll.revocation import (
     ROTATION_EVENT,
     build_key_timeline,
     check_time_fenced_revocation,
 )
+
+from capsule_ledger.cli.main import main
+from capsule_ledger.ledger import LedgerStore
 from capsule_ledger.ledger.signing import LocalSigner, key_fingerprint
 
 OLD_KEY_ID = "key-2026-q1"

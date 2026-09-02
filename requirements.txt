@@ -100,6 +100,20 @@
 # as the 0.6.0 note above applies: this lockfile resolves 0.6.1 only once
 # it's on PyPI (held in capsule-emit#138 pending Steven's manual publish).
 
+# TODO (checkpointed-local-log PyPI catch-up, W3.1/#126): pyproject.toml now
+# requires checkpointed-local-log>=0.1.0 (the `cll` package -- ledger core +
+# MMR/checkpoint core + the time-fenced key-revocation check, graduated out
+# of this repo) but it is NOT YET ON PyPI, so it has no pin here -- a clean
+# `pip install -r requirements.txt` cannot resolve it yet. Once Steven
+# publishes it: (1) add an exact `checkpointed-local-log==<version>` pin
+# below (mandatory exact pin, same policy as agent-action-capsule/PyYAML,
+# since ledger/verify correctness now depends on it directly); (2) the
+# `capsule-emit[checkpoint]` extra pin right below is one candidate for
+# dropping to plain `capsule-emit==<version>` at the same time -- checkpoint
+# now comes from cll, not capsule-emit's own extra (pyproject.toml already
+# made that switch) -- but do not act on this pin change until cll is
+# actually on PyPI and this has been verified against a real resolve.
+
 # --- verification path (§7a-5 mandatory exact pins) -------------------------
 agent-action-capsule==0.1.0
 PyYAML==6.0.3
