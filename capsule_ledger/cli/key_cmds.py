@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from cll.revocation import ROTATION_EVENT, build_key_timeline
 
 from ..envcompat import env_get
-from ..guards.capsule import build_event_capsule
+from ..ledger.capsule import build_event_capsule
 from ..ledger.signing import LocalSigner, key_fingerprint
 from .ledger_io import open_ledger, require_ledger_path
 

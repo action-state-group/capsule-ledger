@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 from capsule_emit.checkpoint import MemoryNodeStore, MmrLedger
 
-from capsule_ledger.guards.signing import LocalSigner
+from capsule_ledger.ledger.signing import LocalSigner
 from capsule_ledger.ledger.store import LedgerStore
 from capsule_ledger.mmr.checkpoint import (
     DEFAULT_TS_URL,
@@ -66,7 +66,7 @@ def _make_mmr_with_leaves(n: int) -> tuple[MmrLedger, LedgerStore, Path]:
     store = LedgerStore(tmp)
     mmr = MmrLedger(store)
 
-    from capsule_ledger.guards.capsule import build_event_capsule
+    from capsule_ledger.ledger.capsule import build_event_capsule
     signer = _make_signer()
     for i in range(n):
         capsule = build_event_capsule(
@@ -117,7 +117,7 @@ class TestEmitCheckpoint:
         cp1 = emit_checkpoint(mmr, signer, timestamp="2026-08-18T00:00:00Z")
 
         # Append more leaves then checkpoint again.
-        from capsule_ledger.guards.capsule import build_event_capsule
+        from capsule_ledger.ledger.capsule import build_event_capsule
         for i in range(3):
             capsule = build_event_capsule(
                 operator="test-op", developer="test-dev", signer=signer,
@@ -193,7 +193,7 @@ class TestVerifyCheckpointConsistency:
         signer = _make_signer()
         cp1 = emit_checkpoint(mmr, signer)
 
-        from capsule_ledger.guards.capsule import build_event_capsule
+        from capsule_ledger.ledger.capsule import build_event_capsule
         for i in range(2):
             capsule = build_event_capsule(
                 operator="op", developer="dev", signer=signer,
@@ -241,7 +241,7 @@ class TestVerifyCheckpointConsistency:
         cp1 = emit_checkpoint(mmr, signer, timestamp="2026-08-18T00:00:00Z")
 
         # Append more leaves and produce cp2 that back-references cp1.
-        from capsule_ledger.guards.capsule import build_event_capsule
+        from capsule_ledger.ledger.capsule import build_event_capsule
         for i in range(2):
             capsule = build_event_capsule(
                 operator="op", developer="dev", signer=signer,
@@ -430,7 +430,7 @@ class TestStorage:
         signer = _make_signer()
         cp1 = emit_checkpoint(mmr, signer, timestamp="2026-08-18T00:00:00Z")
 
-        from capsule_ledger.guards.capsule import build_event_capsule
+        from capsule_ledger.ledger.capsule import build_event_capsule
         for _i in range(2):
             capsule = build_event_capsule(
                 operator="op", developer="dev", signer=signer, event="e", detail={}
@@ -452,7 +452,7 @@ class TestStorage:
         signer = _make_signer()
         cp1 = emit_checkpoint(mmr, signer, timestamp="2026-08-18T00:00:00Z")
 
-        from capsule_ledger.guards.capsule import build_event_capsule
+        from capsule_ledger.ledger.capsule import build_event_capsule
         for _i in range(2):
             capsule = build_event_capsule(
                 operator="op", developer="dev", signer=signer, event="e", detail={}
@@ -562,7 +562,7 @@ class TestCheckpointCLI:
         save_checkpoint(tmpd, cp1)
 
         # Append more leaves.
-        from capsule_ledger.guards.capsule import build_event_capsule
+        from capsule_ledger.ledger.capsule import build_event_capsule
         for _i in range(2):
             capsule = build_event_capsule(
                 operator="op", developer="dev", signer=signer_obj, event="e", detail={}
