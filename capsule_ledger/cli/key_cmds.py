@@ -7,8 +7,10 @@ mechanism every other write path in this package uses -- so the rotation
 event is a real capsule, not a side channel. It is signed by the *outgoing*
 key: that is the last legitimate act of the key being retired, so a rotation
 record can't be forged by someone who only holds the incoming key. See
-``ledger/revocation.py`` for how a verifier later reconstructs the key
-timeline this event feeds and enforces time-fenced revocation from it.
+``cll.revocation`` for how a verifier later reconstructs the key timeline
+this event feeds and enforces time-fenced revocation from it -- ``cll``
+now carries this check (ported from this repo's own former
+``ledger/revocation.py``, #126 fix, 2026-09-02).
 """
 from __future__ import annotations
 
@@ -17,9 +19,10 @@ import secrets
 import sys
 from datetime import datetime, timezone
 
+from cll.revocation import ROTATION_EVENT, build_key_timeline
+
 from ..envcompat import env_get
-from ..guards.capsule import build_event_capsule
-from ..ledger.revocation import ROTATION_EVENT, build_key_timeline
+from ..ledger.capsule import build_event_capsule
 from ..ledger.signing import LocalSigner, key_fingerprint
 from .ledger_io import open_ledger, require_ledger_path
 

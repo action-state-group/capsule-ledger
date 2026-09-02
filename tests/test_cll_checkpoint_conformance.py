@@ -42,8 +42,8 @@ def _emit_capsule_ledger_checkpoint():
     """
     from capsule_emit.checkpoint import MmrLedger
 
-    from capsule_ledger.guards.capsule import build_event_capsule
-    from capsule_ledger.guards.signing import LocalSigner
+    from capsule_ledger.ledger.capsule import build_event_capsule
+    from capsule_ledger.ledger.signing import LocalSigner
     from capsule_ledger.ledger.store import LedgerStore
     from capsule_ledger.mmr.checkpoint import emit_checkpoint
 

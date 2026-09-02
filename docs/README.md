@@ -23,13 +23,6 @@ A guard checks each action your agent takes, appends the decision as a signed ca
 
 - **[Test data](test-data.md)** — the fixture ledgers under `tests/fixtures/` and what each one is built to exercise.
 
-## Reference systems
-
-- **[The tau2-airline reference](reference/tau2-airline-reference.md)** — real agent tool-call
-  trajectories (one live run, four tau2-bench committed multi-model transcripts), replayed offline
-  through the real guard: refusals, an honest capability-gap case, and one row verified offline —
-  no API key, no network, under a minute.
-
 ## The shape, in one picture
 
 ```

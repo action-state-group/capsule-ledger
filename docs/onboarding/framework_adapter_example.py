@@ -14,9 +14,10 @@ from __future__ import annotations
 import sys
 
 from capsule_ledger.cli.constraints_cmd import DEFAULT_CAPS_FOLD_ID, DEFAULT_CATALOG_DIR
-from capsule_ledger.envcompat import env_get
 from capsule_ledger.folds.catalog import Catalog
 from capsule_ledger.guards import Action, GuardEngine, LocalSigner
+
+from capsule_ledger.envcompat import env_get
 from capsule_ledger.ledger import LedgerStore
 
 

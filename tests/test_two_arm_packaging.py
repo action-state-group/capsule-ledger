@@ -40,8 +40,11 @@ def test_guards_only_arm_hides_evidence_verbs():
     subs = _subcommands("guards-only")
     for verb in ("log", "show", "verify", "bundle"):
         assert verb not in subs
-    # the constraints/fold/agents surface stays available
-    for verb in ("constraints", "fold", "agents"):
+    # constraints/fold/agents/diff/bisect dissolved to capsule-engine at
+    # W3.2 (#127) and were deleted here, not kept guards-only-visible --
+    # checkpoint/key/blame are the honest-records core's own arm-independent
+    # surface now.
+    for verb in ("checkpoint", "key", "blame"):
         assert verb in subs
 
 

@@ -19,31 +19,36 @@ classifiers = [
 # Capsule parsing goes through the public agent-action-capsule reference
 # library — never vendored into this repo.
 #
-# capsule-emit[checkpoint] -- the neutral CLL/MMR core (append, peak hash,
-# root computation, checkpoint format) this package consumes from
-# capsule_emit.checkpoint rather than forking (Amendment E, 2026-08-21; see
-# docs/oss-project-scope.md). Required, not optional: capsule_ledger.cli.
-# bundle_cmd's completeness certificate, capsule_ledger.conversation.merkle's
-# session digest, and capsule_ledger.mmr.checkpoint's sign/register/verify
-# path all depend on it directly, not just the examples path. Floor is
-# >=0.6.1 (was >=0.6.0, was >=0.5.1, was 0.4.x): capsule-emit 0.5.1's format-4/jcs
-# capsules produce different capsule_id/digest bytes than 0.4.x, so the
-# committed fixtures and format-dependent assertions in this repo are
-# generated against that format. The floor moved to >=0.6.0 because this
-# branch (folds: de-fork onto capsule_emit.account) consumes the new public
-# `capsule_emit.account` subpackage, which first ships in capsule-emit 0.6.0
-# (#132 fold/account core + #133 chain_segment). 0.6.0 is a superset of 0.5.1's
-# format-4/jcs surface -- account core + chain_segment are additive, no capsule
-# format field changed -- so no fixture regeneration was required by that bump.
-# The floor now moves to >=0.6.1 for capsule-emit#128/#135 (float tool-arg
-# canonicalization fix, digest-affecting only for payloads carrying a float
-# tool argument). No fixture here has a float-valued tool_input/tool_output,
-# so again no fixture regeneration is required by this bump.
-# Pinning the floor at the exact released version prevents silent resolution
-# back to a version without the fix.
+# checkpointed-local-log -- the `cll` package: the neutral CLL/MMR core
+# (append, peak hash, root computation, checkpoint format) plus this
+# package's own ledger core (store/admission/chains), graduated OUT of this
+# repo per the W3.1 CLL extraction (2026-09-01; action-state-strategy/docs/
+# strategy/w3-ledger-dissolution-lib-per-spec-2026-09-01.md). Was consumed
+# from capsule_emit.checkpoint per Amendment E (2026-08-21); capsule_ledger.
+# ledger.{admission,api,records} and capsule_ledger.mmr.checkpoint are now
+# thin sys.modules aliases over cll.ledger.*, and capsule_ledger.ledger.
+# store.LedgerStore is a thin subclass over cll.ledger.store.LedgerStore
+# (see that module's docstring) that now inherits cll's own default
+# time-fenced key-revocation finding rather than layering a second,
+# drift-prone copy on top (#126 fix, 2026-09-01). Required, not optional:
+# capsule_ledger.cli.bundle_cmd's completeness certificate and every
+# ledger/mmr consumer depend on it directly, not just the examples path.
+# Pulls in scitt-cose + cbor2 + cryptography transitively (was this
+# package's own `checkpoint` extra; that extra is now redundant and removed
+# below). NOT YET ON PyPI (2026-09-01) -- see requirements.txt for the
+# exact-pin catch-up TODO once it publishes.
+#
+# capsule-emit -- still needed for capsule_emit.account (fold/account core +
+# chain_segment, #132/#133, 0.6.0+) -- NOT for checkpoint anymore, so the
+# `[checkpoint]` extra this package used to request from it is dropped.
+# Floor stays >=0.6.1 (#125, capsule-emit#128/#135 float tool-arg
+# canonicalization fix) even though checkpoint no longer needs it -- account
+# still does, and dropping the floor would silently re-permit an unfixed
+# capsule-emit.
 dependencies = [
     "agent-action-capsule>=0.1.0",
-    "capsule-emit[checkpoint]>=0.6.1",
+    "capsule-emit>=0.6.1",
+    "checkpointed-local-log>=0.1.0",
     "pyyaml>=6.0",
 ]
 
@@ -53,11 +58,6 @@ Source = "https://github.com/action-state-group/capsule-ledger"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.4"]
-# capsule_ledger/mmr/checkpoint.py uses scitt-cose for offline COSE receipt
-# verification and `cryptography` for Ed25519 key conversion. Both are
-# soft-imported (actionable ImportError if absent). Install this extra to
-# enable `capsule checkpoint verify` and `verify_receipt_offline`.
-checkpoint = ["scitt-cose>=0.2.0", "cryptography>=42.0"]
 
 [project.scripts]
 capsule = "capsule_ledger.cli:main"

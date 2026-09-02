@@ -51,17 +51,18 @@ def test_cli_main_resolves_to_the_function_not_the_submodule():
     ``main`` (true for any ``pkg.submodule`` import). A naive lazy
     ``__getattr__`` would let that submodule object shadow the ``main``
     function on every subsequent lookup once the submodule has been
-    imported once. Skipped here because ``main.py`` itself cannot import in
-    this repo's post-W3.2 state (it needs ``agents_cmd`` -> the deleted
-    ``folds.catalog``) -- exercised for real against the companion
-    capsule-engine branch instead, where the dependency chain is intact.
+    imported once. Run in a clean subprocess (matching the real
+    ``capsule = capsule_ledger.cli:main`` console-script entry point,
+    pyproject.toml) rather than in-process, because this test suite's own
+    sibling files routinely do ``from capsule_ledger.cli.main import main``
+    (submodule-qualified), which pre-poisons ``capsule_ledger.cli.main`` for
+    the rest of a shared test process regardless of this package's own
+    ``__getattr__``.
     """
-    import capsule_ledger.cli as cli_pkg
-
-    try:
-        main = cli_pkg.main
-    except ModuleNotFoundError:
-        import pytest
-
-        pytest.skip("capsule_ledger.cli.main needs folds.catalog, moved to capsule-engine (W3.2)")
-    assert callable(main)
+    script = (
+        "import capsule_ledger.cli as cli_pkg\n"
+        "main = cli_pkg.main\n"
+        "assert callable(main), f'expected the main() function, got {main!r}'\n"
+    )
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr

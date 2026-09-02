@@ -38,12 +38,6 @@ different command than the one that wrote it — a write path that only checks
 itself isn't verification. Full walkthrough, with every command's exact
 output: [`docs/tutorials/01-your-first-ledger.md`](docs/tutorials/01-your-first-ledger.md).
 
-Want to see the guard deny something real, not a scripted fixture? Run
-`python -m capsule_ledger.examples.tau2_airline_reference --all` — it
-replays real agent tool-call trajectories (one live run, four tau2-bench
-committed multi-model transcripts) through the guard, offline, no API key.
-See [`docs/reference/tau2-airline-reference.md`](docs/reference/tau2-airline-reference.md).
-
 ## Onboarding your own agent
 
 Three ways to hook a real agent up to a capsule-ledger instance (Goose, a

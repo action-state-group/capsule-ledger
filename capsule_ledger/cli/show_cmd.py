@@ -6,7 +6,6 @@ import argparse
 import json
 import sys
 
-from ..conversation import find_turn_reference
 from .format import (
     build_echo,
     format_action_class,
@@ -73,17 +72,6 @@ def run(args: argparse.Namespace) -> int:
             print(f"Chain:      {chain.get('parent_capsule_id')} ({chain.get('relation')})")
         else:
             print("Chain:      (none)")
-        # A conversation turn may name this capsule as one it gave rise to
-        # (``build_turn_reference_capsule``) -- e.g. a tool-call capsule some
-        # other pipeline recorded, layered on top of the conversation
-        # profile. Resolved by scan since the reference is often built and
-        # appended after this capsule already exists (the turn is only
-        # knowable once a full trajectory is available), so this capsule
-        # itself never carries the link.
-        turn_reference = find_turn_reference(store, record.capsule_id)
-        if turn_reference is not None:
-            turn_capsule_id = turn_reference.capsule["asg_payload"]["detail"]["turn_capsule_id"]
-            print(f"Turn:       {turn_capsule_id} (via {turn_reference.capsule_id})")
         if constraints:
             print("Constraints:")
             for c in constraints:

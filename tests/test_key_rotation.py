@@ -2,17 +2,23 @@
 """Key rotation as a recorded ledger event, plus time-fenced revocation:
 a revoked key's signature is trusted for records dated at-or-before its
 revocation timestamp, and rejected for anything claiming to postdate it
-(gating §2 parking lot)."""
+(gating §2 parking lot).
+
+cll #4's own rotation suite (ported and extended from this file) is the
+suite of record for the time-fenced-revocation property; this file is
+legacy ledger coverage, kept genuine (not weakened) pending the W3.3
+capsule-ledger archive."""
 from __future__ import annotations
 
-from capsule_ledger.cli.main import main
-from capsule_ledger.guards.capsule import build_event_capsule
-from capsule_ledger.ledger import LedgerStore
-from capsule_ledger.ledger.revocation import (
+from cll.revocation import (
     ROTATION_EVENT,
     build_key_timeline,
     check_time_fenced_revocation,
 )
+
+from capsule_ledger.cli.main import main
+from capsule_ledger.ledger import LedgerStore
+from capsule_ledger.ledger.capsule import build_event_capsule
 from capsule_ledger.ledger.signing import LocalSigner, key_fingerprint
 
 OLD_KEY_ID = "key-2026-q1"

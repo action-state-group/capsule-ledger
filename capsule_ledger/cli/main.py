@@ -1,14 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 """`capsule` CLI entry point: git-style verbs over the ledger query API
-(log/show/verify/bundle/diff/blame/bisect), the fold catalog (fold
-list/new/test/lint), the guard-check/action-class catalog (constraints
-list), a per-agent summary (agents --status), and signing-key rotation (key
-rotate/status).
+(log/show/verify/bundle/blame), the checkpoint surface (checkpoint
+emit/status/verify), and signing-key rotation (key rotate/status).
 
 `log`/`show`/`verify`/`bundle` are registered only in the "full" packaging
-arm -- see `capsule_ledger/packaging.py` for the two-arm switch. `diff`/`blame`/
-`bisect` are structural lenses over the query API, not evidence
-artifacts, so they stay registered in both arms.
+arm -- see `capsule_ledger/packaging.py` for the two-arm switch. `blame` is
+a structural lens over the query API, not an evidence artifact, so it stays
+registered in both arms.
+
+The fold/constraints/agents/diff/bisect verbs dissolved to capsule-engine
+at W3.2 (#127, fold compute/guard taxonomy/re-evaluation all moved with
+their packages) and were deleted from here rather than left registered and
+silently broken -- capsule-engine's own CLI is the surface of record for
+them now.
 
 This module is a thin dispatcher; each verb's logic lives in its own
 `cli/*_cmd.py` (or `*_cmds.py` for a verb group) module.
@@ -20,14 +24,9 @@ import sys
 
 from .. import packaging
 from . import (
-    agents_cmd,
-    bisect_cmd,
     blame_cmd,
     bundle_cmd,
     checkpoint_cmd,
-    constraints_cmd,
-    diff_cmd,
-    fold_cmds,
     key_cmds,
     log_cmd,
     payload_cmd,
@@ -44,14 +43,9 @@ def _build_parser(arm: str | None = None) -> argparse.ArgumentParser:
     parser.add_argument("--version", action="store_true", help="print the version and exit")
     sub = parser.add_subparsers(dest="command")
 
-    fold_cmds.add_parser(sub)
     checkpoint_cmd.add_parser(sub)
-    constraints_cmd.add_parser(sub)
-    agents_cmd.add_parser(sub)
     key_cmds.add_parser(sub)
-    diff_cmd.add_parser(sub)
     blame_cmd.add_parser(sub)
-    bisect_cmd.add_parser(sub)
     # The record-query/evidence verbs -- git-log-style listing, single-record
     # show, capsule verify, and the shareable bundle -- are the "evidence":
     # registered only in the "full" arm. See ``packaging.py``'s module
@@ -76,21 +70,9 @@ def main(argv: list[str] | None = None) -> int:
         print(__version__)
         return 0
 
-    if args.command == "fold":
-        if getattr(args, "fold_command", None) is None:
-            args.fold_parser.print_help()
-            return 0
-        return args.func(args)
-
     if args.command == "key":
         if getattr(args, "key_command", None) is None:
             args.key_parser.print_help()
-            return 0
-        return args.func(args)
-
-    if args.command == "constraints":
-        if getattr(args, "constraints_command", None) is None:
-            args.constraints_parser.print_help()
             return 0
         return args.func(args)
 
