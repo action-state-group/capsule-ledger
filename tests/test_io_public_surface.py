@@ -7,12 +7,22 @@ from __future__ import annotations
 
 from capsule_ledger.cli import ledger_io
 from capsule_ledger.envcompat import env_get as internal_env_get
-from capsule_ledger.io import env_get, open_ledger, require_ledger_path
+from capsule_ledger.io import (
+    add_scan_query_args,
+    build_scan_query,
+    echo_parts,
+    env_get,
+    open_ledger,
+    require_ledger_path,
+)
 
 
 def test_reexports_are_the_same_objects_as_the_internal_implementation():
     assert open_ledger is ledger_io.open_ledger
     assert require_ledger_path is ledger_io.require_ledger_path
+    assert add_scan_query_args is ledger_io.add_scan_query_args
+    assert build_scan_query is ledger_io.build_scan_query
+    assert echo_parts is ledger_io.echo_parts
     assert env_get is internal_env_get
 
 
