@@ -90,13 +90,22 @@
 # clean `pip install -r requirements.txt` cannot find 0.6.0 -- #107 stays
 # CI-red and goes green on the 0.6.0 publish. Tested locally against the
 # release-sweep branch build (capsule-emit#134).
+#
+# PIN BUMP (2026-09-01, release-sweep for capsule-emit#128/#135): bumped
+# capsule-emit [checkpoint]==0.6.0 -> ==0.6.1 for the float tool-arg
+# canonicalization fix (a float-typed tool argument previously dropped the
+# planned capsule at the digest layer instead of chaining it). Fixture check:
+# no committed fixture here has a float-valued tool_input/tool_output, so no
+# fixture regeneration is required by this bump. Same publish-gating caveat
+# as the 0.6.0 note above applies: this lockfile resolves 0.6.1 only once
+# it's on PyPI (held in capsule-emit#138 pending Steven's manual publish).
 
 # --- verification path (§7a-5 mandatory exact pins) -------------------------
 agent-action-capsule==0.1.0
 PyYAML==6.0.3
 
 # --- fixture generation path (LOAD-BEARING — see header) --------------------
-capsule-emit[checkpoint]==0.6.0
+capsule-emit[checkpoint]==0.6.1
 
 # --- transitive dependencies (full freeze for complete reproducibility) ------
 annotated-types==0.8.0
