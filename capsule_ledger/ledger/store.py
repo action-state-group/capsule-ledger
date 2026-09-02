@@ -26,7 +26,6 @@ from typing import Any
 from agent_action_capsule import Finding, VerificationResult, compute_capsule_id
 from agent_action_capsule import verify as _verify_capsule
 
-from ..guards.revocation import build_key_timeline, check_time_fenced_revocation
 from .admission import (
     AUTHENTICITY_SIGNED,
     AUTHENTICITY_UNSIGNED,
@@ -37,6 +36,7 @@ from .admission import (
 )
 from .api import LedgerAPI, ScanQuery
 from .records import ChainGap, LedgerRecord
+from .revocation import build_key_timeline, check_time_fenced_revocation
 
 __all__ = ["LedgerStore"]
 
@@ -456,7 +456,7 @@ class LedgerStore(LedgerAPI):
 
     def verify(self, capsule_id: str) -> VerificationResult | None:
         """``agent_action_capsule.verify`` for a stored capsule, plus this
-        store's own time-fenced key-revocation check (`guards/revocation.py`)
+        store's own time-fenced key-revocation check (`ledger/revocation.py`)
         layered on top.
 
         The reference verifier is spec-level and payload-only — it has no

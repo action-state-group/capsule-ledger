@@ -32,7 +32,7 @@ def _utc_now() -> str:
 
 def _build_signer(args: argparse.Namespace):
     from ..envcompat import env_get
-    from ..guards.signing import LocalSigner
+    from ..ledger.signing import LocalSigner
 
     key_id = getattr(args, "key_id", None) or env_get(_KEY_ID_ENV, _KEY_ID_ENV_LEGACY)
     secret_text = getattr(args, "key_secret", None) or env_get(_SECRET_ENV, _SECRET_ENV_LEGACY)

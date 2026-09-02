@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..ledger.api import LedgerAPI
+from .api import LedgerAPI
 
 __all__ = [
     "ROTATION_EVENT",
